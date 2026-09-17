@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 31 208 208" role="img" aria-label="Grupo Supero">
+  <!--
+    Marca do Grupo Supero — o MESMO vetor de `MarcaSupero` (packages/ui) e do
+    loader em index.html. Copiado, e não importado: o favicon é servido como
+    arquivo estático, antes de qualquer JavaScript existir.
+
+    A viewBox é quadrada e centrada no símbolo (que mede 162×188 a partir de
+    7,41), com folga em volta. Sem isso o ícone encostaria nas bordas da aba:
+    num quadrado de 16px, a margem é o que separa a marca do favicon do vizinho.
+
+    Sem fundo, de propósito: o laranja tem contraste tanto com a barra clara
+    quanto com a escura do navegador, e um retângulo branco cravado apareceria
+    como uma etiqueta no tema noturno.
+  -->
+  <path fill="#E55625" fill-rule="evenodd" d="M 57.446 61.795 C 34.866 73.183, 15.005 83.507, 13.309 84.737 C 8.159 88.475, 7 93.077, 7.002 109.770 C 7.003 126.380, 7.837 129.277, 14 134.092 C 15.925 135.596, 35.850 146.135, 58.277 157.512 L 99.055 178.197 98.777 163.349 L 98.500 148.500 66.510 132.282 C 48.916 123.362, 33.953 115.289, 33.260 114.341 C 31.485 111.913, 31.694 106.449, 33.637 104.506 C 34.537 103.606, 49.612 95.697, 67.137 86.932 L 99 70.994 99 55.997 C 99 47.749, 98.888 41.020, 98.750 41.045 C 98.612 41.069, 80.026 50.407, 57.446 61.795 M 77 107.772 L 77 122.545 107.713 137.522 C 124.605 145.760, 139.680 153.553, 141.213 154.839 C 143.372 156.651, 144 158.043, 144 161.016 C 144 163.979, 143.394 165.331, 141.346 166.942 C 139.886 168.091, 124.811 176.012, 107.846 184.545 L 77 200.061 77 214.530 C 77 222.489, 77.289 229, 77.642 229 C 77.995 229, 89.582 223.194, 103.392 216.097 C 117.201 209, 135.565 199.580, 144.201 195.163 C 152.836 190.747, 161.256 186.131, 162.913 184.907 C 168.197 180.999, 169 177.855, 169 161.067 C 169 143.822, 168.321 141.249, 162.399 136.039 C 160.075 133.994, 142.231 124.610, 118.216 112.804 C 96.060 101.912, 77.722 93, 77.466 93 C 77.210 93, 77 99.648, 77 107.772" />
+</svg>

@@ -1,0 +1,1998 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Portal — Grupo Supero</title>
+<style>
+  :root {
+    --accent: #E85D26;
+    --accent-hover: #F06B35;
+    --accent-subtle: rgba(232, 93, 38, 0.12);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --transition: 0.2s ease;
+  }
+
+  [data-theme="dark"] {
+    --bg: #111113;
+    --bg-elevated: #1A1A1E;
+    --bg-card: #1E1E22;
+    --bg-hover: #252529;
+    --border: #2A2A2E;
+    --border-subtle: #222226;
+    --text: #F0F0F2;
+    --text-secondary: #9A9AA0;
+    --text-muted: #6A6A72;
+    --success: #34D399;
+    --warning: #FBBF24;
+    --error: #F87171;
+    --info: #60A5FA;
+    --shadow: 0 2px 12px rgba(0,0,0,0.4);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  [data-theme="light"] {
+    --bg: #F7F7F8;
+    --bg-elevated: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-hover: #F0F0F2;
+    --border: #E2E2E6;
+    --border-subtle: #EEEEF0;
+    --text: #1A1A1E;
+    --text-secondary: #4B5563;
+    --text-muted: #6B7280;
+    --success: #059669;
+    --warning: #D97706;
+    --error: #DC2626;
+    --info: #2563EB;
+    --shadow: 0 2px 12px rgba(0,0,0,0.06);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* ─── Layout ─── */
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+  }
+
+  /* ─── Topbar ─── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    z-index: 10;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-wrap {
+    display: flex;
+    align-items: center;
+  }
+
+  .logo-img {
+    height: 30px;
+    width: auto;
+    display: block;
+  }
+
+  .logo-text {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text);
+  }
+
+  .logo-text span {
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 6px;
+    font-size: 11px;
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .theme-toggle {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: var(--transition);
+  }
+
+  .theme-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-subtle);
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent-subtle);
+    border: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  /* ─── Sidebar ─── */
+  .sidebar {
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sidebar-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    padding: 12px 12px 6px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    font-weight: 500;
+    border-left: 2px solid var(--accent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+
+  .nav-item svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .nav-badge {
+    margin-left: auto;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+
+  /* ─── Main Content ─── */
+  .main {
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ─── Page Header ─── */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    transition: var(--transition);
+  }
+
+  .btn:hover { border-color: var(--text-muted); }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  /* ─── Agent Cards Grid ─── */
+  .agents-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 1200px) {
+    .agents-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 700px) {
+    .agents-grid { grid-template-columns: 1fr; }
+  }
+
+  .agent-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 168px;
+  }
+
+  .agent-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+
+  .agent-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--card-accent, var(--accent));
+    opacity: 0;
+    transition: var(--transition);
+  }
+
+  .agent-card:hover::before { opacity: 1; }
+
+  .agent-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  .agent-icon svg { width: 18px; height: 18px; }
+
+  .agent-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .agent-type {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+  }
+
+  .agent-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .status-dot.running { background: var(--success); animation: pulse 2s infinite; }
+  .status-dot.pending { background: var(--warning); }
+  .status-dot.idle { background: var(--text-muted); }
+  .status-dot.error { background: var(--error); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .agent-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: auto;
+    padding-top: 14px;
+  }
+
+  .tag {
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 10px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  /* ─── Stats Strip ─── */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: var(--bg-hover);
+    flex-shrink: 0;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* ─── Flow Editor ─── */
+  .flow-container {
+    position: relative;
+    width: 100%;
+    height: calc(100vh - 160px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: auto;
+  }
+
+  .flow-canvas {
+    width: 2150px;
+    height: 980px;
+    position: relative;
+    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .flow-node {
+    position: absolute;
+    width: 160px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    cursor: grab;
+    transition: border-color 0.2s;
+  }
+
+  .flow-node:hover { border-color: var(--accent); }
+
+  .flow-node.mini {
+    width: 150px;
+    padding: 9px 12px;
+  }
+
+  .flow-node.mini .flow-node-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .flow-node.mini .flow-node-icon svg { width: 11px; height: 11px; }
+
+  .flow-node.tiny {
+    width: 128px;
+    padding: 7px 10px;
+  }
+
+  .flow-node.tiny .flow-node-header { margin-bottom: 0; }
+
+  .flow-node.tiny .flow-node-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .flow-node.tiny .flow-node-icon svg { width: 9px; height: 9px; }
+
+  .flow-node.tiny .flow-node-name { font-size: 10px; }
+
+  .flow-node-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .flow-node-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .flow-node-name {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .flow-node-type {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .flow-node-ports {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+
+  .port {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--text-muted);
+    background: var(--bg-elevated);
+  }
+
+  .port.output { border-color: var(--success); }
+  .port.input { border-color: var(--info); }
+
+  .flow-edges {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .flow-edge {
+    fill: none;
+    stroke: var(--text-muted);
+    stroke-width: 1.5;
+    opacity: 0.5;
+  }
+
+  .flow-edge.active {
+    stroke: var(--accent);
+    opacity: 1;
+    stroke-width: 2;
+  }
+
+  .flow-edge-label {
+    font-size: 10px;
+    fill: var(--text-muted);
+  }
+
+  .flow-toolbar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .flow-toolbar .btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow);
+  }
+
+  /* ─── Agent Detail / Chat ─── */
+  .agent-detail {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    height: calc(100vh - 120px);
+  }
+
+  .chat-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .chat-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .chat-header-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chat-header-text {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .chat-header-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .msg {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .msg-user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .msg-ai {
+    align-self: flex-start;
+    background: var(--bg-hover);
+    color: var(--text);
+    border-bottom-left-radius: 4px;
+  }
+
+  .msg-ai .suggestion {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+  }
+
+  .msg-ai .suggestion-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .msg-ai .suggestion ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .msg-ai .suggestion li {
+    padding: 3px 0;
+    color: var(--text-secondary);
+  }
+
+  .msg-ai .suggestion li::before {
+    content: '•';
+    color: var(--accent);
+    margin-right: 6px;
+  }
+
+  .chat-input-area {
+    padding: 14px 18px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .chat-input {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 13px;
+    font-family: var(--font);
+    outline: none;
+    transition: var(--transition);
+  }
+
+  .chat-input:focus { border-color: var(--accent); }
+
+  .chat-send {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+  }
+
+  .chat-send:hover { background: var(--accent-hover); }
+
+  /* ─── Agent Config Panel ─── */
+  .config-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-y: auto;
+    padding: 20px;
+    position: relative;
+  }
+
+  .config-panel-badge {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .config-section {
+    margin-bottom: 20px;
+  }
+
+  .config-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .config-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 13px;
+  }
+
+  .config-item-label {
+    color: var(--text-secondary);
+  }
+
+  .config-item-value {
+    font-weight: 500;
+    font-size: 12px;
+  }
+
+  .config-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .config-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .config-chip .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .config-chip .dot.green { background: var(--success); }
+  .config-chip .dot.blue { background: var(--info); }
+  .config-chip .dot.orange { background: var(--accent); }
+
+  /* ─── Approvals ─── */
+  .approvals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .approval-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .approval-card.urgent {
+    border-left: 3px solid var(--warning);
+  }
+
+  .approval-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .approval-info h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+
+  .approval-info p {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .approval-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .btn-sm:hover { border-color: var(--text-muted); }
+
+  .btn-sm.approve {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+  }
+
+  .btn-sm.approve:hover { opacity: 0.9; }
+
+  .btn-sm.reject {
+    background: var(--error);
+    border-color: var(--error);
+    color: #fff;
+  }
+
+  .btn-sm.reject:hover { opacity: 0.9; }
+
+  /* ─── Skills View ─── */
+  .skills-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  @media (max-width: 1000px) {
+    .skills-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .skill-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    transition: var(--transition);
+  }
+
+  .skill-card:hover { border-color: var(--text-muted); }
+
+  .skill-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .skill-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .skill-icon svg { width: 15px; height: 15px; }
+
+  .skill-name { font-size: 12px; font-weight: 600; }
+
+  .skill-category {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .skill-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-bottom: 10px;
+  }
+
+  .skill-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .skill-meta .used-by {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .skill-meta .used-by svg { width: 11px; height: 11px; }
+
+  /* ─── Knowledge View ─── */
+  .knowledge-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 16px;
+    height: calc(100vh - 120px);
+  }
+
+  .knowledge-sidebar {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    overflow-y: auto;
+  }
+
+  .knowledge-sidebar-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  .knowledge-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .knowledge-item:hover { background: var(--bg-hover); color: var(--text); }
+
+  .knowledge-item.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .knowledge-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  .knowledge-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .knowledge-doc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .knowledge-doc-title { font-size: 14px; font-weight: 600; }
+
+  .knowledge-doc-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .knowledge-doc-body {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    max-width: 640px;
+  }
+
+  .knowledge-doc-body h3 {
+    font-size: 13px;
+    color: var(--text);
+    margin: 16px 0 8px;
+    font-weight: 600;
+  }
+
+  .knowledge-doc-body p { margin-bottom: 10px; }
+
+  .knowledge-doc-body code {
+    background: var(--bg-hover);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  /* ─── Approval Textarea ─── */
+  .approval-textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 12px;
+    font-family: var(--font);
+    resize: vertical;
+    outline: none;
+    transition: var(--transition);
+    margin-top: 8px;
+  }
+
+  .approval-textarea:focus { border-color: var(--accent); }
+
+  .approval-card.expanded {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .approval-card.expanded .approval-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .agent-detail { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-wrap"><img class="logo-img" src="../logo/logo.svg" alt="Grupo Supero" /></div>
+      <div class="logo-text"><span>Agent Portal</span></div>
+    </div>
+    <div class="topbar-right">
+      <button class="theme-toggle" onclick="toggleTheme()" title="Alternar tema" aria-label="Alternar tema">
+        <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <div class="avatar">RS</div>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-label">Principal</div>
+    <button class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Dashboard"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </button>
+    <button class="nav-item" data-view="flow" onclick="showView('flow')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Pipelines"><circle cx="5" cy="12" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="19" cy="18" r="3"/><line x1="8" y1="12" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="18"/></svg>
+      Pipelines
+    </button>
+    <button class="nav-item" data-view="approvals" onclick="showView('approvals')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Aprovações"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      Aprovações
+      <span class="nav-badge">3</span>
+    </button>
+
+    <div class="sidebar-label">Agentes</div>
+    <button class="nav-item" data-view="skills" onclick="showView('skills')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Skills"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      Skills
+    </button>
+    <button class="nav-item" data-view="knowledge" onclick="showView('knowledge')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Knowledge"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      Knowledge
+    </button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- Dashboard View -->
+    <div class="view active" id="view-dashboard">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Agentes</h1>
+          <p class="page-subtitle">8 agentes ativos · 2 pipelines em execução</p>
+        </div>
+        <button class="btn btn-primary" onclick="showView('agent-detail')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Novo Agente
+        </button>
+      </div>
+
+      <div class="agents-grid">
+        <div class="agent-card" style="--card-accent: var(--accent)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div>
+          <div class="agent-name">Planner</div>
+          <div class="agent-type">Planner</div>
+          <div class="agent-status">
+            <span class="status-dot running"></span>
+            Executando
+          </div>
+          <div class="agent-tags">
+            <span class="tag">Azure DevOps</span>
+            <span class="tag">Docs</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--accent)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+          <div class="agent-name">Épico</div>
+          <div class="agent-type">Épico</div>
+          <div class="agent-status">
+            <span class="status-dot idle"></span>
+            Ocioso
+          </div>
+          <div class="agent-tags">
+            <span class="tag">Backlog</span>
+            <span class="tag">Azure DevOps</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--info)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="agent-name">História</div>
+          <div class="agent-type">História</div>
+          <div class="agent-status">
+            <span class="status-dot idle"></span>
+            Ocioso
+          </div>
+          <div class="agent-tags">
+            <span class="tag">Backlog</span>
+            <span class="tag">Docs</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--success)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+          <div class="agent-name">Task</div>
+          <div class="agent-type">Task</div>
+          <div class="agent-status">
+            <span class="status-dot idle"></span>
+            Ocioso
+          </div>
+          <div class="agent-tags">
+            <span class="tag">Backlog</span>
+            <span class="tag">Sprint</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--info)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+          <div class="agent-name">Backend Dev</div>
+          <div class="agent-type">Developer</div>
+          <div class="agent-status">
+            <span class="status-dot running"></span>
+            Executando
+          </div>
+          <div class="agent-tags">
+            <span class="tag">GitHub</span>
+            <span class="tag">Python</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--error)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+          <div class="agent-name">QA</div>
+          <div class="agent-type">QA</div>
+          <div class="agent-status">
+            <span class="status-dot idle"></span>
+            Ocioso
+          </div>
+          <div class="agent-tags">
+            <span class="tag">Testes</span>
+            <span class="tag">Cobertura</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--success)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <div class="agent-name">Code Reviewer</div>
+          <div class="agent-type">Reviewer</div>
+          <div class="agent-status">
+            <span class="status-dot pending"></span>
+            Aguardando
+          </div>
+          <div class="agent-tags">
+            <span class="tag">GitLab</span>
+            <span class="tag">Security</span>
+          </div>
+        </div>
+
+        <div class="agent-card" style="--card-accent: var(--warning)" onclick="showView('agent-detail')">
+          <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></div>
+          <div class="agent-name">Deployer</div>
+          <div class="agent-type">Deployer</div>
+          <div class="agent-status">
+            <span class="status-dot idle"></span>
+            Ocioso
+          </div>
+          <div class="agent-tags">
+            <span class="tag">Azure</span>
+            <span class="tag">CI/CD</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-strip">
+        <div class="stat-card">
+          <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+          <div>
+            <div class="stat-value">2</div>
+            <div class="stat-label">Pipelines em execução</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div>
+            <div class="stat-value">3</div>
+            <div class="stat-label">Aprovações pendentes</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+          <div>
+            <div class="stat-value">47</div>
+            <div class="stat-label">Tarefas concluídas</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div>
+            <div class="stat-value">98%</div>
+            <div class="stat-label">Taxa de sucesso</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flow Editor View -->
+    <div class="view" id="view-flow">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Pipeline: Feature Development</h1>
+          <p class="page-subtitle">26 nós (1 épico · 4 histórias · 16 tasks) · 42 conexões · 2 loops de reprovação ativos</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn">Pausar</button>
+          <button class="btn btn-primary">Executar</button>
+        </div>
+      </div>
+
+      <div class="flow-container">
+        <div class="flow-toolbar">
+          <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Agente</button>
+          <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 1 0-2.83-4"/><path d="M6 8a3 3 0 1 1 2.83-4"/><line x1="8" y1="8" x2="16" y2="8"/></svg> Conectar</button>
+          <button class="btn" onclick="toggleZoom()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg> Zoom</button>
+        </div>
+
+        <div class="flow-canvas">
+          <!-- SVG Edges -->
+          <svg class="flow-edges">
+            <path class="flow-edge active" d="M 200 460 C 250 460, 250 460, 300 460" marker-end="url(#arrow)"/>
+
+            <!-- Épico → 4 Histórias -->
+            <path class="flow-edge" d="M 460 460 C 520 460, 520 140, 580 140" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 460 460 C 520 460, 520 360, 580 360" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 460 460 C 520 460, 520 580, 580 580" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 460 460 C 520 460, 520 800, 580 800" marker-end="url(#arrow)"/>
+
+            <!-- História 1 → 4 Tasks -->
+            <path class="flow-edge" d="M 730 140 C 780 140, 780 74, 830 74" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 140 C 780 140, 780 118, 830 118" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 140 C 780 140, 780 162, 830 162" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 140 C 780 140, 780 206, 830 206" marker-end="url(#arrow)"/>
+            <!-- História 2 → 4 Tasks -->
+            <path class="flow-edge" d="M 730 360 C 780 360, 780 294, 830 294" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 360 C 780 360, 780 338, 830 338" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 360 C 780 360, 780 382, 830 382" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 360 C 780 360, 780 426, 830 426" marker-end="url(#arrow)"/>
+            <!-- História 3 → 4 Tasks -->
+            <path class="flow-edge" d="M 730 580 C 780 580, 780 514, 830 514" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 580 C 780 580, 780 558, 830 558" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 580 C 780 580, 780 602, 830 602" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 580 C 780 580, 780 646, 830 646" marker-end="url(#arrow)"/>
+            <!-- História 4 → 4 Tasks -->
+            <path class="flow-edge" d="M 730 800 C 780 800, 780 734, 830 734" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 800 C 780 800, 780 778, 830 778" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 800 C 780 800, 780 822, 830 822" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 730 800 C 780 800, 780 866, 830 866" marker-end="url(#arrow)"/>
+
+            <!-- 16 Tasks convergem no Backend Dev -->
+            <path class="flow-edge" d="M 960 74 C 1010 74, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 118 C 1010 118, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 162 C 1010 162, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 206 C 1010 206, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 294 C 1010 294, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 338 C 1010 338, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 382 C 1010 382, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 426 C 1010 426, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 514 C 1010 514, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 558 C 1010 558, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 602 C 1010 602, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 646 C 1010 646, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 734 C 1010 734, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 778 C 1010 778, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 822 C 1010 822, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 960 866 C 1010 866, 1010 460, 1060 460" marker-end="url(#arrow)"/>
+
+            <!-- Spine: Backend Dev → QA → Code Reviewer → Deployer -->
+            <path class="flow-edge" d="M 1220 460 C 1270 460, 1270 460, 1320 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 1480 460 C 1530 460, 1530 460, 1580 460" marker-end="url(#arrow)"/>
+            <path class="flow-edge" d="M 1740 460 C 1790 460, 1790 460, 1840 460" marker-end="url(#arrow)"/>
+
+            <!-- Loop back edges (reprovação) -->
+            <path class="flow-edge" d="M 1400 500 C 1400 580, 1130 580, 1130 500" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+            <path class="flow-edge" d="M 1660 500 C 1660 650, 1150 650, 1150 500" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-muted)"/>
+              </marker>
+            </defs>
+
+            <!-- Edge labels -->
+            <text class="flow-edge-label" x="215" y="450">plano</text>
+            <text class="flow-edge-label" x="470" y="90">épico → 4 histórias</text>
+            <text class="flow-edge-label" x="740" y="55">cada história → 4 tasks</text>
+            <text class="flow-edge-label" x="990" y="40">16 tasks convergem</text>
+            <text class="flow-edge-label" x="1245" y="450">code_pronto</text>
+            <text class="flow-edge-label" x="1500" y="450">testes_ok</text>
+            <text class="flow-edge-label" x="1765" y="450">aprovado</text>
+            <text class="flow-edge-label" x="1190" y="570">reprovado (testes) → loop</text>
+            <text class="flow-edge-label" x="1300" y="640">reprovado (review) → loop</text>
+          </svg>
+
+          <!-- Nodes -->
+          <div class="flow-node" style="left:40px; top:420px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></div>
+              <div>
+                <div class="flow-node-name">Planner</div>
+                <div class="flow-node-type">planner</div>
+              </div>
+            </div>
+            <div class="flow-node-ports">
+              <span class="port input"></span>
+              <span class="port output"></span>
+            </div>
+          </div>
+
+          <div class="flow-node" style="left:300px; top:420px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+              <div>
+                <div class="flow-node-name">Épico</div>
+                <div class="flow-node-type">épico</div>
+              </div>
+            </div>
+            <div class="flow-node-ports">
+              <span class="port input"></span>
+              <span class="port output"></span>
+            </div>
+          </div>
+
+          <!-- 4 Histórias -->
+          <div class="flow-node mini" style="left:580px; top:116px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+              <div>
+                <div class="flow-node-name">História 1</div>
+              </div>
+            </div>
+          </div>
+          <div class="flow-node mini" style="left:580px; top:336px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+              <div>
+                <div class="flow-node-name">História 2</div>
+              </div>
+            </div>
+          </div>
+          <div class="flow-node mini" style="left:580px; top:556px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+              <div>
+                <div class="flow-node-name">História 3</div>
+              </div>
+            </div>
+          </div>
+          <div class="flow-node mini" style="left:580px; top:776px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+              <div>
+                <div class="flow-node-name">História 4</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 16 Tasks (4 por história) -->
+          <div class="flow-node tiny" style="left:830px; top:57px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 1.1</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:101px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 1.2</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:145px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 1.3</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:189px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 1.4</div></div></div>
+
+          <div class="flow-node tiny" style="left:830px; top:277px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 2.1</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:321px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 2.2</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:365px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 2.3</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:409px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 2.4</div></div></div>
+
+          <div class="flow-node tiny" style="left:830px; top:497px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 3.1</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:541px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 3.2</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:585px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 3.3</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:629px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 3.4</div></div></div>
+
+          <div class="flow-node tiny" style="left:830px; top:717px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 4.1</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:761px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 4.2</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:805px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 4.3</div></div></div>
+          <div class="flow-node tiny" style="left:830px; top:849px;"><div class="flow-node-header"><div class="flow-node-icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="flow-node-name">Task 4.4</div></div></div>
+
+          <div class="flow-node" style="left:1060px; top:420px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+              <div>
+                <div class="flow-node-name">Backend Dev</div>
+                <div class="flow-node-type">developer</div>
+              </div>
+            </div>
+            <div class="flow-node-ports">
+              <span class="port input"></span>
+              <span class="port output"></span>
+            </div>
+          </div>
+
+          <div class="flow-node" style="left:1320px; top:420px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+              <div>
+                <div class="flow-node-name">QA</div>
+                <div class="flow-node-type">qa</div>
+              </div>
+            </div>
+            <div class="flow-node-ports">
+              <span class="port input"></span>
+              <span class="port output"></span>
+            </div>
+          </div>
+
+          <div class="flow-node" style="left:1580px; top:420px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+              <div>
+                <div class="flow-node-name">Code Reviewer</div>
+                <div class="flow-node-type">reviewer</div>
+              </div>
+            </div>
+            <div class="flow-node-ports">
+              <span class="port input"></span>
+              <span class="port output"></span>
+            </div>
+          </div>
+
+          <div class="flow-node" style="left:1840px; top:420px;">
+            <div class="flow-node-header">
+              <div class="flow-node-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg></div>
+              <div>
+                <div class="flow-node-name">Deployer</div>
+                <div class="flow-node-type">deployer</div>
+              </div>
+            </div>
+            <div class="flow-node-ports">
+              <span class="port input"></span>
+              <span class="port output"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Detail / Chat View -->
+    <div class="view" id="view-agent-detail">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Backend Developer</h1>
+          <p class="page-subtitle">Construído via chat · Atualizado há 2h</p>
+        </div>
+        <button class="btn">Salvar</button>
+      </div>
+
+      <div class="agent-detail">
+        <!-- Chat -->
+        <div class="chat-panel">
+          <div class="chat-header">
+            <div class="chat-header-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg></div>
+            <div>
+              <div class="chat-header-text">Construção do Agente</div>
+              <div class="chat-header-sub">IA assistente</div>
+            </div>
+          </div>
+          <div class="chat-messages">
+            <div class="msg msg-user">Quero um agente que desenvolve código Python para APIs REST, com foco em segurança e testes.</div>
+            <div class="msg msg-ai">
+              Entendi. Vou te ajudar a montar esse agente. Com base no que você descreveu, sugiro:
+              <div class="suggestion">
+                <div class="suggestion-title">Configuração sugerida</div>
+                <ul>
+                  <li><strong>Skills:</strong> code-gen, test-runner, security-scanner</li>
+                  <li><strong>Knowledge:</strong> docs do projeto, padrões de API REST</li>
+                  <li><strong>Integração:</strong> GitHub (PRs, issues)</li>
+                  <li><strong>Contrato:</strong> recebe <code>plano_aprovado</code>, produz <code>code_pronto</code> ou <code>code_com_erro</code></li>
+                  <li><strong>Ações:</strong> seguir, devolver (com feedback), finalizar</li>
+                </ul>
+              </div>
+              Quer ajustar algo antes de salvar?
+            </div>
+            <div class="msg msg-user">Pode adicionar integração com GitLab também. E o modelo, usa o GPT-4o.</div>
+            <div class="msg msg-ai">
+              Feito. Adicionei GitLab como integração secundária e configurei o modelo para GPT-4o.
+              <div class="suggestion">
+                <div class="suggestion-title">Resumo final</div>
+                <ul>
+                  <li><strong>Modelo:</strong> GPT-4o</li>
+                  <li><strong>Integrações:</strong> GitHub, GitLab</li>
+                  <li><strong>Skills:</strong> code-gen, test-runner, security-scanner</li>
+                  <li><strong>Max iterações:</strong> 5 (anti-loop)</li>
+                </ul>
+              </div>
+              Posso salvar?
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <input class="chat-input" placeholder="Descreva o que o agente deve fazer..." />
+            <button class="chat-send">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Config Panel -->
+        <div class="config-panel">
+          <span class="config-panel-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> gerado via chat</span>
+          <div class="config-section">
+            <div class="config-section-title">Identidade</div>
+            <div class="config-item">
+              <span class="config-item-label">Nome</span>
+              <span class="config-item-value">Backend Developer</span>
+            </div>
+            <div class="config-item">
+              <span class="config-item-label">Tipo</span>
+              <span class="config-item-value">Developer</span>
+            </div>
+            <div class="config-item">
+              <span class="config-item-label">Modelo</span>
+              <span class="config-item-value">GPT-4o</span>
+            </div>
+          </div>
+
+          <div class="config-section">
+            <div class="config-section-title">Integrações (Mochila)</div>
+            <div class="config-chips">
+              <span class="config-chip"><span class="dot green"></span>GitHub</span>
+              <span class="config-chip"><span class="dot blue"></span>GitLab</span>
+              <span class="config-chip"><span class="dot orange"></span>Azure DevOps</span>
+            </div>
+          </div>
+
+          <div class="config-section">
+            <div class="config-section-title">Skills</div>
+            <div class="config-chips">
+              <span class="config-chip">code-gen</span>
+              <span class="config-chip">test-runner</span>
+              <span class="config-chip">security-scanner</span>
+            </div>
+          </div>
+
+          <div class="config-section">
+            <div class="config-section-title">Contrato de Fluxo</div>
+            <div class="config-item">
+              <span class="config-item-label">Entrada</span>
+              <span class="config-item-value">plano_aprovado</span>
+            </div>
+            <div class="config-item">
+              <span class="config-item-label">Saída</span>
+              <span class="config-item-value">code_pronto, code_com_erro</span>
+            </div>
+            <div class="config-item">
+              <span class="config-item-label">Ações</span>
+              <span class="config-item-value">seguir · devolver · finalizar</span>
+            </div>
+          </div>
+
+          <div class="config-section">
+            <div class="config-section-title">Execução</div>
+            <div class="config-item">
+              <span class="config-item-label">Max iterações</span>
+              <span class="config-item-value">5</span>
+            </div>
+            <div class="config-item">
+              <span class="config-item-label">Timeout</span>
+              <span class="config-item-value">300s</span>
+            </div>
+            <div class="config-item">
+              <span class="config-item-label">Aprovação</span>
+              <span class="config-item-value">In-app + Email</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Approvals View -->
+    <div class="view" id="view-approvals">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Aprovações Pendentes</h1>
+          <p class="page-subtitle">3 agentes aguardando sua decisão</p>
+        </div>
+      </div>
+
+      <div class="approvals-list">
+        <div class="approval-card urgent">
+          <div class="approval-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <div class="approval-info">
+            <h4>Code Reviewer → Backend Dev</h4>
+            <p>Review reprovada: 3 vulnerabilidades de segurança no endpoint /api/auth. Agente devolveu para correção.</p>
+            <textarea class="approval-textarea" placeholder="Argumente ou revise: descreva o que precisa mudar antes de aprovar..." style="display:none"></textarea>
+          </div>
+          <div class="approval-actions">
+            <button class="btn-sm approve">Aprovar</button>
+            <button class="btn-sm" onclick="toggleArg(this)">Argumentar</button>
+            <button class="btn-sm reject">Rejeitar</button>
+          </div>
+        </div>
+
+        <div class="approval-card">
+          <div class="approval-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></div>
+          <div class="approval-info">
+            <h4>Planner → Backend Dev</h4>
+            <p>Plano pronto: 4 endpoints REST, 2 models, 1 migration. Aguardando aprovação para iniciar desenvolvimento.</p>
+            <textarea class="approval-textarea" placeholder="Argumente ou revise: ajuste o plano antes de aprovar..." style="display:none"></textarea>
+          </div>
+          <div class="approval-actions">
+            <button class="btn-sm approve">Aprovar</button>
+            <button class="btn-sm" onclick="toggleArg(this)">Argumentar</button>
+            <button class="btn-sm reject">Rejeitar</button>
+          </div>
+        </div>
+
+        <div class="approval-card">
+          <div class="approval-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg></div>
+          <div class="approval-info">
+            <h4>Deployer → Produção</h4>
+            <p>Build #47 pronto. Testes: 142/142 passando. Cobertura: 94%. Aguardando go-live.</p>
+            <textarea class="approval-textarea" placeholder="Argumente ou revise: condições para o deploy..." style="display:none"></textarea>
+          </div>
+          <div class="approval-actions">
+            <button class="btn-sm approve">Deploy</button>
+            <button class="btn-sm" onclick="toggleArg(this)">Argumentar</button>
+            <button class="btn-sm reject">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Skills View ═══ -->
+    <div class="view" id="view-skills">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Biblioteca de Skills</h1>
+          <p class="page-subtitle">6 skills disponíveis · 5 em uso</p>
+        </div>
+        <button class="btn btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nova Skill
+        </button>
+      </div>
+
+      <div class="skills-grid">
+        <div class="skill-card">
+          <div class="skill-header">
+            <div class="skill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+            <div>
+              <div class="skill-name">code-gen</div>
+              <div class="skill-category">Code</div>
+            </div>
+          </div>
+          <div class="skill-desc">Gera código a partir de especificação. Suporta Python, TypeScript e Go.</div>
+          <div class="skill-meta">
+            <span>tool</span>
+            <span class="used-by"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> 2 agentes</span>
+          </div>
+        </div>
+
+        <div class="skill-card">
+          <div class="skill-header">
+            <div class="skill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+            <div>
+              <div class="skill-name">test-runner</div>
+              <div class="skill-category">Code</div>
+            </div>
+          </div>
+          <div class="skill-desc">Executa suíte de testes e reporta cobertura. Integra com pytest e jest.</div>
+          <div class="skill-meta">
+            <span>function</span>
+            <span class="used-by"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> 1 agente</span>
+          </div>
+        </div>
+
+        <div class="skill-card">
+          <div class="skill-header">
+            <div class="skill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <div>
+              <div class="skill-name">security-scanner</div>
+              <div class="skill-category">Analysis</div>
+            </div>
+          </div>
+          <div class="skill-desc">Varre código em busca de vulnerabilidades OWASP Top 10 e dependências com CVE.</div>
+          <div class="skill-meta">
+            <span>tool</span>
+            <span class="used-by"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> 1 agente</span>
+          </div>
+        </div>
+
+        <div class="skill-card">
+          <div class="skill-header">
+            <div class="skill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+            <div>
+              <div class="skill-name">doc-writer</div>
+              <div class="skill-category">Docs</div>
+            </div>
+          </div>
+          <div class="skill-desc">Gera documentação técnica a partir de código e comentários. Saída em Markdown.</div>
+          <div class="skill-meta">
+            <span>prompt</span>
+            <span class="used-by"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> 1 agente</span>
+          </div>
+        </div>
+
+        <div class="skill-card">
+          <div class="skill-header">
+            <div class="skill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+            <div>
+              <div class="skill-name">api-client</div>
+              <div class="skill-category">Infra</div>
+            </div>
+          </div>
+          <div class="skill-desc">Chama APIs REST externas com autenticação. Suporta OAuth2 e API keys.</div>
+          <div class="skill-meta">
+            <span>tool</span>
+            <span class="used-by"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> 0 agentes</span>
+          </div>
+        </div>
+
+        <div class="skill-card">
+          <div class="skill-header">
+            <div class="skill-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg></div>
+            <div>
+              <div class="skill-name">deploy-runner</div>
+              <div class="skill-category">Infra</div>
+            </div>
+          </div>
+          <div class="skill-desc">Executa deploy em Azure, AWS ou Kubernetes. Suporta rollback automático.</div>
+          <div class="skill-meta">
+            <span>function</span>
+            <span class="used-by"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> 1 agente</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Knowledge View ═══ -->
+    <div class="view" id="view-knowledge">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Bases de Conhecimento</h1>
+          <p class="page-subtitle">4 bases · 128 documentos indexados</p>
+        </div>
+        <button class="btn btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Upload
+        </button>
+      </div>
+
+      <div class="knowledge-layout">
+        <div class="knowledge-sidebar">
+          <div class="knowledge-sidebar-title">Bases</div>
+          <div class="knowledge-item active" data-kb="api" onclick="selectKB(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Projeto API REST
+          </div>
+          <div class="knowledge-item" data-kb="code" onclick="selectKB(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Padrões de Código
+          </div>
+          <div class="knowledge-item" data-kb="azure" onclick="selectKB(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+            Docs Azure
+          </div>
+          <div class="knowledge-item" data-kb="security" onclick="selectKB(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Security Guidelines
+          </div>
+        </div>
+
+        <div class="knowledge-content">
+          <div class="knowledge-doc-header">
+            <div>
+              <div class="knowledge-doc-title" id="kb-title">Projeto API REST</div>
+              <div class="knowledge-doc-meta" id="kb-meta">32 documentos · Atualizado há 2h · pgvector</div>
+            </div>
+            <button class="btn">Gerenciar</button>
+          </div>
+          <div class="knowledge-doc-body" id="kb-body">
+            <h3>Visão Geral</h3>
+            <p>Base de conhecimento principal do projeto. Contém especificações de API, modelos de dados e decisões de arquitetura. Usada pelos agentes <code>Planner</code> e <code>Backend Dev</code>.</p>
+            <h3>Documentos Recentes</h3>
+            <p><code>api-spec-v2.md</code> · Especificação dos 4 endpoints REST com schemas de request/response.</p>
+            <p><code>data-model.md</code> · Modelos SQLAlchemy: User, Project, Task, Pipeline.</p>
+            <p><code>adr-001-langgraph.md</code> · Decisão de arquitetura: por que LangGraph e não CrewAI.</p>
+            <h3>Escopo</h3>
+            <p>Disponível para: <strong>Planner</strong>, <strong>Backend Dev</strong>, <strong>Code Reviewer</strong>. Escopo: por pipeline.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const SUN = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  const MOON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+
+  function showView(name) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const view = document.getElementById('view-' + name);
+    if (view) view.classList.add('active');
+
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const nav = document.querySelector('.nav-item[data-view="' + name + '"]');
+    if (nav) nav.classList.add('active');
+  }
+
+  function setThemeIcon(theme) {
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.innerHTML = theme === 'dark' ? SUN : MOON;
+  }
+
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    localStorage.setItem('agent-portal-theme', next);
+    setThemeIcon(next);
+  }
+
+  function toggleArg(btn) {
+    const card = btn.closest('.approval-card');
+    const ta = card.querySelector('.approval-textarea');
+    const open = ta.style.display !== 'none';
+    ta.style.display = open ? 'none' : 'block';
+    card.classList.toggle('expanded', !open);
+    btn.textContent = open ? 'Argumentar' : 'Cancelar';
+    if (!open) ta.focus();
+  }
+
+  const KB_DATA = {
+    api: {
+      title: 'Projeto API REST',
+      meta: '32 documentos · Atualizado há 2h · pgvector',
+      body: '<h3>Visão Geral</h3><p>Base de conhecimento principal do projeto. Contém especificações de API, modelos de dados e decisões de arquitetura. Usada pelos agentes <code>Planner</code> e <code>Backend Dev</code>.</p><h3>Documentos Recentes</h3><p><code>api-spec-v2.md</code> · Especificação dos 4 endpoints REST com schemas de request/response.</p><p><code>data-model.md</code> · Modelos SQLAlchemy: User, Project, Task, Pipeline.</p><p><code>adr-001-langgraph.md</code> · Decisão de arquitetura: por que LangGraph e não CrewAI.</p><h3>Escopo</h3><p>Disponível para: <strong>Planner</strong>, <strong>Backend Dev</strong>, <strong>Code Reviewer</strong>. Escopo: por pipeline.</p>'
+    },
+    code: {
+      title: 'Padrões de Código',
+      meta: '18 documentos · Atualizado há 1d · pgvector',
+      body: '<h3>Visão Geral</h3><p>Convenções de estilo, nomenclatura e estrutura de código do time. Usada pelos agentes <code>Backend Dev</code> e <code>Code Reviewer</code> para manter consistência.</p><h3>Documentos Recentes</h3><p><code>python-style.md</code> · PEP 8 + convenções internas: tipagem, docstrings, imports.</p><p><code>naming.md</code> · Padrões de nomenclatura para funções, classes e variáveis.</p><p><code>error-handling.md</code> · Estratégia de exceptions e logging.</p><h3>Escopo</h3><p>Disponível para: <strong>Backend Dev</strong>, <strong>Code Reviewer</strong>. Escopo: global.</p>'
+    },
+    azure: {
+      title: 'Docs Azure',
+      meta: '45 documentos · Atualizado há 3d · pgvector',
+      body: '<h3>Visão Geral</h3><p>Documentação de infraestrutura e deploy na Azure. Usada pelo agente <code>Deployer</code> para provisionar recursos e executar releases.</p><h3>Documentos Recentes</h3><p><code>iac-bicep.md</code> · Templates Bicep para App Service, Key Vault e Postgres.</p><p><code>ci-cd.md</code> · Pipeline de CI/CD no Azure DevOps com gates de qualidade.</p><p><code>secrets.md</code> · Gestão de segredos via Key Vault.</p><h3>Escopo</h3><p>Disponível para: <strong>Deployer</strong>. Escopo: por pipeline.</p>'
+    },
+    security: {
+      title: 'Security Guidelines',
+      meta: '12 documentos · Atualizado há 5d · pgvector',
+      body: '<h3>Visão Geral</h3><p>Regras de segurança aplicadas em code review e scan. Usada pelo agente <code>Code Reviewer</code> com a skill <code>security-scanner</code>.</p><h3>Documentos Recentes</h3><p><code>owasp-top10.md</code> · Checklist OWASP Top 10 com exemplos de mitigação.</p><p><code>auth.md</code> · Padrões de autenticação e autorização (JWT, OAuth2).</p><p><code>secrets-policy.md</code> · Proibições e boas práticas para credenciais.</p><h3>Escopo</h3><p>Disponível para: <strong>Code Reviewer</strong>. Escopo: global.</p>'
+    }
+  };
+
+  function selectKB(el) {
+    document.querySelectorAll('.knowledge-item').forEach(i => i.classList.remove('active'));
+    el.classList.add('active');
+    const kb = KB_DATA[el.dataset.kb];
+    if (kb) {
+      document.getElementById('kb-title').textContent = kb.title;
+      document.getElementById('kb-meta').textContent = kb.meta;
+      document.getElementById('kb-body').innerHTML = kb.body;
+    }
+  }
+
+  let flowZoom = 1;
+  function toggleZoom() {
+    const canvas = document.querySelector('.flow-canvas');
+    if (!canvas) return;
+    flowZoom = flowZoom >= 1.3 ? 1 : Math.round((flowZoom + 0.2) * 10) / 10;
+    canvas.style.zoom = flowZoom;
+  }
+
+  // Restore theme on load
+  (function() {
+    const saved = localStorage.getItem('agent-portal-theme');
+    if (saved) {
+      document.documentElement.setAttribute('data-theme', saved);
+      setThemeIcon(saved);
+    }
+  })();
+</script>
+</body>
+</html>
