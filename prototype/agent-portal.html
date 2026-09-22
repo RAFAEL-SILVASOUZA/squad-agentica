@@ -1555,6 +1555,48 @@
     justify-content: flex-end;
   }
 
+  /* ─── Toast ─── */
+  .toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 9999;
+    pointer-events: none;
+  }
+
+  .toast {
+    padding: 12px 18px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    font-size: 13px;
+    color: var(--text);
+    max-width: 360px;
+    animation: toast-in 0.3s ease;
+    pointer-events: auto;
+  }
+
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error { border-left: 3px solid var(--error); }
+  .toast.info { border-left: 3px solid var(--info); }
+  .toast.warning { border-left: 3px solid var(--warning); }
+
+  .toast.removing { animation: toast-out 0.3s ease forwards; }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(30px); }
+  }
+
   /* ─── Scrollbar ─── */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -1629,20 +1671,21 @@
   <main class="main">
 
     <!-- Dashboard View -->
+    <!-- Tipos são livres (spec §4.1). 'Épico', 'História', 'Task' são tipos de trabalho, não templates de agente. -->
     <div class="view active" id="view-dashboard">
       <div class="page-header">
         <div>
           <h1 class="page-title">Agentes</h1>
           <p class="page-subtitle">9 agentes ativos · 2 pipelines em execução</p>
         </div>
-        <button class="btn btn-primary" onclick="showView('agent-detail')">
+        <button class="btn btn-primary" onclick="openNewAgent()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Novo Agente
         </button>
       </div>
 
       <div class="agents-grid">
-        <div class="agent-card" style="--card-accent: var(--accent)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--accent)" onclick="openAgentDetail('Planner')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div>
           <div class="agent-name">Planner</div>
           <div class="agent-type">Planner</div>
@@ -1656,7 +1699,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--accent)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--accent)" onclick="openAgentDetail('Épico')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
           <div class="agent-name">Épico</div>
           <div class="agent-type">Épico</div>
@@ -1670,7 +1713,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--info)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--info)" onclick="openAgentDetail('História')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
           <div class="agent-name">História</div>
           <div class="agent-type">História</div>
@@ -1684,7 +1727,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--success)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--success)" onclick="openAgentDetail('Task')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
           <div class="agent-name">Task</div>
           <div class="agent-type">Task</div>
@@ -1698,7 +1741,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--info)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--info)" onclick="openAgentDetail('Backend Dev')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
           <div class="agent-name">Backend Dev</div>
           <div class="agent-type">Developer</div>
@@ -1712,7 +1755,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--accent)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--accent)" onclick="openAgentDetail('Frontend Dev')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
           <div class="agent-name">Frontend Dev</div>
           <div class="agent-type">Developer</div>
@@ -1726,7 +1769,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--error)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--error)" onclick="openAgentDetail('QA')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
           <div class="agent-name">QA</div>
           <div class="agent-type">QA</div>
@@ -1740,7 +1783,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--success)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--success)" onclick="openAgentDetail('Code Reviewer')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
           <div class="agent-name">Code Reviewer</div>
           <div class="agent-type">Reviewer</div>
@@ -1754,7 +1797,7 @@
           </div>
         </div>
 
-        <div class="agent-card" style="--card-accent: var(--warning)" onclick="showView('agent-detail')">
+        <div class="agent-card" style="--card-accent: var(--warning)" onclick="openAgentDetail('Deployer')">
           <div class="agent-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></div>
           <div class="agent-name">Deployer</div>
           <div class="agent-type">Deployer</div>
@@ -1809,16 +1852,16 @@
           <p class="page-subtitle">Exemplo · o grafo é livre, sem hierarquia fixa · 44 nós · 8 esteiras paralelas (task → dev → qa → review → deploy, sem convergir) · 60 conexões · 16 loops locais de reprovação</p>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn">Pausar</button>
-          <button class="btn btn-primary">Executar</button>
+          <button class="btn" onclick="showToast('Pipeline pausada.', 'warning')">Pausar</button>
+          <button class="btn btn-primary" onclick="showToast('Pipeline iniciada.', 'success'); showView('monitor')">Executar</button>
         </div>
       </div>
 
       <div class="flow-container">
         <div class="flow-toolbar">
           <div class="flow-toolbar-actions">
-            <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Agente</button>
-            <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 1 0-2.83-4"/><path d="M6 8a3 3 0 1 1 2.83-4"/><line x1="8" y1="8" x2="16" y2="8"/></svg> Conectar</button>
+            <button class="btn" onclick="showToast('Use drag-and-drop para adicionar nós.', 'info')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Agente</button>
+            <button class="btn" onclick="showToast('Use drag-and-drop para conectar nós.', 'info')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 1 0-2.83-4"/><path d="M6 8a3 3 0 1 1 2.83-4"/><line x1="8" y1="8" x2="16" y2="8"/></svg> Conectar</button>
             <button class="btn" onclick="zoomFlow(-0.15)" title="Zoom out"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
             <span class="flow-zoom-level" id="flow-zoom-level">100%</span>
             <button class="btn" onclick="zoomFlow(0.15)" title="Zoom in"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
@@ -1855,7 +1898,7 @@
           <h1 class="page-title">Backend Developer</h1>
           <p class="page-subtitle">Construído via chat · Atualizado há 2h</p>
         </div>
-        <button class="btn">Salvar</button>
+        <button class="btn" onclick="showToast('Agente salvo com sucesso.', 'success'); showView('dashboard')">Salvar</button>
       </div>
 
       <div class="agent-detail">
@@ -1900,8 +1943,8 @@
             </div>
           </div>
           <div class="chat-input-area">
-            <input class="chat-input" placeholder="Descreva o que o agente deve fazer..." />
-            <button class="chat-send">
+            <input class="chat-input" id="chat-input" placeholder="Descreva o que o agente deve fazer..." onkeydown="if(event.key==='Enter')sendChatMessage()" />
+            <button class="chat-send" onclick="sendChatMessage()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
           </div>
@@ -2031,9 +2074,9 @@
             <textarea class="approval-textarea" placeholder="Argumente ou revise: descreva o que precisa mudar antes de aprovar..." style="display:none"></textarea>
           </div>
           <div class="approval-actions">
-            <button class="btn-sm approve">Aprovar</button>
+            <button class="btn-sm approve" onclick="handleApproval(this, 'approve')">Aprovar</button>
             <button class="btn-sm" onclick="toggleArg(this)">Argumentar</button>
-            <button class="btn-sm reject">Rejeitar</button>
+            <button class="btn-sm reject" onclick="handleApproval(this, 'reject')">Rejeitar</button>
           </div>
         </div>
 
@@ -2045,9 +2088,9 @@
             <textarea class="approval-textarea" placeholder="Argumente ou revise: ajuste o plano antes de aprovar..." style="display:none"></textarea>
           </div>
           <div class="approval-actions">
-            <button class="btn-sm approve">Aprovar</button>
+            <button class="btn-sm approve" onclick="handleApproval(this, 'approve')">Aprovar</button>
             <button class="btn-sm" onclick="toggleArg(this)">Argumentar</button>
-            <button class="btn-sm reject">Rejeitar</button>
+            <button class="btn-sm reject" onclick="handleApproval(this, 'reject')">Rejeitar</button>
           </div>
         </div>
 
@@ -2059,9 +2102,9 @@
             <textarea class="approval-textarea" placeholder="Argumente ou revise: condições para o deploy..." style="display:none"></textarea>
           </div>
           <div class="approval-actions">
-            <button class="btn-sm approve">Deploy</button>
+            <button class="btn-sm approve" onclick="handleApproval(this, 'deploy')">Deploy</button>
             <button class="btn-sm" onclick="toggleArg(this)">Argumentar</button>
-            <button class="btn-sm reject">Cancelar</button>
+            <button class="btn-sm reject" onclick="handleApproval(this, 'cancel')">Cancelar</button>
           </div>
         </div>
       </div>
@@ -2075,14 +2118,14 @@
           <p class="page-subtitle">Execução em andamento · iniciado há 12min · WebSocket conectado</p>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn">Pausar</button>
+          <button class="btn" onclick="showToast('Pipeline pausada.', 'warning')">Pausar</button>
           <button class="btn btn-primary" onclick="showView('flow')">Ver pipeline</button>
         </div>
       </div>
 
       <div class="monitor-layout">
         <div class="monitor-panel">
-          <div class="monitor-panel-title">Nós (86)</div>
+          <div class="monitor-panel-title">Nós (44)</div>
           <div class="monitor-nodes-list">
             <div class="monitor-node-row"><span class="status-dot running"></span><span class="name">Backend 1.1</span><span class="time">32s</span></div>
             <div class="monitor-node-row"><span class="status-dot running"></span><span class="name">Frontend 1.2</span><span class="time">18s</span></div>
@@ -2114,15 +2157,15 @@
             <div class="monitor-checkpoints-list">
               <div class="checkpoint-row">
                 <span>qa-2.2 <span class="meta">· failed · há 40s</span></span>
-                <button class="btn-sm">Retomar</button>
+                <button class="btn-sm" onclick="showToast('Pipeline retomada do checkpoint qa-2.2.', 'success')">Retomar</button>
               </div>
               <div class="checkpoint-row">
                 <span>review-1.3 <span class="meta">· interrupted · há 1min</span></span>
-                <button class="btn-sm">Retomar</button>
+                <button class="btn-sm" onclick="showToast('Pipeline retomada do checkpoint review-1.3.', 'success')">Retomar</button>
               </div>
               <div class="checkpoint-row">
                 <span>dev-1.1 <span class="meta">· completed · há 2min</span></span>
-                <button class="btn-sm">Retomar</button>
+                <button class="btn-sm" onclick="showToast('Checkpoint dev-1.1: execução concluída com sucesso.', 'info')">Ver estado</button>
               </div>
             </div>
           </div>
@@ -2137,7 +2180,7 @@
           <h1 class="page-title">Tools Custom</h1>
           <p class="page-subtitle">2 tools · scripts Python com contrato de entrada/saída</p>
         </div>
-        <button class="btn btn-primary">
+        <button class="btn btn-primary" onclick="showToast('Criação de tool em desenvolvimento.', 'info')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Nova Tool
         </button>
@@ -2193,8 +2236,8 @@
         </table>
 
         <div style="display:flex; gap:8px; margin-top:14px;">
-          <button class="btn">Testar</button>
-          <button class="btn btn-primary">Deploy</button>
+          <button class="btn" onclick="showToast('Teste concluído: output válido.', 'success')">Testar</button>
+          <button class="btn btn-primary" onclick="deployTool(this)">Deploy</button>
         </div>
       </div>
     </div>
@@ -2206,7 +2249,7 @@
           <h1 class="page-title">Servidores MCP</h1>
           <p class="page-subtitle">2 servidores · Model Context Protocol · tools descobertas automaticamente</p>
         </div>
-        <button class="btn btn-primary">
+        <button class="btn btn-primary" onclick="showToast('Registro de servidor MCP em desenvolvimento.', 'info')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Novo Servidor
         </button>
@@ -2267,8 +2310,8 @@
         </div>
 
         <div style="display:flex; gap:8px; margin-top:14px;">
-          <button class="btn">Testar conexão</button>
-          <button class="btn btn-primary">Salvar</button>
+          <button class="btn" onclick="testMCPConnection(this)">Testar conexão</button>
+          <button class="btn btn-primary" onclick="showToast('Servidor MCP salvo.', 'success')">Salvar</button>
         </div>
       </div>
     </div>
@@ -2280,7 +2323,7 @@
           <h1 class="page-title">Biblioteca de Skills</h1>
           <p class="page-subtitle">6 skills disponíveis · 5 em uso</p>
         </div>
-        <button class="btn btn-primary">
+        <button class="btn btn-primary" onclick="showToast('Criação de skill em desenvolvimento.', 'info')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Nova Skill
         </button>
@@ -2386,10 +2429,11 @@
           <h1 class="page-title">Bases de Conhecimento</h1>
           <p class="page-subtitle">4 bases locais · 128 documentos indexados · 1 fonte externa (Rivvn)</p>
         </div>
-        <button class="btn btn-primary">
+        <button class="btn btn-primary" onclick="document.getElementById('kb-file-input').click()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Upload
         </button>
+        <input type="file" id="kb-file-input" style="display:none" onchange="handleKBUpload(this)" />
       </div>
 
       <div class="rivvn-bar">
@@ -2398,7 +2442,7 @@
           <span class="rivvn-logo-badge"><img src="../logo/rivvn.svg" alt="Rivvn" /></span>
           <span>conectado via OAuth · docs@grupo-supero.rivvn.ai <span class="tool-status deployed" style="margin-left:6px">contrato ativo</span></span>
         </div>
-        <button class="btn-sm">Desconectar</button>
+        <button class="btn-sm" onclick="handleRivvnDisconnect(this)">Desconectar</button>
       </div>
 
       <div class="knowledge-layout">
@@ -2441,7 +2485,7 @@
                 <option>Por agente</option>
                 <option selected>Por pipeline</option>
               </select>
-              <button class="btn">Gerenciar</button>
+              <button class="btn" onclick="showToast('Gerenciamento de documentos em desenvolvimento.', 'info')">Gerenciar</button>
             </div>
           </div>
           <div class="knowledge-doc-body" id="kb-body">
@@ -2847,6 +2891,132 @@
 
   initEdgeClicks();
 
+  // ─── Agent Detail Handlers ───
+  function openNewAgent() {
+    showView('agent-detail');
+    const title = document.querySelector('#view-agent-detail .page-title');
+    const subtitle = document.querySelector('#view-agent-detail .page-subtitle');
+    if (title) title.textContent = 'Criar novo agente';
+    if (subtitle) subtitle.textContent = 'Descreva o que o agente deve fazer';
+    const messages = document.querySelector('.chat-messages');
+    if (messages) {
+      messages.innerHTML = '<div class="msg msg-ai">Olá! Descreva o que você quer que o agente faça e eu monto a configuração para você.</div>';
+    }
+  }
+
+  function openAgentDetail(name) {
+    showView('agent-detail');
+    const title = document.querySelector('#view-agent-detail .page-title');
+    const subtitle = document.querySelector('#view-agent-detail .page-subtitle');
+    if (title) title.textContent = name;
+    if (subtitle) subtitle.textContent = 'Construído via chat · Atualizado há 2h';
+  }
+
+  // ─── Approval Handlers ───
+  function handleApproval(btn, action) {
+    const card = btn.closest('.approval-card');
+    if (!card) return;
+    const badge = document.querySelector('.nav-item[data-view="approvals"] .nav-badge');
+    const count = badge ? parseInt(badge.textContent, 10) : 0;
+
+    if (action === 'approve') {
+      showToast('Aprovação confirmada. Pipeline retomada.', 'success');
+    } else if (action === 'reject') {
+      showToast('Aprovação rejeitada. Pipeline cancelada neste ramo.', 'error');
+    } else if (action === 'deploy') {
+      showToast('Deploy iniciado...', 'info');
+      setTimeout(function () {
+        showToast('Deploy concluído.', 'success');
+      }, 1000);
+    } else if (action === 'cancel') {
+      showToast('Aprovação cancelada.', 'warning');
+    }
+
+    card.style.transition = 'opacity 0.3s, transform 0.3s';
+    card.style.opacity = '0';
+    card.style.transform = 'translateX(20px)';
+    setTimeout(function () {
+      card.remove();
+      if (badge && count > 0) {
+        badge.textContent = String(count - 1);
+        if (count - 1 === 0) badge.style.display = 'none';
+      }
+    }, 300);
+  }
+
+  // ─── Chat Handler ───
+  function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    const messages = document.querySelector('.chat-messages');
+    if (!messages) return;
+
+    const userMsg = document.createElement('div');
+    userMsg.className = 'msg msg-user';
+    userMsg.textContent = text;
+    messages.appendChild(userMsg);
+    input.value = '';
+    messages.scrollTop = messages.scrollHeight;
+
+    setTimeout(function () {
+      const aiMsg = document.createElement('div');
+      aiMsg.className = 'msg msg-ai';
+      aiMsg.innerHTML = 'Entendi. Vou ajustar o prompt do agente com base na sua descrição. <div class="suggestion"><div class="suggestion-title">Configuração atualizada</div><ul><li><strong>Prompt:</strong> atualizado com suas instruções</li><li><strong>Modelo:</strong> GPT-4o</li></ul></div>Posso salvar?';
+      messages.appendChild(aiMsg);
+      messages.scrollTop = messages.scrollHeight;
+    }, 1000);
+  }
+
+  // ─── Tool Deploy Handler ───
+  function deployTool(btn) {
+    const card = btn.closest('.tool-editor');
+    const statusEl = document.querySelector('.tool-card .tool-status.draft');
+    if (statusEl) {
+      statusEl.textContent = 'deployed';
+      statusEl.className = 'tool-status deployed';
+    }
+    showToast('Tool deployada.', 'success');
+  }
+
+  // ─── MCP Test Connection Handler ───
+  function testMCPConnection(btn) {
+    const original = btn.textContent;
+    btn.textContent = 'Testando...';
+    btn.disabled = true;
+    setTimeout(function () {
+      btn.textContent = original;
+      btn.disabled = false;
+      showToast('Conexão estabelecida. 5 tools descobertas.', 'success');
+    }, 1000);
+  }
+
+  // ─── Knowledge Upload Handler ───
+  function handleKBUpload(input) {
+    if (input.files && input.files.length > 0) {
+      showToast('Documento enviado para processamento.', 'success');
+    }
+    input.value = '';
+  }
+
+  // ─── Rivvn Disconnect Handler ───
+  function handleRivvnDisconnect(btn) {
+    const bar = btn.closest('.rivvn-bar');
+    if (bar) {
+      const dot = bar.querySelector('.status-dot');
+      if (dot) {
+        dot.className = 'status-dot error';
+      }
+      const badge = bar.querySelector('.tool-status');
+      if (badge) {
+        badge.textContent = 'desconectado';
+        badge.className = 'tool-status draft';
+      }
+    }
+    showToast('Conexão Rivvn desconectada.', 'warning');
+  }
+
   // Restore theme on load
   (function() {
     const saved = localStorage.getItem('agent-portal-theme');
@@ -2855,6 +3025,26 @@
       setThemeIcon(saved);
     }
   })();
+</script>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+  function showToast(message, type) {
+    type = type || 'info';
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(function () {
+      toast.classList.add('removing');
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, 3000);
+  }
 </script>
 </body>
 </html>
