@@ -6,11 +6,12 @@
 
 ## Objetivo
 
-Construir a mochila completa do agente: skills (prompts reutilizáveis), ferramentas básicas (read_file, shell opt-in, etc.), tools custom (scripts Python em sandbox), e servidores MCP (stdio/sse/http). Cada camada tem registry, CRUD, e integração com o contrato do agente.
+Construir a mochila completa do agente: skills (prompts reutilizáveis), ferramentas básicas (read_file, shell opt-in, etc.), tools custom (scripts Python em sandbox), e servidores MCP (stdio/sse/http). Cada camada tem registry, CRUD, e integração com o contrato do agente, com persistência das skills (.md) no MinIO.
 
 ## Escopo (o que FAZ)
 
 - Skill Registry + Loader + skills built-in.
+- Persistência do conteúdo das skills (.md) no MinIO via S3 API. O CRUD de skills faz: (a) INSERT/UPDATE/DELETE no Postgres (metadados), (b) PUT/DELETE no MinIO (conteúdo .md).
 - Ferramentas básicas (9 built-ins).
 - Tool Registry + Sandbox + Validator + tools custom API + editor (portal).
 - MCP Registry + Client + Validator + MCP servers API + biblioteca (portal).
@@ -26,6 +27,7 @@ Construir a mochila completa do agente: skills (prompts reutilizáveis), ferrame
 
 - **D4:** contrato do agente + `Agent.run(inputs, capabilities)`. O D8 expõe `loader.load(agent_snapshot) -> AgentCapabilities`; o D6 (runtime) a consome. O D8 NÃO injeta no snapshot.
 - **D3:** models `Skill`, `CustomTool`, `MCPServer`, `MCPToolInfo` + routers stub (`/api/skills`, `/api/tools`, `/api/mcp-servers`) + tipos em `types.ts`.
+- **D1:** MinIO disponível com bucket `skills`. Credenciais via env (`MINIO_ENDPOINT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`).
 
 ## Arquivos que OWNS
 
@@ -34,6 +36,7 @@ agent-orchestrator/
   app/skills/
     registry.py                 (CRUD skills)
     loader.py                   (carrega por tipo, injeta no agente)
+    storage.py                  (MinIO S3 client: put/get/delete skill .md)
     builtins/                   (code-gen, test-runner, security-scanner, doc-writer, api-client, deploy-runner)
   app/tools/
     registry.py                 (CRUD tools custom)
@@ -56,12 +59,19 @@ agent-portal/
 ## Tarefas
 
 ### 8.1 Skill Registry
-- `skills/registry.py`: CRUD completo de skills no PostgreSQL (tipo `prompt`): `GET /api/skills` (listar), `POST /api/skills` (criar), `GET /api/skills/:id` (detalhe), `PUT /api/skills/:id` (atualizar), `DELETE /api/skills/:id` (remover).
-- Aceite: criar/listar/detalhar/atualizar/remover skill via API.
+- `skills/registry.py`: CRUD completo de skills: `GET /api/skills` (listar), `POST /api/skills` (criar), `GET /api/skills/:id` (detalhe), `PUT /api/skills/:id` (atualizar), `DELETE /api/skills/:id` (remover).
+- Cada operação de CRUD faz DUAS coisas: (a) operação no Postgres (metadados: id, name, type, ownerId), (b) operação no MinIO (conteúdo .md).
+  - **Create:** PUT `skills/{id}.md` no MinIO → INSERT no Postgres.
+  - **Update:** PUT `skills/{id}.md` no MinIO → UPDATE no Postgres.
+  - **Delete:** DELETE `skills/{id}.md` no MinIO → DELETE no Postgres.
+  - Se o MinIO falhar, rollback no Postgres (transação compensatória).
+- O arquivo .md contém o conteúdo completo do prompt da skill em markdown.
+- Aceite: criar/listar/detalhar/atualizar/remover skill via API; conteúdo .md presente no MinIO após create/update.
 
 ### 8.2 Skill Loader
 - `skills/loader.py`: carrega skills (prompts) e injeta no `systemPrompt` do `AgentCapabilities`. O loader é chamado pelo D6 (runtime), não pelo D4.
-- Aceite: skill do tipo prompt é renderizada no `systemPrompt` do `AgentCapabilities`.
+- O loader baixa o conteúdo .md do MinIO (não do Postgres). Fluxo: `loader.load(agent_snapshot)` → para cada skill na lista do agente → `storage.get_skill(skill_id)` → injeta o conteúdo .md no `systemPrompt`.
+- Aceite: skill do tipo prompt é baixada do MinIO e renderizada no `systemPrompt` do `AgentCapabilities`.
 
 ### 8.3 Skills built-in
 - `skills/builtins/`: code-gen, test-runner, security-scanner, doc-writer, api-client, deploy-runner (templates de prompt).
@@ -122,6 +132,12 @@ agent-portal/
 - Exposto como tools ao agente: `list_repos`, `list_pulls`, `list_issues`, `get_pr_diff` (contrato na seção 8.1 da spec).
 - Aceite: criar integração GitHub via API; listar repos/PRs/issues via API; agente com integração GitHub invoca tools de listagem.
 
+### 8.17 Skill Storage (`skills/storage.py`)
+- Wrapper do client S3 para MinIO. Métodos: `save_skill(skill_id: str, content_md: str)`, `get_skill(skill_id: str) -> str`, `delete_skill(skill_id: str)`.
+- Usa `MINIO_ENDPOINT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_SKILLS` do ambiente.
+- O formato .md: conteúdo do prompt da skill em markdown.
+- Aceite: `save_skill` + `get_skill` round-trip retorna o mesmo conteúdo; `delete_skill` remove o objeto.
+
 ## Critérios de aceite (DoD)
 
 - [ ] Skills built-in são carregadas e injetadas no prompt do agente
@@ -135,7 +151,7 @@ agent-portal/
 
 ## Contratos de interface (o que entrega aos outros)
 
-- **Para D6:** `loader.load(agent_snapshot) -> AgentCapabilities` é o contrato que o D6 consome. O D6 chama o loader antes de `Agent.run()` e passa o resultado como segundo argumento. O D8 expõe a função; o D6 a consome. O loader resolve: (a) skills → injeta prompts no `systemPrompt`, (b) tools → carrega CustomTools deployadas + básicas habilitadas (shell se `shellAccess=true`), (c) mcpServers → descobre tools via `tools/list`, (d) knowledge → busca contexto via RAG.
+- **Para D6:** `loader.load(agent_snapshot) -> AgentCapabilities` é o contrato que o D6 consome. O D6 chama o loader antes de `Agent.run()` e passa o resultado como segundo argumento. O D8 expõe a função; o D6 a consome. O loader resolve: (a) skills → baixa .md do MinIO e injeta prompts no `systemPrompt`, (b) tools → carrega CustomTools deployadas + básicas habilitadas (shell se `shellAccess=true`), (c) mcpServers → descobre tools via `tools/list`, (d) knowledge → busca contexto via RAG. O worker também baixa skills do MinIO em tempo de execução (o worker tem seu próprio client MinIO).
 - **Para D10:** `SkillsLibrary.tsx`, `ToolsEditor.tsx`, `MCPServersLibrary.tsx`.
 
 ## Riscos
@@ -143,3 +159,4 @@ agent-portal/
 - **Sandbox:** subprocesso isolado pode ser frágil (segurança real). Considerar Docker-in-Docker ou gVisor. Timeout agressivo.
 - **MCP stdio:** spawn de processo externo (npx) precisa de gerenciamento de ciclo de vida. Testar conexão real.
 - **Ferramentas básicas read-only na UI:** não podem ser removidas pelo usuário. Shell é opt-in (`shellAccess`), com blocklist de comandos e diretório restrito.
+- **Skills no MinIO:** o loader precisa fazer N downloads (um por skill) a cada load. Mitigação: batch download ou cache local com TTL.

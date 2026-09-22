@@ -2,7 +2,7 @@
 
 > **Data:** 2026-09-21
 > **Base:** Spec `2026-09-17-agent-portal-design.md` + protótipo `prototype/agent-portal.html`
-> **Stack:** Next.js 14 (portal) · Python 3.11 / FastAPI (orquestrador) · PostgreSQL 15 + pgvector · LangGraph · Docker Compose
+> **Stack:** Next.js 14 (portal) · Python 3.11 / FastAPI (orquestrador + workers) · PostgreSQL 15 + pgvector · LangGraph · MinIO (object storage) · NGINX (reverse proxy + LB) · Docker Compose
 
 ---
 
@@ -37,26 +37,32 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 
 ## D1 — Infraestrutura & Setup
 
-**Objetivo:** Ambiente local funcional com `docker-compose up` subindo tudo.
+**Objetivo:** Ambiente local funcional com `docker-compose up` subindo os 6 serviços.
 
 ### Entregas
 
 | # | Item | Detalhes |
 |---|------|----------|
-| 1.1 | `docker-compose.yml` | 3 serviços: `portal` (Next.js), `orchestrator` (FastAPI), `postgres` (Postgres 15 + pgvector) |
+| 1.1 | `docker-compose.yml` | 6 serviços: `nginx`, `portal` (Next.js), `orchestrator` (FastAPI), `agent-worker` (pool), `postgres` (Postgres 15 + pgvector), `minio` (object storage) |
 | 1.2 | `Dockerfile` orchestrator | Python 3.11, uv/pip, alembic, healthcheck |
 | 1.3 | `Dockerfile` portal | Node 20, Next.js build, healthcheck |
 | 1.4 | Postgres init | Script de init: criar extensão `vector`, criar DB `agent_portal` |
-| 1.5 | Configuração de ambiente | `.env.example` com todas as vars: `DATABASE_URL`, `JWT_SECRET`, `OPENAI_API_KEY`, `RIVVN_*` |
+| 1.5 | Configuração de ambiente | `.env.example` com todas as vars: `DATABASE_URL`, `JWT_SECRET`, `OPENAI_API_KEY`, `RIVVN_*`, `MINIO_*` |
 | 1.6 | Estrutura de repositórios | `agent-portal/` (Next.js) + `agent-orchestrator/` (Python) + `docker-compose.yml` na raiz |
 | 1.7 | CI básico (opcional) | Lint + type-check + test em PR |
+| 1.8 | `nginx.conf` | Reverse proxy + load balancer. Rota: `/` → portal, `/api/*` → orchestrator, `/workers/*` → agent-worker pool (round-robin). WebSocket upgrade. |
+| 1.9 | `Dockerfile` agent-worker | Python 3.11, FastAPI, MinIO S3 client, healthcheck. Stateless. |
+| 1.10 | MinIO init | Script de init: cria buckets `agents` e `skills`. Volume persistente `minio-data`. |
 
 ### Critérios de aceite
-- [ ] `docker-compose up` sobe os 3 serviços sem erro
+- [ ] `docker-compose up` sobe os 6 serviços sem erro
 - [ ] Postgres acessível com extensão `vector` ativa
 - [ ] FastAPI responde em `/health`
 - [ ] Next.js responde em `/`
 - [ ] `.env.example` documenta todas as variáveis
+- [ ] NGINX responde em :80 e roteia corretamente para portal, API e workers
+- [ ] MinIO acessível em :9001 com buckets `agents` e `skills` criados
+- [ ] Agent-worker responde em /health
 
 ---
 
@@ -107,18 +113,19 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 
 ## D4 — Agentes (CRUD + Contrato)
 
-**Objetivo:** CRUD completo de agentes com validação de contrato.
+**Objetivo:** CRUD completo de agentes com validação de contrato, com artefato (.yml) persistido no MinIO.
 
 ### Entregas
 
 | # | Item | Detalhes |
 |---|------|----------|
-| 4.1 | CRUD de agentes (API) | `POST/GET/PUT/DELETE /api/agents` com validação de contrato |
+| 4.1 | CRUD de agentes (API) | `POST/GET/PUT/DELETE /api/agents` com validação de contrato, com persistência do .yml no MinIO (S3 API) |
 | 4.2 | Validação de contrato | `inputs`, `outputs`, `actions` validados: nomes únicos, tipos válidos, actions ∈ {follow, return, finalize} |
 | 4.3 | Agent base (Python) | `agents/base.py`: classe base que recebe `AgentSnapshot`, monta prompt, chama LLM, retorna output |
 | 4.4 | Agentes built-in | `planner.py`, `developer.py`, `reviewer.py`, `deployer.py` — subclasses com prompt default |
 | 4.5 | Chat de construção (API) | `POST /api/agents/:id/chat` — streaming (SSE) com IA assistente que sugere skills, knowledge, integrações e contrato |
 | 4.6 | Chat de construção (Portal) | `AgentChat.tsx` — UI de chat com streaming, sugestões estruturadas, preview do agente |
+| 4.7 | Agent Storage | MinIO S3 client: save/get/delete do .yml do agente. Bucket `agents`. |
 
 ### Critérios de aceite
 - [ ] CRUD de agentes funciona via API
@@ -157,13 +164,13 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 
 ## D6 — Runtime & Orquestração
 
-**Objetivo:** Execução de pipelines com checkpoints.
+**Objetivo:** Execução de pipelines com checkpoints, delegando execução a workers via HTTP (NGINX LB).
 
 ### Entregas
 
 | # | Item | Detalhes |
 |---|------|----------|
-| 6.1 | Executor | `runtime/executor.py`: inicia execução do StateGraph, gerencia ciclo de vida |
+| 6.1 | Executor | `runtime/executor.py`: inicia execução do StateGraph, delega execução de agentes ao worker pool via HTTP (NGINX), gerencia ciclo de vida |
 | 6.2 | Checkpoint Manager | `runtime/checkpoint.py`: PostgresSaver do LangGraph, listagem, retomada |
 | 6.3 | API de execução | `POST /pipelines/:id/execute`, `pause`, `resume`, `stop`, `GET /checkpoints` |
 | 6.4 | maxIterations | Contador por agente, aborta ciclo se excedido |
@@ -172,6 +179,9 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 | 6.7 | WebSocket: pipeline:status | Server → Client: status de cada nó |
 | 6.8 | WebSocket: pipeline:log | Server → Client: logs de execução |
 | 6.9 | WebSocket: agent:output | Server → Client: output do agente (streaming) |
+| 6.10 | Worker Client | HTTP client pro agent-worker via NGINX. Retry com backoff. Timeout por request. |
+| 6.11 | Agent Worker | Container stateless: POST /execute. Baixa .yml/.md do MinIO, executa agente, retorna output. |
+| 6.12 | MinIO Client (worker) | S3 client no worker: download de agent .yml e skills .md. |
 
 ### Critérios de aceite
 - [ ] Pipeline simples (A→B→C) executa de ponta a ponta
@@ -181,6 +191,8 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 - [ ] Timeout encerra agente que demora demais
 - [ ] Monitor mostra status em tempo real via WebSocket
 - [ ] Logs aparecem no monitor em tempo real
+- [ ] Worker executa agente e retorna output ao orchestrator via HTTP
+- [ ] Retry funciona: worker down → orchestrator tenta outro worker
 
 ---
 
@@ -216,14 +228,14 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 
 ## D8 — Capacidades (Skills + Tools Custom + MCP)
 
-**Objetivo:** Mochila completa do agente: skills, tools custom, servidores MCP.
+**Objetivo:** Mochila completa do agente: skills, tools custom, servidores MCP, com skills (.md) persistidas no MinIO.
 
 ### Entregas
 
 | # | Item | Detalhes |
 |---|------|----------|
-| 8.1 | Skill Registry | `skills/registry.py`: CRUD de skills no PostgreSQL |
-| 8.2 | Skill Loader | `skills/loader.py`: carrega skill por tipo (prompt, tool, function) e injeta no agente |
+| 8.1 | Skill Registry | `skills/registry.py`: CRUD de skills no PostgreSQL, com conteúdo (.md) no MinIO |
+| 8.2 | Skill Loader | `skills/loader.py`: carrega skill por tipo, baixa .md do MinIO, injeta no agente |
 | 8.3 | Skills built-in | `skills/builtins/`: code-gen, test-runner, security-scanner, doc-writer, api-client, deploy-runner |
 | 8.4 | Ferramentas básicas | `tools/builtins/`: read_file, write_file, edit_file, shell, web_search, web_fetch, glob, grep, list_directory |
 | 8.5 | Tool Registry | `tools/registry.py`: CRUD de tools custom |
@@ -237,6 +249,7 @@ D1 ──→ D2 ──→ D3 ──→ D4 ──→ D5 ──→ D6
 | 8.13 | API de MCP servers | `GET/POST/PUT/DELETE /api/mcp-servers`, `POST /api/mcp-servers/:id/test` |
 | 8.14 | Biblioteca MCP (Portal) | `MCPServersLibrary.tsx`: registrar, testar conexão, listar tools descobertas |
 | 8.15 | Biblioteca de Skills (Portal) | `SkillsLibrary.tsx`: listar, associar a agentes |
+| 8.17 | Skill Storage | MinIO S3 client: save/get/delete do .md da skill. Bucket `skills`. |
 
 ### Critérios de aceite
 - [ ] Skills built-in são carregadas e injetadas no prompt do agente
@@ -345,6 +358,8 @@ FASE 7 (Portal Completo)
 └── D10: Portal Frontend (Next.js)  ← depende de tudo
 ```
 
+> **Nota:** A FASE 1 agora inclui NGINX, MinIO e o scaffold do agent-worker. O worker é funcional a partir da FASE 5 (D6), mas o container sobe desde a FASE 1 com `/health`.
+
 ### Paralelismo possível
 
 | Fase | Paralelo 1 | Paralelo 2 |
@@ -359,12 +374,16 @@ FASE 7 (Portal Completo)
 
 | Domínio | Risco | Mitigação |
 |---------|-------|-----------|
+| D1 | MinIO single-instance: volume persistente, sem HA na V1 | Volume `minio-data`. Em V2, MinIO distributed ou S3 real. |
 | D5 | Compiler: regra 7 (data edge implica flow) é sutil | Testes de unidade cobrindo todos os 11 casos de validação |
 | D6 | LangGraph: checkpoint com State complexo (muitos ports) | State como TypedDict, testes de round-trip (save → load → resume) |
+| D6 | Worker down durante execução: retry + checkpoint | 3 retries com backoff. Checkpoint anterior permite retomada. |
+| D6 | Latência HTTP por nó do grafo | ~50-200ms overhead. Aceitável V1. Otimização: gRPC/queue. |
 | D7 | Notificação: retry + fallback pode travar pipeline | Timeout global + fallback para in-app (sempre disponível) |
 | D8 | Sandbox: subprocesso isolado pode ser frágil | Docker-in-Docker ou gVisor como fallback; timeout agressivo |
 | D9 | Rivvn: SDK externo, contrato comercial | Mock do SDK para testes; gate de contrato antes de qualquer chamada |
 | D10 | React Flow: performance com 44+ nós | Virtualização, lazy loading de nós distantes |
+| D4 | Consistência Postgres+MinIO (agent sem artefato) | Transação compensatória: rollback Postgres se MinIO falhar. |
 
 ---
 
@@ -372,12 +391,12 @@ FASE 7 (Portal Completo)
 
 | Domínio | Esforço | Justificativa |
 |---------|---------|---------------|
-| D1 | Baixo | Docker Compose + Dockerfiles, padrão conhecido |
+| D1 | Médio | Docker Compose 6 serviços + NGINX config + MinIO init + worker scaffold |
 | D2 | Baixo | NextAuth + JWT middleware, padrão conhecido |
 | D3 | Médio | Schema completo + migrations + stubs |
 | D4 | Médio | CRUD + validação + chat de construção (streaming) |
 | D5 | Alto | Compiler JSON → StateGraph + validação de grafo + editor React Flow |
-| D6 | Alto | Runtime LangGraph + checkpoints + WebSocket + monitor |
+| D6 | Alto | Runtime LangGraph + worker client + worker container + checkpoints + WebSocket + monitor |
 | D7 | Médio | Interrupt + notificações + painel de aprovações |
 | D8 | Alto | 3 sub-sistemas (Skills, Tools, MCP) + sandbox + editor |
 | D9 | Médio | RAG local + Rivvn OAuth + SDK |

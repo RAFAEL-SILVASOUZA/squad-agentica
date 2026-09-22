@@ -6,11 +6,12 @@
 
 ## Objetivo
 
-CRUD completo de agentes com validação de contrato (inputs/outputs/actions), a classe base do agente em Python que executa (monta prompt, chama LLM, retorna output), os 4 agentes built-in (planner, developer, reviewer, deployer), e o chat de construção (API streaming + portal).
+CRUD completo de agentes com validação de contrato (inputs/outputs/actions), a classe base do agente em Python que executa (monta prompt, chama LLM, retorna output), os 4 agentes built-in (planner, developer, reviewer, deployer), e o chat de construção (API streaming + portal), com persistência do artefato (.yml) no MinIO e metadados no PostgreSQL.
 
 ## Escopo (o que FAZ)
 
 - CRUD de agentes: `POST/GET/PUT/DELETE /api/agents` com validação de contrato.
+- Persistência do artefato do agente (.yml) no MinIO via S3 API. O CRUD faz: (a) INSERT/UPDATE/DELETE no Postgres (metadados), (b) PUT/DELETE no MinIO (artefato .yml).
 - Validador de contrato: nomes de ports únicos, tipos válidos, actions ∈ {follow, return, finalize}.
 - `agents/base.py`: classe base que recebe `AgentSnapshot`, monta prompt, chama LLM, retorna output estruturado.
 - `agents/planner.py`, `developer.py`, `reviewer.py`, `deployer.py`: subclasses com prompt default.
@@ -28,6 +29,7 @@ CRUD completo de agentes com validação de contrato (inputs/outputs/actions), a
 
 - **D3:** model `Agent` + router `/api/agents` (stub) + tipo `Agent` em `types.ts`.
 - **D2:** `get_current_user` pra autenticar.
+- **D1:** MinIO disponível com bucket `agents`. Credenciais via env (`MINIO_ENDPOINT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`).
 
 ## Arquivos que OWNS
 
@@ -39,6 +41,7 @@ agent-orchestrator/
   app/agents/reviewer.py
   app/agents/deployer.py
   app/agents/validator.py     (validação de contrato de ports/actions)
+  app/agents/storage.py       (MinIO S3 client: put/get/delete agent .yml)
   app/api/agents.py           (CRUD + validação + chat streaming)
 agent-portal/
   components/AgentChat.tsx
@@ -50,7 +53,12 @@ agent-portal/
 ### 4.1 CRUD de agentes (API)
 - Preencher o router stub de D3: `POST` (criar), `GET /api/agents` (listar), `GET /api/agents/:id`, `PUT /api/agents/:id`, `DELETE /api/agents/:id`.
 - `ownerId` derivado do JWT (single-user na V1).
-- Aceite: criar/agente/listar/atualizar/remover via API com JWT.
+- Cada operação de CRUD faz DUAS coisas: (a) operação no Postgres (metadados), (b) operação no MinIO (artefato .yml).
+  - **Create:** serializar agente para .yml → PUT `agents/{id}.yml` no MinIO → INSERT no Postgres.
+  - **Update:** serializar → PUT `agents/{id}.yml` no MinIO → UPDATE no Postgres.
+  - **Delete:** DELETE `agents/{id}.yml` no MinIO → DELETE no Postgres.
+  - Se o MinIO falhar, rollback no Postgres (transação compensatória).
+- Aceite: criar/agente/listar/atualizar/remover via API com JWT; artefato .yml presente no MinIO após create/update.
 
 ### 4.2 Validação de contrato
 - `agents/validator.py`: validar que `inputs`/`outputs` têm `name` único, `type` ∈ whitelist (document|code|artifact|signal|...), `actions` ∈ {follow, return, finalize}. Rejeitar com mensagem clara.
@@ -84,6 +92,12 @@ agent-portal/
 - `AgentChat.tsx`: UI de chat (mensagens usuário/IA), streaming incremental, painel de sugestões estruturadas (skills, knowledge, integrações, contrato), preview do agente (identidade + contrato). Botão "Salvar" que chama `POST /api/agents`.
 - Aceite: conversar no chat, ver sugestões, editar preview, salvar cria o agente (aparece no dashboard).
 
+### 4.7 Agent Storage (`agents/storage.py`)
+- Wrapper do client S3 para MinIO. Métodos: `save_agent(agent_id: str, agent_yaml: str)`, `get_agent(agent_id: str) -> str`, `delete_agent(agent_id: str)`.
+- Usa `MINIO_ENDPOINT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_AGENTS` do ambiente.
+- O formato .yml: definição completa do agente (prompt, model, contract, capabilities references, skills list). O schema exato é definido pelo D4.
+- Aceite: `save_agent` + `get_agent` round-trip retorna o mesmo conteúdo; `delete_agent` remove o objeto.
+
 ## Critérios de aceite (DoD)
 
 - [ ] CRUD de agentes funciona via API
@@ -95,7 +109,7 @@ agent-portal/
 ## Contratos de interface (o que entrega aos outros)
 
 - **Para D5:** o contrato do agente (`inputs`/`outputs`/`actions`) é a base que o compiler valida. O compiler (D5) consome o `Agent` do banco.
-- **Para D6:** `Agent.run(inputs: dict, capabilities: AgentCapabilities) -> dict` é a assinatura que o runtime executa. O runtime (D6) chama `loader.load(agent_snapshot)` antes de `Agent.run()` e passa o resultado como segundo argumento.
+- **Para D6:** `Agent.run(inputs: dict, capabilities: AgentCapabilities) -> dict` é a assinatura que o runtime executa. O runtime (D6) chama `loader.load(agent_snapshot)` antes de `Agent.run()` e passa o resultado como segundo argumento. O worker baixa o .yml do agente do MinIO em tempo de execução. O orquestrador NÃO passa a definição completa do agente no request HTTP para o worker; passa apenas `agentId` + `inputs` + `capabilities`. O worker busca o .yml por conta própria.
 - **Para D7:** o output do agente (com action) é o payload que o nó de aprovação (gerado pelo D5 para edges com `requiresApproval=true`) recebe e passa ao `interrupt()`. O interrupt acontece DENTRO do nó de aprovação, não na edge.
 - **Para D8:** o `base.py` recebe `capabilities` como parâmetro de `run()`, não o lê do snapshot. As skills (prompts) já estão injetadas no `systemPrompt` dentro de `capabilities`. O D8 expõe `loader.load(agent_snapshot) -> AgentCapabilities`; o D6 a consome.
 - **Para D10:** `AgentChat.tsx` + `AgentPreview.tsx` + o tipo `Agent` pra renderizar cards.
@@ -104,3 +118,4 @@ agent-portal/
 
 - LLM real precisa de API key. Deixar o chamador real presente mas com fallback mock quando `OPENAI_API_KEY` ausente, pra não bloquear testes.
 - Contrato de ports (nomes/tipos) é o contrato que D5 e D6 dependem — qualquer mudança aqui propaga.
+- Consistência Postgres+MinIO: se o PUT no MinIO falhar após o INSERT no Postgres, o agente existe no banco mas sem artefato. Mitigação: transação compensatória (DELETE no Postgres se MinIO falhar) ou retry com idempotência.
