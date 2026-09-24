@@ -1,0 +1,202 @@
+version: 1
+flow: Agent Portal Dev
+startedAt: 2026-09-24T11:17:59.683Z
+finishedAt: 2026-09-24T12:31:50.861Z
+outcome: paused
+nodes:
+  - id: arch
+    name: Arquiteto de Sistema
+    status: done
+    artifacts:
+      - docs/superpowers/plans/CONTRATO-TECNICO.md
+  - id: plan-backend
+    name: Plano de Backend
+    status: done
+    artifacts:
+      - docs/superpowers/plans/PLANO-BACKEND.md
+  - id: plan-frontend
+    name: Plano de Frontend
+    status: done
+    artifacts:
+      - docs/superpowers/plans/PLANO-FRONTEND.md
+  - id: design-system
+    name: Design System
+    status: done
+    artifacts:
+      - docs/superpowers/plans/DESIGN-SYSTEM.md
+  - id: plan-review
+    name: Revisão de Planejamento
+    status: pending
+    artifacts: []
+  - id: infra-docker
+    name: Infra Docker Compose
+    status: pending
+    artifacts: []
+  - id: infra-postgres
+    name: Infra Postgres
+    status: pending
+    artifacts: []
+  - id: infra-minio
+    name: Infra MinIO
+    status: pending
+    artifacts: []
+  - id: infra-nginx
+    name: Infra NGINX
+    status: pending
+    artifacts: []
+  - id: spike
+    name: Spike LangGraph
+    status: pending
+    artifacts: []
+  - id: infra-review
+    name: Infra Review
+    status: pending
+    artifacts: []
+  - id: spike-review
+    name: Spike Review
+    status: pending
+    artifacts: []
+  - id: db-models
+    name: DB Models
+    status: pending
+    artifacts: []
+  - id: db-migrations
+    name: DB Migrations
+    status: pending
+    artifacts: []
+  - id: db-seed
+    name: DB Seed
+    status: pending
+    artifacts: []
+  - id: db-review
+    name: DB Review
+    status: pending
+    artifacts: []
+  - id: auth-backend
+    name: Auth Backend
+    status: pending
+    artifacts: []
+  - id: auth-frontend
+    name: Auth Frontend
+    status: pending
+    artifacts: []
+  - id: auth-review
+    name: Auth Review
+    status: pending
+    artifacts: []
+  - id: be-agents
+    name: Backend Agent CRUD
+    status: pending
+    artifacts: []
+  - id: be-skills
+    name: Backend Skills Tools MCP
+    status: pending
+    artifacts: []
+  - id: be-knowledge
+    name: Backend Knowledge RAG
+    status: pending
+    artifacts: []
+  - id: be-integrations
+    name: Backend Integrations
+    status: pending
+    artifacts: []
+  - id: be-review
+    name: Backend Review
+    status: pending
+    artifacts: []
+  - id: pe-compiler
+    name: Pipeline Compiler
+    status: pending
+    artifacts: []
+  - id: pe-validator
+    name: Pipeline Validator
+    status: pending
+    artifacts: []
+  - id: pe-loader
+    name: Pipeline Loader
+    status: pending
+    artifacts: []
+  - id: pe-review
+    name: Pipeline Review
+    status: pending
+    artifacts: []
+  - id: rt-executor
+    name: Runtime Executor
+    status: pending
+    artifacts: []
+  - id: rt-worker
+    name: Runtime Worker
+    status: pending
+    artifacts: []
+  - id: rt-websocket
+    name: Runtime WebSocket
+    status: pending
+    artifacts: []
+  - id: rt-review
+    name: Runtime Review
+    status: pending
+    artifacts: []
+  - id: hitl-approval
+    name: HITL Approval
+    status: pending
+    artifacts: []
+  - id: hitl-notification
+    name: HITL Notification
+    status: pending
+    artifacts: []
+  - id: hitl-resume
+    name: HITL Resume
+    status: pending
+    artifacts: []
+  - id: hitl-review
+    name: HITL Review
+    status: pending
+    artifacts: []
+  - id: fe-shell
+    name: Frontend Shell
+    status: pending
+    artifacts: []
+  - id: fe-dashboard
+    name: Frontend Dashboard
+    status: pending
+    artifacts: []
+  - id: fe-agents
+    name: Frontend Agents
+    status: pending
+    artifacts: []
+  - id: fe-flow-editor
+    name: Frontend Flow Editor
+    status: pending
+    artifacts: []
+  - id: fe-monitor
+    name: Frontend Monitor
+    status: pending
+    artifacts: []
+  - id: fe-approvals
+    name: Frontend Approvals
+    status: pending
+    artifacts: []
+  - id: fe-library
+    name: Frontend Library
+    status: pending
+    artifacts: []
+  - id: fe-review
+    name: Frontend Review
+    status: pending
+    artifacts: []
+  - id: qa-integration
+    name: QA Integration
+    status: pending
+    artifacts: []
+  - id: qa-e2e
+    name: QA E2E
+    status: pending
+    artifacts: []
+  - id: qa-fix
+    name: QA Fix
+    status: pending
+    artifacts: []
+  - id: qa-final
+    name: QA Final Approval
+    status: pending
+    artifacts: []
