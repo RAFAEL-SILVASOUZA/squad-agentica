@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-24T21:16:08.202Z
+finishedAt: 2026-09-25T12:47:23.286Z
 outcome: paused
 nodes:
   - id: arch
@@ -126,9 +126,7 @@ nodes:
   - id: infra-review
     name: Infra Review
     status: pending
-    artifacts:
-      - docker-compose.yml
-    error: Cannot read properties of undefined (reading 'message')
+    artifacts: []
   - id: spike-review
     name: Spike Review
     status: pending
@@ -165,6 +163,10 @@ nodes:
     name: Backend Agent CRUD
     status: pending
     artifacts: []
+  - id: be-agent-chat
+    name: Backend Agent Builder Chat
+    status: pending
+    artifacts: []
   - id: be-skills
     name: Backend Skills Tools MCP
     status: pending
@@ -195,6 +197,10 @@ nodes:
     artifacts: []
   - id: pe-review
     name: Pipeline Review
+    status: pending
+    artifacts: []
+  - id: rt-checkpoint
+    name: Runtime Checkpoint e Worker Client
     status: pending
     artifacts: []
   - id: rt-executor
@@ -245,6 +251,10 @@ nodes:
     name: Frontend Flow Editor
     status: pending
     artifacts: []
+  - id: fe-flow-edges
+    name: Frontend Flow Edges
+    status: pending
+    artifacts: []
   - id: fe-monitor
     name: Frontend Monitor
     status: pending
@@ -255,6 +265,10 @@ nodes:
     artifacts: []
   - id: fe-library
     name: Frontend Library
+    status: pending
+    artifacts: []
+  - id: fe-review-editor
+    name: Frontend Review Editor e Monitor
     status: pending
     artifacts: []
   - id: fe-review
@@ -271,6 +285,10 @@ nodes:
     artifacts: []
   - id: qa-fix
     name: QA Fix
+    status: pending
+    artifacts: []
+  - id: qa-fix-rest
+    name: QA Fix Médias e Baixas
     status: pending
     artifacts: []
   - id: qa-final

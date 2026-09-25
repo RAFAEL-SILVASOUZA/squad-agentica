@@ -288,6 +288,7 @@ Dev: `typescript`, `eslint`, `eslint-config-next`, `vitest@2.1.8`, `@testing-lib
 **Onde rodar testes:**
 - **Backend (orchestrator e worker):** **dentro do container** (`docker compose run --rm orchestrator pytest <caminho>` e `docker compose run --rm agent-worker pytest <caminho>`), porque o host tem Python 3.13 e as imagens 3.11. Scripts dentro de containers usam fim de linha **LF** (`.gitattributes`).
 - **Frontend (portal):** no **host**, `npx vitest run` e `npx tsc --noEmit` com `node_modules` já instalado (fe-shell rodou `npm install`). `npm run build` é do revisor de frontend, não dos nós de tela.
+- **A partir de um worktree** (ajuste do flow de 2026-09-24; nós de implementação trabalham em `../squad-agentica.worktrees/<id>`, branch `wt/<id>`, e fazem merge no `main` ao terminar): backend com `docker compose -p squad-agentica run --rm --no-deps <serviço> pytest <caminho>` executado dentro do worktree. O `-p` reaproveita a rede e o banco do stack de pé, o bind mount resolve para o código do worktree e `--no-deps` impede recriar serviços cujos mounts apontariam para o worktree. `docker compose exec` testa o código do `main`, não o do worktree. Frontend com `node_modules` do worktree como junction para `agent-portal/node_modules` do checkout principal (`tsc` e `vitest` validados assim); na limpeza, a junction sai com `cmd /c rmdir` sem `/s` antes do `git worktree remove`, que não a remove. O `.env` é copiado da raiz para o worktree.
 
 **Banco de teste isolado (obrigatório):** cada sessão de pytest cria **um banco próprio com sufixe único** (ex.: `agent_portal_test_<uuid>`) e o destrói no teardown (fixture `pytest_asyncio` com `scope="session"`/`function`, conforme contrato). O fixture usa o mesmo `DATABASE_URL` base mudando apenas o nome do banco, com permissão do usuário de teste de criar bancos (ver `postgres/init.sql`). **Nunca** use o banco `agent_portal` em teste. O LangGraph `PostgresSaver` também aponta para o banco de teste (cria suas tabelas via `setup()`, §8).
 
@@ -533,6 +534,23 @@ State = TypedDict("State", {
 | **fe-library** | `app/(dashboard)/{skills,tools,mcp,knowledge}/page.tsx`, `components/{SkillsLibrary,ToolsEditor,MCPServersLibrary,KnowledgeView}.tsx` |
 
 > **Compartilhado do portal:** `package.json`/`package-lock.json`/`tsconfig`/`next.config` — infra-docker; `globals.css`/`layout.tsx`/`components/layout`/`components/ui`/`lib/*` — fe-shell. Nenhum nó de tela instala dependência (fe-shell instala `@xyflow/react` etc.).
+
+### Ajuste do flow (2026-09-24): nós divididos
+
+Cinco nós foram divididos para reduzir o escopo de cada agente. Esta tabela **prevalece** sobre as linhas correspondentes acima.
+
+| Nó | Cria/altera | Observação |
+|---|---|---|
+| **be-agents** | `app/api/agents.py`, `app/agents/*` exceto `app/agents/chat/` | CRUD, validador, storage, classes base e o service de agentes. Sem chat. |
+| **be-agent-chat** (novo, roda depois de be-agents) | `app/api/agent_chat.py`, `app/agents/chat/*` | `POST /api/agents/chat` e `POST /api/agents/{id}/chat` (SSE), rate limit do chat. Salva pelo service de be-agents. Revisor: be-review. |
+| **rt-checkpoint** (novo) | `app/runtime/checkpoint.py`, `app/runtime/worker_client.py` | Saem de rt-executor. Revisor: rt-review. |
+| **rt-executor** (roda depois de rt-checkpoint) | `app/runtime/executor.py`, `app/api/pipeline_runs.py` | |
+| **fe-flow-editor** | `app/(dashboard)/pipelines/page.tsx`, `app/(dashboard)/pipelines/[id]/page.tsx`, `components/FlowEditor.tsx`, `components/flow/*` exceto validação | Canvas, paleta, conexões, salvar, desfazer e refazer. |
+| **fe-flow-edges** (novo, roda depois de fe-flow-editor) | `components/EdgePanel.tsx`, `components/flow/validation*` | Pode editar `FlowEditor.tsx` e `pipelines/[id]/page.tsx` só para plugar painel, validação e executar. |
+| **qa-fix** | correções de falhas críticas e altas | |
+| **qa-fix-rest** (novo, roda depois de qa-fix) | correções de falhas médias e baixas | Roda todas as suítes e o build no fim. |
+
+**Revisores da FASE 8:** `fe-review-editor` (novo) julga fe-flow-editor, fe-flow-edges e fe-monitor; `fe-review` julga fe-dashboard, fe-agents, fe-approvals e fe-library, e aprova o portal inteiro. `qa-final` rejeita para qa-fix e qa-fix-rest.
 
 ---
 

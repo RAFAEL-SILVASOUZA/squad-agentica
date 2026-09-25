@@ -1,0 +1,5 @@
+# Spike Review — Registro de Vereditos
+
+| Data | Veredito | Resumo |
+|---|---|---|
+| 2026-09-24 | APROVADO | 7/7 testes passam na execução do revisor (3.74s). Todos os 8 critérios bloqueantes verificados com evidência: (1) testes passam; (2) worker fora do ar gera state failed e stream termina limpo (verificado end-to-end com worker inexistente); (3) State schema fixo TypedDict com reducers, JSON-serializável (round-trip ok); (4) resume em processo novo com recompilação do grafo (verificado com novo saver + novo grafo); (5) interrupt() com upsert pós-interrupt idempotente por (runId,nodeId,interruptId), Command(goto) com IDs reais; (6) maxIterations checado no início da node function, roteado para END; (7) PostgresSaver(conn) com connection psycopg + setup() chamado; (8) README documenta cada padrão com trecho canônico. Divergências da API real registradas no README (stream.interrupted não existe; ainvoke devolve delta; PostgresSaver sync sem async nativo; iterations como dict). Versões pinadas confirmadas por execução: langgraph 0.2.61, langgraph-checkpoint-postgres 2.0.10, psycopg 3.2.10. |
