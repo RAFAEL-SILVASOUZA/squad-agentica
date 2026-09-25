@@ -1,0 +1,44 @@
+-- Agent Portal — Postgres init (executado pela imagem pgvector/pgvector:pg15
+-- no primeiro boot via /docker-entrypoint-initdb.d/init.sql).
+--
+-- Dono: nó infra-postgres (contrato §1). Escopo deliberadamente mínimo:
+--   1) habilita a extensão `vector` (pgvector) no banco de aplicação;
+--   2) dá ao usuário de aplicação permissão de criar bancos isolados de teste.
+--
+-- O que este arquivo NÃO faz (de propósito):
+--   * NÃO cria tabelas, índices, tipos (ENUM/COMPOSITE) nem views da aplicação.
+--     O schema da aplicação é do Alembic (nó db-migrations, `alembic upgrade head`).
+--     Se este init criasse tabelas, o `alembic upgrade head` falharia com
+--     "relation already exists" e o schema passaria a ter dois donos.
+--   * NÃO cria o índice HNSW do pgvector: ele é criado na migration (D3), junto
+--     da coluna `vector(1536)` da tabela de chunks (spec §7.2).
+--   * NÃO cria o banco nem o usuário: a imagem os cria via POSTGRES_DB /
+--     POSTGRES_USER / POSTGRES_PASSWORD (ver docker-compose.yml, serviço postgres).
+--     Este script roda DENTRO do banco `agent_portal` já criado pelo entrypoint.
+--
+-- Idempotência: `CREATE EXTENSION IF NOT EXISTS` e `ALTER ROLE ... WITH CREATEDB`
+-- são idempotentes; o entrypoint só executa este arquivo no primeiro boot (quando o
+-- data dir está vazio), então re-execução não é um risco, mas o script é seguro
+-- de rodar duas vezes.
+--
+-- Fim de linha: LF (protocolo comum §5; .gitattributes cuida disso).
+
+-- ---------------------------------------------------------------------------
+-- 1) Extensão pgvector (RAG + embeddings, spec §7.2 / contrato §3, §11.14)
+--    A imagem pgvector/pgvector:pg15 já traz a extensão instalada no cluster;
+--    ela só precisa ser habilitada por banco. Sem ela, a coluna vector(1536)
+--    da migration (D3) e o operador de cosine distance (<=>) não existem.
+-- ---------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- ---------------------------------------------------------------------------
+-- 2) Permissão de criar bancos isolados de teste (contrato §4)
+--    Cada sessão de pytest cria um banco próprio com sufixo único
+--    (agent_portal_test_<uuid>) e o destrói no teardown. O fixture usa a mesma
+--    DATABASE_URL base mudando só o nome do banco, o que exige que o usuário
+--    de aplicação (agent_portal) tenha o atributo CREATEDB.
+--    O usuário é criado pela imagem como role comum (não superuser); sem este
+--    GRANT, o CREATE DATABASE do fixture falharia com "permission denied".
+--    ALTER ROLE ... ADD é idempotente (não falha se o atributo já existir).
+-- ---------------------------------------------------------------------------
+ALTER ROLE agent_portal WITH CREATEDB;
