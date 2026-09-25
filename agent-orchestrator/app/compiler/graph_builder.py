@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
 
 from app.compiler.state import State
 
@@ -373,7 +372,11 @@ def _make_approval_node(
     edge: PipelineEdge,
     source_node_id: str,
 ) -> Any:
-    """Fábrica do nó de aprovação.
+    """Fábrica do nó de aprovação (delega para hitl-approval).
+
+    O nó de aprovação é implementado pelo hitl-approval (FASE 7) em
+    ``app/approvals/node_function.py``. O compiler (D5) apenas gera a
+    topologia e registra a função fornecida pelo D7 no StateGraph.
 
     Fluxo (spec 5.3 + ADR-006 + ADR-009):
       1. Montar payload (operacional, sem side effects).
@@ -381,39 +384,15 @@ def _make_approval_node(
       3. Retomada: interrupt() retorna a resposta.
       4. ADR-009: efeitos colaterais (ApprovalRequest upsert) APÓS o interrupt.
          O executor (D6) faz o upsert; aqui o nó só decide o roteamento.
-      5. ADR-006: Command(goto=<id real>) — aprovar -> target, rejeitar -> reject_target.
+      5. ADR-006: Command(goto=<id real>) — aprovar -> target, rejeitar ->
+         reject_target, argumentar -> feedback no State + target.
     """
-    edge_id = edge.id
-    approve_target = edge.target
-    # ADR-006: rejectTarget configurável na aresta. Default: loop-back para o source.
-    # Se reject_target é "END", vai para END.
-    reject_target = edge.reject_target or source_node_id
+    # Import lazy para evitar circular import: node_function importa
+    # PipelineEdge de graph_builder, e graph_builder importa create_approval_node
+    # de node_function. O import dentro da função quebra o ciclo.
+    from app.approvals.node_function import create_approval_node  # noqa: PLC0415
 
-    approval_node_id = f"approval_node_{edge_id}"
-    message = edge.approval_message or "Aprovação necessária"
-
-    async def approval_node(state: State, config: dict[str, Any]) -> Any:
-        # ADR-009: persistência e notificação APÓS o interrupt().
-        # O nó de aprovação NÃO tem efeitos colaterais antes do interrupt().
-        # O executor (D6) detecta a interrupção no stream e faz o upsert.
-        decision = interrupt(
-            {
-                "message": message,
-                "edgeId": edge_id,
-                "sourceNodeId": source_node_id,
-                "targetNodeId": approve_target,
-                "approvalChannel": edge.approval_channel,
-            }
-        )
-
-        # ADR-006: goto só com IDs reais de nó.
-        if decision == "approved":
-            return Command(goto=approve_target)
-        # rejeitar -> reject_target (loop-back pro source por padrão, ou END)
-        return Command(goto=reject_target)
-
-    approval_node.__name__ = approval_node_id
-    return approval_node
+    return create_approval_node(edge, source_node_id)
 
 
 # ---------------------------------------------------------------------------
