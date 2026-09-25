@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-25T12:47:23.286Z
+finishedAt: 2026-09-25T15:17:50.264Z
 outcome: paused
 nodes:
   - id: arch
@@ -125,20 +125,45 @@ nodes:
     error: Cannot read properties of undefined (reading 'message')
   - id: infra-review
     name: Infra Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - .env
+      - .env.example
+      - C:\Projetos\squad-agentica\agent-orchestrator\app\main.py
+      - C:\Projetos\squad-agentica\agent-portal\app\page.tsx
+      - C:\Projetos\squad-agentica\docker-compose.yml
+      - C:\Projetos\squad-agentica\docs\superpowers\validacoes\infra-review.md
+      - C:\Projetos\squad-agentica\test_s3.py
+      - C:\Projetos\squad-agentica\test_s3_anonymous.py
+      - docker-compose.yml
+      - garage/garage.toml
+      - garage/init.py
   - id: spike-review
     name: Spike Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - docs/superpowers/validacoes/spike-review.md
   - id: db-models
     name: DB Models
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/db-models/agent-orchestrator/app/db/models.py
+      - ../squad-agentica.worktrees/db-models/agent-orchestrator/app/db/session.py
+      - ../squad-agentica.worktrees/db-models/agent-orchestrator/tests/conftest.py
+      - ../squad-agentica.worktrees/db-models/agent-orchestrator/tests/test_models.py
   - id: db-migrations
     name: DB Migrations
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\_tmp_diag.py
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\_tmp_mig_setup.py
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\_tmp_url.py
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\_tmp_verify.py
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\alembic\env.py
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\alembic\script.py.mako
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\alembic\versions\36713ee2fb69_initial_schema.py
+      - C:\Projetos\squad-agentica.worktrees\db-migrations\agent-orchestrator\tests\test_migration.py
+      - C:\Projetos\squad-agentica\agent-orchestrator\_tmp_check.py
   - id: db-seed
     name: DB Seed
     status: pending
