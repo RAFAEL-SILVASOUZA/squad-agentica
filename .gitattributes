@@ -1,0 +1,12 @@
+# .gitattributes (dono: infra-docker).
+# Fim de linha LF para scripts e Dockerfiles (protocolo comum §5 / ADR-017 do contrato).
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf

@@ -1,0 +1,46 @@
+# .dockerignore — raiz do repositório (dono: infra-docker).
+# Mantém a imagem leve e evita vazar .env / node_modules / dados locais.
+
+# Ambientes e segredos
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+
+# Dependências instaladas
+node_modules
+agent-portal/node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Build / artefatos
+dist
+build
+.next
+.venv
+venv
+
+# Editor / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docs / protótipo (não entram nas imagens)
+docs
+prototype
+*.md
+
+# Docker / compose (não reentrar)
+docker-compose*.yml
+Dockerfile
+
+# Logs
+*.log
