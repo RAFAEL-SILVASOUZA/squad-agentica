@@ -490,7 +490,14 @@ class PipelineExecutor:
 
         for interrupt_item in task.interrupts:
             payload = interrupt_item.value if hasattr(interrupt_item, "value") else interrupt_item
-            interrupt_id = str(uuid.uuid4())
+            # ADR-009: o task id real do LangGraph (PregelTask.id ==
+            # CONFIG_KEY_TASK_ID) é a chave de idempotência da ApprovalRequest.
+            # Ele é estável entre execuções/resumes da mesma pausa, então o
+            # upsert (feito pelo hook do hitl-approval) não duplica. Injetamos
+            # no payload sob ``__interruptId__`` para o hook consumir.
+            interrupt_id = str(getattr(task, "id", "") or uuid.uuid4())
+            if isinstance(payload, dict):
+                payload = {**payload, "__interruptId__": interrupt_id}
 
             # Emit pipeline:status event (waiting_approval).
             await ws_publish(
