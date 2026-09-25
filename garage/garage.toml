@@ -1,0 +1,79 @@
+# Garage v2.4.1 — configuração single-node (V1 local do Agent Portal).
+#
+# Dono: nó infra-garage (substitui o MinIO, que saiu de manutenção).
+# Fontes (contrato, em ordem de precedência):
+#   - CONTRATO-TECNICO.md §2.1 (portas), §2.4 (MINIO_ROOT_USER/PASSWORD, buckets)
+#   - PLANO-BACKEND.md §2.3 (infra-minio -> infra-garage)
+#   - docs/superpowers/plans/domains/D1-infra.md (seção de object storage)
+#
+# Topologia: single-node (V1 local). replication_factor = 1, consistency_mode = "consistent".
+# O Garage expõe a API S3 na porta 3900, RPC na 3901, web na 3902 e admin na 3903.
+# A aplicação fala S3 com a porta 3900 (mesmo endpoint que o MinIO usava na 9001).
+#
+# Segredos:
+#   - rpc_secret: gerado pelo bootstrap (garage/init.sh) e persistido no volume de
+#     dados (/var/lib/garage/meta/rpc_secret). O TOML referencia o valor gerado;
+#     nunca versionar um rpc_secret em claro no repositório.
+#   - admin_token: gerado pelo bootstrap e persistido em /var/lib/garage/meta/admin_token.
+#     Usado pelo healthcheck e pelo init.sh para operações de admin.
+#
+# O binário `garage` lê este arquivo por padrão em /etc/garage.toml (o compose monta
+# este arquivo nesse caminho). O `rpc_secret` é sobrescrito em runtime pela variável
+# de ambiente GARAGE_RPC_SECRET (que o compose injeta a partir do valor persistido),
+# então o valor literal abaixo é apenas um placeholder de fallback.
+
+# --- Diretórios de dados (volume persistido) ---
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+
+# --- Motor de metadados (LMDB, padrão da imagem) ---
+db_engine = "lmdb"
+
+# --- Replicação single-node ---
+# replication_factor = 1: cada bloco é gravado em 1 nó (este).
+# consistency_mode = "consistent": read-after-write consistency (padrão).
+# Nota: o campo antigo `replication_mode` foi removido no Garage v2.4.1;
+# o substituto é `consistency_mode` (valores: "consistent", "degraded", "dangerous").
+replication_factor = 1
+consistency_mode = "consistent"
+
+# --- RPC (comunicação entre nós; em single-node, só este nó) ---
+# rpc_bind_addr: onde o daemon escuta RPC (todos os interfaces, porta 3901).
+# rpc_public_addr: endereço público que outros nós usariam para falar com este.
+# Em single-node, usa 127.0.0.1 (só o próprio nó acessa).
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+# rpc_secret: segredo de rede para autenticar RPC entre nós.
+# GERADO PELO BOOTSTRAP (garage/init.sh) e persistido em /var/lib/garage/meta/rpc_secret.
+# O compose injeta GARAGE_RPC_SECRET a partir desse arquivo, sobrescrevendo este valor.
+# NUNCA versionar um rpc_secret real em claro. Este é um placeholder de fallback.
+rpc_secret = "REPLACE_WITH_GENERATED_SECRET"
+
+# --- API S3 (a aplicação fala com esta porta) ---
+[s3_api]
+# s3_region: região S3 que o Garage aceita em assinaturas.
+# O cliente Python (lib `minio`) usa "us-east-1" por padrão; o Garage valida a região
+# no header de assinatura. Usamos "us-east-1" para compatibilidade com o cliente.
+s3_region = "us-east-1"
+# api_bind_addr: onde a API S3 escuta (todos os interfaces, porta 3900).
+api_bind_addr = "[::]:3900"
+# root_domain: domínio raiz para URLs de bucket (virtual-hosted style).
+# Em single-node local, usa um domínio fictício; o cliente usa path-style.
+root_domain = ".s3.garage.localhost"
+
+# --- API Web (servi estático; não usado na V1, mas habilitado) ---
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage.localhost"
+index = "index.html"
+
+# --- API Admin (healthcheck e operações de admin) ---
+[admin]
+# api_bind_addr: onde a API admin escuta (todos os interfaces, porta 3903).
+api_bind_addr = "[::]:3903"
+# admin_token: token de autenticação para a API admin.
+# GERADO PELO BOOTSTRAP (garage/init.sh) e persistido em /var/lib/garage/meta/admin_token.
+# O compose injeta GARAGE_ADMIN_TOKEN a partir desse arquivo, sobrescrevendo este valor.
+# NUNCA versionar um admin_token real em claro. Este é um placeholder de fallback.
+admin_token = "REPLACE_WITH_GENERATED_TOKEN"
