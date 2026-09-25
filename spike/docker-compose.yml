@@ -1,0 +1,20 @@
+# Spike LangGraph — Postgres isolado (projeto próprio: `docker compose -p spike -f spike/docker-compose.yml ...`).
+# Imagem do contrato (pgvector/pgvector:pg15). Porta 15433 para não colidir com o stack principal (15432).
+# O spike NÃO importa nada de agent-orchestrator/; é autocontido.
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: spike-postgres
+    restart: "no"
+    environment:
+      POSTGRES_USER: spike
+      POSTGRES_PASSWORD: spike
+      POSTGRES_DB: spike
+    ports:
+      - "15433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spike -d spike"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
