@@ -32,9 +32,9 @@ nodes:
       ## Produza `docs/superpowers/plans/CONTRATO-TECNICO.md`
 
       1. **Premissa de produto.** O portal nasce vazio: nenhum agente, skill, tool, MCP, knowledge ou pipeline pré-carregado. O único seed é o usuário admin inicial.
-      2. **Layout canônico do repositório.** Árvore completa: `agent-portal/` (Next.js 14 App Router), `agent-orchestrator/app/` (FastAPI, pacote Python `app`), `agent-worker/app/` (FastAPI, serviço separado conforme D1 e D6), `nginx/`, `postgres/`, `minio/`, `spike/`, `docker-compose.yml` e `docker-compose.override.yml` (dev) na raiz. Onde ficam: models (`app/db/models.py`), sessão async (`app/db/session.py`), Alembic (`agent-orchestrator/alembic/`), auth (`app/auth/`), routers (`app/api/`), compiler (`app/compiler/`), runtime (`app/runtime/`), aprovações (`app/approvals/`), notificações (`app/notifications/`), skills, tools, mcp, knowledge, integrations, `app/core/` (config, segurança, erros, llm), testes.
+      2. **Layout canônico do repositório.** Árvore completa: `agent-portal/` (Next.js 14 App Router), `agent-orchestrator/app/` (FastAPI, pacote Python `app`), `agent-worker/app/` (FastAPI, serviço separado conforme D1 e D6), `nginx/`, `postgres/`, `garage/`, `spike/`, `docker-compose.yml` e `docker-compose.override.yml` (dev) na raiz. O object storage é o **Garage** (S3-compatible, AGPLv3), que substitui o MinIO (saiu de manutenção); o cliente Python da aplicação continua sendo a lib `minio` (cliente S3 genérico), por isso as variáveis de ambiente do object storage mantêm o prefixo `MINIO_*` (endpoint, credenciais, buckets) e apontam para o Garage. Onde ficam: models (`app/db/models.py`), sessão async (`app/db/session.py`), Alembic (`agent-orchestrator/alembic/`), auth (`app/auth/`), routers (`app/api/`), compiler (`app/compiler/`), runtime (`app/runtime/`), aprovações (`app/approvals/`), notificações (`app/notifications/`), skills, tools, mcp, knowledge, integrations, `app/core/` (config, segurança, erros, llm), testes.
       3. **Registro de routers sem arquivo compartilhado.** `app/main.py` descobre e inclui automaticamente todo módulo em `app/api/` que exponha `router` (o scaffold da infra implementa isso). Assim os nós paralelos só criam o próprio arquivo de router.
-      4. **Portas, rotas e variáveis de ambiente.** Tabela por serviço. NGINX :80 é o único ponto de entrada público. Toda a API FastAPI vive sob o prefixo `/api` (inclusive `GET /api/health`; `GET /health` também existe para o healthcheck do container). O portal chama a API em `/api` pela mesma origem (sem CORS). WebSocket único em `/api/ws?token=<JWT>`. O agent-worker não publica porta no host e **não é acessível pela porta 80**: o orchestrator o chama por um server block interno do NGINX (defina porta e URL, por exemplo `http://nginx:8081/execute`) com o header `X-Worker-Token` (segredo compartilhado `WORKER_TOKEN`) validado pelo worker. Lista completa do `.env.example`: `DATABASE_URL`, `JWT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `WORKER_TOKEN`, `MINIO_*`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `LLM_PROVIDER`, chave do provedor LLM, `EMBEDDING_PROVIDER`, chave de embeddings. Verifique conflitos de porta com o host (Postgres 5432, por exemplo) e escolha portas publicadas que não colidam, sem mudar as portas internas.
+      4. **Portas, rotas e variáveis de ambiente.** Tabela por serviço. NGINX :80 é o único ponto de entrada público. Toda a API FastAPI vive sob o prefixo `/api` (inclusive `GET /api/health`; `GET /health` também existe para o healthcheck do container). O portal chama a API em `/api` pela mesma origem (sem CORS). WebSocket único em `/api/ws?token=<JWT>`. O agent-worker não publica porta no host e **não é acessível pela porta 80**: o orchestrator o chama por um server block interno do NGINX (defina porta e URL, por exemplo `http://nginx:8081/execute`) com o header `X-Worker-Token` (segredo compartilhado `WORKER_TOKEN`) validado pelo worker. Lista completa do `.env.example`: `DATABASE_URL`, `JWT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `WORKER_TOKEN`, `MINIO_*` (object storage Garage: `MINIO_ENDPOINT=http://garage:3900`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_AGENTS`, `MINIO_BUCKET_SKILLS`), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `LLM_PROVIDER`, chave do provedor LLM, `EMBEDDING_PROVIDER`, chave de embeddings. Verifique conflitos de porta com o host (Postgres 5432, por exemplo) e escolha portas publicadas que não colidam, sem mudar as portas internas.
       5. **Versões pinadas.** Python 3.11 nas imagens, Node 20 nas imagens (o host tem Node 24 e Python 3.13), Next.js 14, FastAPI, SQLAlchemy 2 async + asyncpg, Alembic, psycopg 3, pgvector, `langgraph` e `langgraph-checkpoint-postgres` (versões exatas estáveis e a API de streaming usada), `@xyflow/react`, `next-auth` v4, `lucide-react`, pytest, pytest-asyncio, httpx, vitest, testing-library, Playwright. Liste as **dependências completas** de cada serviço: o scaffold da infra instala tudo de uma vez, porque nós paralelos não podem instalar pacotes.
       6. **Ambiente de desenvolvimento e testes** (crítico: dezenas de agentes paralelos no mesmo host):
          - `docker-compose.override.yml` com bind mount do código e reload (uvicorn `--reload`, `next dev`), para que mudanças de código não exijam rebuild.
@@ -67,6 +67,7 @@ nodes:
       O conteúdo integral de `CONTRATO-TECNICO.md` (os nós seguintes leem sua resposta como handoff), seguido da lista de divergências resolvidas.
     x: 40
     y: 400
+    reasoning: false
   - id: plan-backend
     name: Plano de Backend
     prompt: |-
@@ -89,8 +90,8 @@ nodes:
       Use a seção "## Resultado de Arquiteto de Sistema" abaixo como contrato técnico (também está em `docs/superpowers/plans/CONTRATO-TECNICO.md`). Leia os planos D1 a D9 em `docs/superpowers/plans/domains/`.
 
       ## Produza `docs/superpowers/plans/PLANO-BACKEND.md`
-      1. **Serviços e dependências de startup:** nginx, orchestrator, agent-worker, postgres, minio: portas, healthchecks, variáveis de ambiente de cada um, ordem de `depends_on`. Os nós `infra-*` leem esta parte primeiro.
-      2. **Um bloco por nó de implementação** (`infra-docker`, `infra-postgres`, `infra-minio`, `infra-nginx`, `db-models`, `db-migrations`, `db-seed`, `auth-backend`, `be-agents`, `be-skills`, `be-knowledge`, `be-integrations`, `spike`, `pe-compiler`, `pe-validator`, `pe-loader`, `rt-executor`, `rt-worker`, `rt-websocket`, `hitl-approval`, `hitl-notification`, `hitl-resume`): objetivo, arquivos que cria, contratos que expõe (assinaturas, rotas com método e payload, eventos), contratos que consome de outros nós, critérios de aceite testáveis, testes obrigatórios.
+      1. **Serviços e dependências de startup:** nginx, orchestrator, agent-worker, postgres, garage: portas, healthchecks, variáveis de ambiente de cada um, ordem de `depends_on`. Os nós `infra-*` leem esta parte primeiro.
+      2. **Um bloco por nó de implementação** (`infra-docker`, `infra-postgres`, `infra-garage`, `infra-nginx`, `db-models`, `db-migrations`, `db-seed`, `auth-backend`, `be-agents`, `be-skills`, `be-knowledge`, `be-integrations`, `spike`, `pe-compiler`, `pe-validator`, `pe-loader`, `rt-executor`, `rt-worker`, `rt-websocket`, `hitl-approval`, `hitl-notification`, `hitl-resume`): objetivo, arquivos que cria, contratos que expõe (assinaturas, rotas com método e payload, eventos), contratos que consome de outros nós, critérios de aceite testáveis, testes obrigatórios.
       3. **Tabela de endpoints** da spec seção 9 com: método, rota, nó responsável, auth exigida, códigos de erro.
       4. **Riscos por fase** e o que o revisor daquela fase deve checar com mais rigor.
 
@@ -103,6 +104,7 @@ nodes:
       O conteúdo integral de `PLANO-BACKEND.md`.
     x: 360
     y: 160
+    reasoning: false
   - id: plan-frontend
     name: Plano de Frontend
     prompt: |-
@@ -139,6 +141,7 @@ nodes:
       O conteúdo integral de `PLANO-FRONTEND.md`.
     x: 360
     y: 400
+    reasoning: false
   - id: design-system
     name: Design System
     prompt: |-
@@ -176,6 +179,7 @@ nodes:
       O conteúdo integral de `DESIGN-SYSTEM.md`.
     x: 360
     y: 640
+    reasoning: false
   - id: plan-review
     name: Revisão de Planejamento
     prompt: |-
@@ -226,6 +230,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 680
     y: 400
+    reasoning: false
   - id: infra-docker
     name: Infra Docker Compose
     prompt: |-
@@ -248,10 +253,10 @@ nodes:
       Use "## Resultado de Plano de Backend" (serviços, dependências, variáveis) e o `CONTRATO-TECNICO.md` (layout, portas, versões, dependências completas, ambiente de desenvolvimento). Leia `docs/superpowers/plans/domains/D1-infra.md`.
 
       ## Você é dono de
-      `docker-compose.yml`, `docker-compose.override.yml`, `.env.example`, `.dockerignore`, `.gitignore`, `.gitattributes`, os Dockerfiles, e o scaffold de `agent-orchestrator/`, `agent-worker/` e `agent-portal/`. Não crie arquivos em `nginx/`, `postgres/` nem `minio/`: são de outros nós que rodam em paralelo; o compose apenas os referencia pelos caminhos do contrato.
+      `docker-compose.yml`, `docker-compose.override.yml`, `.env.example`, `.dockerignore`, `.gitignore`, `.gitattributes`, os Dockerfiles, e o scaffold de `agent-orchestrator/`, `agent-worker/` e `agent-portal/`. Não crie arquivos em `nginx/`, `postgres/` nem `garage/`: são de outros nós que rodam em paralelo; o compose apenas os referencia pelos caminhos do contrato.
 
       ## Entregue
-      1. `docker-compose.yml` com os 6 serviços do contrato (nginx, portal, orchestrator, agent-worker com 2 réplicas, postgres, minio), mais serviços one-shot de init se o contrato ou o nó de MinIO precisarem. Healthcheck em todos, com comandos que **existem na imagem** (confirme: imagens slim e alpine nem sempre têm `curl`; use `python -c`, `wget`, `pg_isready` ou instale o binário no Dockerfile). `depends_on` com `condition: service_healthy`. agent-worker sem porta publicada. Imagens com tag fixa, nunca `latest`. Volumes nomeados para dados.
+      1. `docker-compose.yml` com os 6 serviços do contrato (nginx, portal, orchestrator, agent-worker com 2 réplicas, postgres, garage), mais serviços one-shot de init se o contrato ou o nó de Garage precisarem. Healthcheck em todos, com comandos que **existem na imagem** (confirme: imagens slim e alpine nem sempre têm `curl`; use `python -c`, `wget`, `pg_isready` ou instale o binário no Dockerfile). `depends_on` com `condition: service_healthy`. agent-worker sem porta publicada. Imagens com tag fixa, nunca `latest`. Volumes nomeados para dados.
       2. `docker-compose.override.yml` de desenvolvimento conforme contrato: bind mount do código, reload, portas de depuração.
       3. Dockerfiles: orchestrator e worker em Python 3.11-slim, portal em Node 20 (multi-stage para produção; o override usa `next dev`). O entrypoint do orchestrator roda `alembic upgrade head` e o seed antes do uvicorn, tolerando ainda não existirem migrations (o nó de migrations completa isso depois).
       4. Scaffold mínimo, com **todas as dependências do contrato já declaradas e instaladas** (os nós paralelos não podem instalar pacotes):
@@ -265,11 +270,12 @@ nodes:
       `docker compose config`; `docker compose build`; subir **só os serviços que não dependem de arquivos dos outros nós de infra** para testar os healthchecks do orchestrator, worker e portal isoladamente (por exemplo `docker compose up -d --no-deps orchestrator agent-worker portal`, ou `docker compose run --rm`). O stack completo é verificado pelo Infra Review. Rode `npm run lint` e os testes do scaffold. Deixe os containers que subiu de pé.
 
       ## Armadilhas
-      - Réplicas com porta publicada conflitam; MinIO e worker não podem disputar a mesma porta do host.
+      - Réplicas com porta publicada conflitam; Garage e worker não podem disputar a mesma porta do host.
       - `condition: service_healthy` com healthcheck que falha por falta de binário trava o stack inteiro.
       - Não use `version:` no compose (obsoleto no Compose v2+).
     x: 1000
     y: 80
+    reasoning: false
   - id: infra-postgres
     name: Infra Postgres
     prompt: |-
@@ -304,8 +310,8 @@ nodes:
     x: 1000
     y: 240
     reasoning: false
-  - id: infra-minio
-    name: Infra MinIO
+  - id: infra-garage
+    name: Infra Garage
     prompt: |-
       > **Protocolo comum do flow Agent Portal Dev** (vale para todos os nós)
       > 1. **Fontes de verdade, em ordem de precedência:** (a) `docs/superpowers/plans/CONTRATO-TECNICO.md`, escrito pelo Arquiteto de Sistema; (b) a spec `docs/superpowers/specs/2026-09-17-agent-portal-design.md`; (c) o plano do seu domínio em `docs/superpowers/plans/domains/` e `docs/superpowers/plans/2026-09-21-execution-plan.md`; (d) `PLANO-BACKEND.md`, `PLANO-FRONTEND.md` e `DESIGN-SYSTEM.md` em `docs/superpowers/plans/`; (e) este prompt. Em conflito, vale o de maior precedência; registre o desvio na resposta final. Nunca invente endpoint, campo, evento ou formato que não esteja nessas fontes: se faltar, decida o mínimo coerente com elas e registre como decisão.
@@ -318,21 +324,29 @@ nodes:
       > 8. **Feedback de validação:** se esta mensagem contiver `## Feedback da validação`, ela é prioridade. Corrija cada ponto citado primeiro, sem refazer o que já está correto, e responda ponto a ponto o que mudou e como verificou.
       > 9. **Resposta final:** arquivos criados ou alterados (caminhos), contratos públicos que você expôs (assinaturas, rotas, eventos), decisões tomadas, comandos de verificação com resultado, pendências e mudanças solicitadas em arquivos de outros donos.
 
-      # Agente: Infra MinIO
+      # Agente: Infra Garage
 
-      Você é o engenheiro de infraestrutura dono de `minio/`: object storage dos artefatos de agentes (`.yml`) e skills (`.md`).
+      Você é o engenheiro de infraestrutura dono de `garage/`: object storage S3-compatible dos artefatos de agentes (`.yml`) e skills (`.md`). O servidor é o **Garage** (https://garagehq.deuxfleurs.fr), open source AGPLv3 em Rust, escolhido para substituir o MinIO, que saiu de manutenção. O cliente Python da aplicação continua sendo a lib `minio` (é um cliente S3 genérico): só o servidor muda, não o código que consome a API S3.
 
       ## Entrada
       Use "## Resultado de Plano de Backend" e o `CONTRATO-TECNICO.md` (portas, variáveis, nomes de buckets).
 
+      ## Decisão de stack (fixa, não renegocie)
+      - Imagem: `dxflrs/garage:v2.4.1` (tag fixa, nunca `latest`).
+      - Topologia: **single-node** (V1 local). `replication_factor = 1`, `replication_mode = "none"`.
+      - O Garage expõe a API S3 na porta **3900** (`[s3_api] api_bind_addr`), RPC na 3901, web na 3902 e admin na 3903. A aplicação fala S3 com a porta 3900.
+      - Configuração via arquivo TOML (`garage.toml`) montado em `/etc/garage.toml`.
+
       ## Entregue
-      1. Inicialização idempotente dos buckets `agents` e `skills`. Padrão recomendado: um serviço one-shot `minio-init` com a imagem `minio/mc` (tag fixa) que espera o MinIO ficar saudável, cria os buckets com `mc mb --ignore-existing` e termina. **Não** inicie o `minio server` dentro de um script de init nem baixe binários da internet no boot. Coloque o script em `minio/init-buckets.sh` (LF) e descreva na resposta final o bloco exato do serviço `minio-init` e do healthcheck do MinIO para o Infra Review aplicar no compose (dono: Infra Docker Compose).
-      2. Buckets **privados**: nada de `mc anonymous set download` ou políticas públicas. Acesso só com credenciais.
-      3. Healthcheck do MinIO com um comando que exista na imagem escolhida (confirme rodando a imagem: `curl` pode não existir; `mc ready local` ou o endpoint `/minio/health/live` via ferramenta disponível).
-      4. `minio/README.md`: credenciais por env, portas, layout de objetos (`agents/{agentId}/agent.yml`, `skills/{skillId}/skill.md`, ou o que o contrato definir), versionamento de objetos se o contrato pedir.
+      1. `garage/garage.toml` (LF) com a config single-node: `[node]` (metadata_dir, data_dir, replication_factor = 1, replication_mode = "none", rpc_bind_addr, rpc_public_addr, rpc_secret), `[s3_api]` (s3_region, api_bind_addr = "[::]:3900", root_domain), `[s3_web]`, `[admin]`. O `rpc_secret` é gerado pelo bootstrap (item 2) e persistido no volume de dados, para ser estável entre restarts; o TOML referencia o valor gerado. Nunca versionar um `rpc_secret` em claro no repositório.
+      2. **Bootstrap idempotente** em `garage/init.sh` (LF): um one-shot que (a) garante o `rpc_secret` (gera com `openssl rand -hex 32` e persiste no volume se não existir), (b) espera o Garage responder, (c) aplica o layout single-node (`garage layout assign <node-id> --zone dc1 --capacity 100G` e `garage apply`), (d) cria o usuário S3 com access key/secret (`garage user create`), (e) cria os buckets `agents` e `skills` (`garage bucket create`), e (f) termina. Idempotente: rodar duas vezes não falha (verifique existência antes de criar; use `|| true` onde apropriado). **Não** baixe binários da internet no boot; use o binário `garage` que já vem na imagem.
+      3. **Credenciais S3 por env**: o bootstrap cria o usuário S3 com access key/secret iguais a `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` do `.env` (as mesmas que a aplicação já consome no cliente Python, que é S3 genérico). Assim não há novas variáveis: o cliente Python aponta para `http://garage:3900` com `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`. Documente essa correspondência no README.
+      4. **Buckets privados**: sem política pública. Acesso só com as credenciais S3 do usuário criado.
+      5. **Healthcheck** com um comando que exista na imagem `dxflrs/garage:v2.4.1` (confirme rodando a imagem: a imagem tem o binário `garage`; use `garage status` ou um `curl`/`wget` contra a porta admin/S3 se disponível). Descreva na resposta final o bloco exato do serviço `garage`, do one-shot `garage-init` e do healthcheck para o Infra Review aplicar no compose (dono: Infra Docker Compose).
+      6. `garage/README.md`: como gerar o `rpc_secret` e as chaves S3, portas (3900 S3, 3901 RPC, 3902 web, 3903 admin), layout de objetos (`agents/{agentId}/agent.yml`, `skills/{skillId}/skill.md`, ou o que o contrato definir), e como o cliente Python (lib `minio`) aponta para `http://garage:3900`.
 
       ## Verificação
-      Suba um MinIO descartável com a mesma imagem (porta que não conflite com o stack), rode seu init duas vezes e confirme que os buckets existem, são privados e que a segunda execução não falha. Remova o container descartável.
+      Suba um Garage descartável com a mesma imagem (portas que não conflitem com o stack), rode seu init duas vezes e confirme que o layout está aplicado, o usuário S3 existe, os buckets `agents` e `skills` existem e são privados, e que a segunda execução não falha. Faça um `PUT`/`GET` de objeto via cliente S3 (aws cli, mc ou python) para provar a compatibilidade. Remova o container descartável.
     x: 1000
     y: 400
     reasoning: false
@@ -376,6 +390,7 @@ nodes:
       `docker run --rm` com a imagem nginx do contrato e seus arquivos montados rodando `nginx -t` (os upstreams precisam resolver: use a rede do compose se ela existir, ou valide a sintaxe com hosts stub). A verificação de ponta a ponta é do Infra Review.
     x: 1000
     y: 560
+    reasoning: false
   - id: spike
     name: Spike LangGraph
     prompt: |-
@@ -419,6 +434,7 @@ nodes:
       Resultado dos testes (saída real), os trechos de código canônicos de cada padrão (os agentes de pipeline, runtime e HITL vão copiar daqui) e as divergências encontradas em relação ao contrato.
     x: 1000
     y: 800
+    reasoning: false
   - id: infra-review
     name: Infra Review
     prompt: |-
@@ -438,14 +454,14 @@ nodes:
       Você é o SRE que aprova a fundação. Tudo depois disso assume que `docker compose up` funciona e que o scaffold aceita código novo sem rebuild.
 
       ## Entrada
-      - "## Resultado de Infra Docker Compose", "## Resultado de Infra Postgres", "## Resultado de Infra MinIO", "## Resultado de Infra NGINX": o que cada nó fez e as mudanças que pediram no compose. Aplique essas mudanças (você é o único que roda nesta etapa) antes de verificar.
+      - "## Resultado de Infra Docker Compose", "## Resultado de Infra Postgres", "## Resultado de Infra Garage", "## Resultado de Infra NGINX": o que cada nó fez e as mudanças que pediram no compose. Aplique essas mudanças (você é o único que roda nesta etapa) antes de verificar.
       Confira no disco contra o `CONTRATO-TECNICO.md`.
 
       ## Verificação (execute)
       1. `docker compose config`, `docker compose up -d --build`, todos os healthchecks `healthy`.
       2. Via NGINX: `GET http://localhost/` (portal), `GET http://localhost/api/health` (orchestrator, prefixo `/api` preservado), handshake de WebSocket em `/api/ws` chegando ao orchestrator (401 ou fechamento por token inválido já prova o roteamento), uma rota do NextAuth definida no contrato chegando ao portal e não à API.
       3. Worker: nenhuma URL da porta 80 alcança o worker; de dentro do orchestrator, a URL interna do contrato alcança o `/health` das duas réplicas (repita e veja o round-robin nos logs).
-      4. Postgres: extensão `vector` ativa e nenhuma tabela de aplicação criada pelo init. MinIO: buckets `agents` e `skills` existem e são privados (acesso anônimo negado); o init roda de novo sem erro.
+      4. Postgres: extensão `vector` ativa e nenhuma tabela de aplicação criada pelo init. Garage: layout single-node aplicado, usuário S3 criado, buckets `agents` e `skills` existem e são privados (acesso anônimo negado); o init roda de novo sem erro; um PUT/GET de objeto via cliente S3 funciona.
       5. Reload: altere um arquivo do scaffold do orchestrator e do portal (e desfaça) e veja a mudança refletida sem rebuild.
       6. Testes e lint dos scaffolds (onde o contrato manda rodar: por exemplo `docker compose run --rm orchestrator pytest`; `npm run lint` e `npx vitest run` no portal).
 
@@ -456,10 +472,10 @@ nodes:
       4. Imagens com tag fixa; healthchecks com binários que existem na imagem; nenhuma porta publicada em conflito.
       5. NGINX sem rate limiting e com SSE sem buffering nas rotas de chat.
 
-      ## Protocolo de validação (este nó tem arestas retry para: infra-docker, infra-postgres, infra-minio, infra-nginx)
+      ## Protocolo de validação (este nó tem arestas retry para: infra-docker, infra-postgres, infra-garage, infra-nginx)
       - Você DEVE chamar a tool `flow_validate` antes da resposta final.
       - Você roda sozinho nesta fase: pode subir e reconstruir o stack (`docker compose up -d --build`), instalar as dependências que os nós pediram na resposta deles (e só essas), rodar migrations e build. Deixe o stack de pé ao terminar.
-      - **Rejeite** (`approved: false`) quando qualquer critério bloqueante falhar. O `feedback` vai, igual, para TODOS os nós de infraestrutura (infra-docker, infra-postgres, infra-minio, infra-nginx), então escreva uma lista acionável: para cada problema, `[nó responsável] arquivo:linha - o que está errado - o que fazer`. Diga explicitamente que os demais nós não precisam mudar nada. Nada de "melhorar a qualidade" genérico.
+      - **Rejeite** (`approved: false`) quando qualquer critério bloqueante falhar. O `feedback` vai, igual, para TODOS os nós de infraestrutura (infra-docker, infra-postgres, infra-garage, infra-nginx), então escreva uma lista acionável: para cada problema, `[nó responsável] arquivo:linha - o que está errado - o que fazer`. Diga explicitamente que os demais nós não precisam mudar nada. Nada de "melhorar a qualidade" genérico.
       - **Aprove** (`approved: true`) só quando todos os critérios bloqueantes passarem com evidência (saída de comando, arquivo lido). Achados não bloqueantes vão na resposta e não impedem a aprovação.
       - Não reescreva o trabalho dos nós: seu papel é julgar. Exceção: aplicar as mudanças em arquivos compartilhados que os nós pediram na resposta final deles, e ajustes triviais de uma linha que destravam a verificação (registre cada um).
       - **Trava contra loop infinito:** o runner não limita tentativas. Antes de decidir, leia `docs/superpowers/validacoes/infra-review.md` (crie se não existir) e acrescente uma linha com data, veredito e resumo. Se esta for a 4a rejeição pelo MESMO problema, e ele não for de segurança nem de perda de dados, aprove, registre o problema em `docs/superpowers/validacoes/PENDENCIAS.md` e destaque-o na resposta.
@@ -467,6 +483,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 1320
     y: 320
+    reasoning: false
   - id: spike-review
     name: Spike Review
     prompt: |-
@@ -509,6 +526,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 1320
     y: 800
+    reasoning: false
   - id: db-models
     name: DB Models
     prompt: |-
@@ -551,6 +569,7 @@ nodes:
       Migrations (nó seguinte), seed, routers, lógica de negócio.
     x: 1640
     y: 320
+    reasoning: false
   - id: db-migrations
     name: DB Migrations
     prompt: |-
@@ -584,6 +603,7 @@ nodes:
       `alembic upgrade head`, `alembic downgrade base`, `alembic upgrade head` de novo, e `alembic check` (ou autogenerate em dry run) sem diferenças. Cole a saída.
     x: 1960
     y: 320
+    reasoning: false
   - id: db-seed
     name: DB Seed
     prompt: |-
@@ -663,6 +683,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 2600
     y: 320
+    reasoning: false
   - id: auth-backend
     name: Auth Backend
     prompt: |-
@@ -696,6 +717,7 @@ nodes:
       Registro, e-mail duplicado (409), login certo e errado, refresh válido, refresh reutilizado se houver rotação, token expirado, rota protegida sem token (401), rota nova sem dependency explícita continua protegida, rate limit do login.
     x: 2920
     y: 240
+    reasoning: false
   - id: auth-frontend
     name: Auth Frontend
     prompt: |-
@@ -739,6 +761,7 @@ nodes:
       `npm run lint`, `npx tsc --noEmit`, `npx vitest run` em `agent-portal/` (sem `npm install` e sem `npm run build`, que são do revisor).
     x: 2920
     y: 400
+    reasoning: false
   - id: auth-review
     name: Auth Review
     prompt: |-
@@ -844,6 +867,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 3240
     y: 320
+    reasoning: false
   - id: be-agents
     name: Backend Agent CRUD
     prompt: |-
@@ -883,6 +907,7 @@ nodes:
       - Acesso ao MinIO pelo módulo de storage cujo dono o contrato define; não crie um segundo client.
     x: 3560
     y: 80
+    reasoning: false
   - id: be-skills
     name: Backend Skills Tools MCP
     prompt: |-
@@ -920,6 +945,7 @@ nodes:
       - Acesso ao MinIO pelo módulo de storage cujo dono o contrato define; não crie um segundo client.
     x: 3560
     y: 240
+    reasoning: false
   - id: be-knowledge
     name: Backend Knowledge RAG
     prompt: |-
@@ -960,6 +986,7 @@ nodes:
       - Acesso ao MinIO pelo módulo de storage cujo dono o contrato define; não crie um segundo client.
     x: 3560
     y: 400
+    reasoning: false
   - id: be-integrations
     name: Backend Integrations
     prompt: |-
@@ -997,6 +1024,7 @@ nodes:
       - Acesso ao MinIO pelo módulo de storage cujo dono o contrato define; não crie um segundo client.
     x: 3560
     y: 560
+    reasoning: false
   - id: be-review
     name: Backend Review
     prompt: |-
@@ -1044,6 +1072,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 3880
     y: 320
+    reasoning: false
   - id: pe-compiler
     name: Pipeline Compiler
     prompt: |-
@@ -1085,6 +1114,7 @@ nodes:
       Validador (nó paralelo), loader, executor, endpoints.
     x: 4200
     y: 160
+    reasoning: false
   - id: pe-validator
     name: Pipeline Validator
     prompt: |-
@@ -1119,6 +1149,7 @@ nodes:
       Compiler (nó paralelo), loader, runtime.
     x: 4200
     y: 320
+    reasoning: false
   - id: pe-loader
     name: Pipeline Loader
     prompt: |-
@@ -1158,6 +1189,7 @@ nodes:
       Compiler (Pipeline Compiler), validator (Pipeline Validator), executor e worker (runtime).
     x: 4200
     y: 480
+    reasoning: false
   - id: pe-review
     name: Pipeline Review
     prompt: |-
@@ -1205,6 +1237,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 4520
     y: 320
+    reasoning: false
   - id: rt-executor
     name: Runtime Executor
     prompt: |-
@@ -1237,6 +1270,7 @@ nodes:
       A->B->C até o fim com checkpoints; worker fora do ar (retry, nó failed, run pausado e retomável); pause e resume em processo novo; stop; 409 concorrente; maxIterations; interrupção de aprovação acionando o hook.
     x: 4840
     y: 160
+    reasoning: false
   - id: rt-worker
     name: Runtime Worker
     prompt: |-
@@ -1271,6 +1305,7 @@ nodes:
       Executor, WebSocket, compiler.
     x: 4840
     y: 320
+    reasoning: false
   - id: rt-websocket
     name: Runtime WebSocket
     prompt: |-
@@ -1302,6 +1337,7 @@ nodes:
       Conexão com token válido e inválido; isolamento entre owners; publicação para várias conexões; conexão morta não quebra o envio; formato dos frames.
     x: 4840
     y: 480
+    reasoning: false
   - id: rt-review
     name: Runtime Review
     prompt: |-
@@ -1349,6 +1385,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 5160
     y: 320
+    reasoning: false
   - id: hitl-approval
     name: HITL Approval
     prompt: |-
@@ -1380,6 +1417,7 @@ nodes:
       Nó sem efeitos antes do interrupt (reexecução não cria duplicata), upsert idempotente, respond nos três modos, dupla resposta (409), isolamento por owner.
     x: 5480
     y: 160
+    reasoning: false
   - id: hitl-notification
     name: HITL Notification
     prompt: |-
@@ -1411,6 +1449,7 @@ nodes:
       Envio in-app publica o evento correto; falha do canal primário aciona retry e depois fallback; timeout registrado; isolamento por owner.
     x: 5480
     y: 320
+    reasoning: false
   - id: hitl-resume
     name: HITL Resume
     prompt: |-
@@ -1444,6 +1483,7 @@ nodes:
       Criação do nó de aprovação e da ApprovalRequest (HITL Approval) e notificações (HITL Notification).
     x: 5480
     y: 480
+    reasoning: false
   - id: hitl-review
     name: HITL Review
     prompt: |-
@@ -1492,6 +1532,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 5800
     y: 320
+    reasoning: false
   - id: fe-shell
     name: Frontend Shell
     prompt: |-
@@ -1531,6 +1572,7 @@ nodes:
       `npm run lint`, `npx tsc --noEmit`, `npx vitest run` e `npm run build`. Com o stack de pé, abra o portal via NGINX, faça login com o admin e navegue por todas as rotas (script Playwright headless ou fetch das páginas), sem erro no console.
     x: 6120
     y: 400
+    reasoning: false
   - id: fe-dashboard
     name: Frontend Dashboard
     prompt: |-
@@ -1573,6 +1615,7 @@ nodes:
       Telas de agentes, pipelines, monitor, aprovações e biblioteca.
     x: 6440
     y: 0
+    reasoning: false
   - id: fe-agents
     name: Frontend Agents
     prompt: |-
@@ -1613,6 +1656,7 @@ nodes:
       Editor de fluxo, monitor, aprovações, biblioteca de skills, tools, MCP e knowledge, dashboard.
     x: 6440
     y: 160
+    reasoning: false
   - id: fe-flow-editor
     name: Frontend Flow Editor
     prompt: |-
@@ -1655,6 +1699,7 @@ nodes:
       Monitor de execução, aprovações, telas de agentes, biblioteca, dashboard.
     x: 6440
     y: 320
+    reasoning: false
   - id: fe-monitor
     name: Frontend Monitor
     prompt: |-
@@ -1697,6 +1742,7 @@ nodes:
       Editor de fluxo, aprovações (apenas link para a aprovação pendente), agentes, biblioteca, dashboard.
     x: 6440
     y: 480
+    reasoning: false
   - id: fe-approvals
     name: Frontend Approvals
     prompt: |-
@@ -1740,6 +1786,7 @@ nodes:
       Editor, monitor, agentes, biblioteca, dashboard.
     x: 6440
     y: 640
+    reasoning: false
   - id: fe-library
     name: Frontend Library
     prompt: |-
@@ -1781,6 +1828,7 @@ nodes:
       Agentes, editor, monitor, aprovações, dashboard.
     x: 6440
     y: 800
+    reasoning: false
   - id: fe-review
     name: Frontend Review
     prompt: |-
@@ -1827,6 +1875,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 6760
     y: 400
+    reasoning: false
   - id: qa-integration
     name: QA Integration
     prompt: |-
@@ -1866,6 +1915,7 @@ nodes:
       Relatório com tabela cenário, status e evidência; para cada falha: passo, esperado, obtido, logs relevantes (`docker compose logs`), hipótese de causa e arquivo provável. Os testes ficam versionados para o QA Final reexecutar. Não corrija código de produto: isso é do QA Fix.
     x: 7080
     y: 400
+    reasoning: false
   - id: qa-e2e
     name: QA E2E
     prompt: |-
@@ -1905,6 +1955,7 @@ nodes:
       Relatório com tabela jornada, status e evidência (caminho do screenshot ou trace); para cada falha: passo, esperado, obtido, causa provável e arquivo. Não corrija código de produto: isso é do QA Fix.
     x: 7400
     y: 400
+    reasoning: false
   - id: qa-fix
     name: QA Fix
     prompt: |-
@@ -1940,6 +1991,7 @@ nodes:
       Tabela falha, causa raiz, arquivos, correção, teste adicionado; falhas não corrigidas com motivo e risco; saída resumida da execução completa das suítes.
     x: 7720
     y: 400
+    reasoning: false
   - id: qa-final
     name: QA Final Approval
     prompt: |-
@@ -1987,6 +2039,7 @@ nodes:
       - **Resposta final ao aprovar = handoff da fase.** Os próximos nós constroem em cima dela: inventário do que existe (arquivos, módulos, endpoints, modelos, eventos), contratos públicos (assinaturas, rotas, payloads), comandos para subir e testar, e ressalvas. Seja concreto e completo.
     x: 8040
     y: 400
+    reasoning: false
 edges:
   - from: arch
     to: plan-backend
@@ -2040,7 +2093,7 @@ edges:
     to: infra-postgres
     type: data
   - from: plan-backend
-    to: infra-minio
+    to: infra-garage
     type: data
   - from: plan-backend
     to: infra-nginx
@@ -2052,7 +2105,7 @@ edges:
     to: infra-postgres
     type: order
   - from: plan-review
-    to: infra-minio
+    to: infra-garage
     type: order
   - from: plan-review
     to: infra-nginx
@@ -2063,7 +2116,7 @@ edges:
   - from: infra-postgres
     to: infra-review
     type: data
-  - from: infra-minio
+  - from: infra-garage
     to: infra-review
     type: data
   - from: infra-nginx
@@ -2076,7 +2129,7 @@ edges:
     to: infra-postgres
     type: retry
   - from: infra-review
-    to: infra-minio
+    to: infra-garage
     type: retry
   - from: infra-review
     to: infra-nginx

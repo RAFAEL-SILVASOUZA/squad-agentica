@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-24T12:31:50.861Z
+finishedAt: 2026-09-24T21:16:08.202Z
 outcome: paused
 nodes:
   - id: arch
@@ -26,32 +26,109 @@ nodes:
       - docs/superpowers/plans/DESIGN-SYSTEM.md
   - id: plan-review
     name: Revisão de Planejamento
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - docs/superpowers/validacoes/plan-review.md
   - id: infra-docker
     name: Infra Docker Compose
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - .dockerignore
+      - .env.example
+      - .gitattributes
+      - .gitignore
+      - agent-orchestrator/.python-version
+      - agent-orchestrator/Dockerfile
+      - agent-orchestrator/README.md
+      - agent-orchestrator/alembic.ini
+      - agent-orchestrator/alembic/__init__.py
+      - agent-orchestrator/alembic/env.py
+      - agent-orchestrator/alembic/versions/.gitkeep
+      - agent-orchestrator/app/__init__.py
+      - agent-orchestrator/app/api/__init__.py
+      - agent-orchestrator/app/core/__init__.py
+      - agent-orchestrator/app/core/config.py
+      - agent-orchestrator/app/core/embeddings.py
+      - agent-orchestrator/app/core/errors.py
+      - agent-orchestrator/app/core/llm.py
+      - agent-orchestrator/app/core/security.py
+      - agent-orchestrator/app/db/__init__.py
+      - agent-orchestrator/app/db/seed.py
+      - agent-orchestrator/app/db/session.py
+      - agent-orchestrator/app/main.py
+      - agent-orchestrator/pyproject.toml
+      - agent-orchestrator/requirements.txt
+      - agent-orchestrator/tests/__init__.py
+      - agent-orchestrator/tests/test_health.py
+      - agent-orchestrator/tests/test_router_discovery.py
+      - agent-portal/.eslintrc.json
+      - agent-portal/Dockerfile
+      - agent-portal/app/globals.css
+      - agent-portal/app/layout.tsx
+      - agent-portal/app/page.test.tsx
+      - agent-portal/app/page.tsx
+      - agent-portal/next.config.mjs
+      - agent-portal/next.config.ts
+      - agent-portal/package.json
+      - agent-portal/tsconfig.json
+      - agent-portal/vitest.config.ts
+      - agent-portal/vitest.setup.ts
+      - agent-worker/.python-version
+      - agent-worker/Dockerfile
+      - agent-worker/README.md
+      - agent-worker/app/__init__.py
+      - agent-worker/app/main.py
+      - agent-worker/pyproject.toml
+      - agent-worker/tests/__init__.py
+      - agent-worker/tests/test_health.py
+      - docker-compose.override.yml
+      - docker-compose.yml
+    error: Context size has been exceeded.
   - id: infra-postgres
     name: Infra Postgres
-    status: pending
-    artifacts: []
-  - id: infra-minio
-    name: Infra MinIO
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - postgres/README.md
+      - postgres/init.sql
+    error: Context size has been exceeded.
+  - id: infra-garage
+    name: Infra Garage
+    status: done
+    artifacts:
+      - garage/README.md
+      - garage/garage.toml
+      - garage/init.sh
+    error: |
+      Recursion limit of 700 reached without hitting a stop condition. You can increase the limit by setting the "recursionLimit" config key.
+
+      Troubleshooting URL: https://docs.langchain.com/oss/javascript/langgraph/GRAPH_RECURSION_LIMIT/
   - id: infra-nginx
     name: Infra NGINX
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - nginx/README.md
+      - nginx/conf.d/00-upstreams.conf
+      - nginx/conf.d/10-public.conf
+      - nginx/conf.d/20-internal.conf
+      - nginx/nginx.conf
+    error: Context size has been exceeded.
   - id: spike
     name: Spike LangGraph
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - spike/README.md
+      - spike/_probe.py
+      - spike/docker-compose.yml
+      - spike/main.py
+      - spike/test_spike.py
+      - spike/worker.py
+    error: Cannot read properties of undefined (reading 'message')
   - id: infra-review
     name: Infra Review
     status: pending
-    artifacts: []
+    artifacts:
+      - docker-compose.yml
+    error: Cannot read properties of undefined (reading 'message')
   - id: spike-review
     name: Spike Review
     status: pending
