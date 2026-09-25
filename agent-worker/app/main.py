@@ -1,21 +1,67 @@
-"""Agent worker — FastAPI entrypoint (scaffold, dono: infra-docker).
+"""Agent worker: FastAPI entrypoint.
 
-Contrato §2.3: o worker é stateless e genérico. Ele expõe:
+Dono: rt-worker (FASE 6). Contrato (CONTRATO-TECNICO 2.3):
 - ``GET /health``  -> 200 (healthcheck do container).
-- ``POST /execute`` -> stub 501 no scaffold; o nó ``rt-worker`` (FASE 6)
-  implementa a execução real (baixa .yml/.md do MinIO, roda o agente, devolve
-  output + action + logs).
+- ``POST /execute`` -> executa um agente por request.
 
-O worker **não** tem porta publicada nem rota na :80: o orchestrator o chama
-pelo server block interno do NGINX (:8081) com o header ``X-Worker-Token``.
+O worker e stateless e generico: nao sabe qual agente vai rodar ate receber
+a request. Baixa o .yml do agente do Garage, monta o snapshot, chama o
+loader para derivar capacidades, executa o agente (LLM + tool calls) e
+devolve output + action + logs.
+
+Auth: header ``X-Worker-Token`` obrigatorio (segredo compartilhado).
+Sem token ou token errado -> 401.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
-app = FastAPI(title="Agent Portal Worker", version="0.1.0")
+from app.worker import execute_agent
+
+# ---------------------------------------------------------------------------
+# Logging estruturado (contrato 8: JSON no stdout, sem segredos)
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}',
+)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="Agent Portal Worker", version="0.2.0")
+
+# Token compartilhado (do ambiente).
+WORKER_TOKEN = os.environ.get("WORKER_TOKEN", "change-me-in-prod")
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+
+class ExecuteRequest(BaseModel):
+    """Body de POST /execute (contrato 2.3)."""
+
+    agentId: str = Field(..., description="UUID do agente")
+    nodeId: str = Field(..., description="ID do no na pipeline")
+    inputs: dict[str, Any] = Field(default_factory=dict, description="Dados de entrada")
+    timeout: int = Field(default=60, ge=1, le=600, description="Timeout em segundos")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 
 @app.get("/health")
@@ -26,16 +72,73 @@ async def health() -> dict[str, str]:
 
 @app.post("/execute")
 async def execute(request: Request) -> JSONResponse:
-    """Stub de execução (501).
+    """Executa um agente (contrato 2.3).
 
-    O nó ``rt-worker`` substitui este handler pela implementação real.
-    Contrato §2.3: body ``{agentId, nodeId, inputs, timeout}``; response 200
-    ``{status, outputs, action, iterations, logs}``.
+    - Auth: header ``X-Worker-Token`` (401 se ausente/errado).
+    - Body: ``{agentId, nodeId, inputs, timeout}``.
+    - Response 200: ``{status, outputs, action, iterations, logs}``.
+    - Response 404: ``{error: "agent_not_found", code: "agent_not_found"}``.
+    - Erros: resposta estruturada (nunca stack trace cru).
     """
-    return JSONResponse(
-        status_code=501,
-        content={
-            "error": "not implemented",
-            "code": "execute_not_implemented",
-        },
+    # 1. Auth.
+    token = request.headers.get("X-Worker-Token", "")
+    if token != WORKER_TOKEN:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "unauthorized", "code": "worker_token_invalid"},
+        )
+
+    # 2. Parse body.
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid request body", "code": "invalid_body"},
+        )
+
+    try:
+        req = ExecuteRequest(**body)
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "validation error",
+                "code": "invalid_body",
+                "details": {"errors": [str(e)]},
+            },
+        )
+
+    # 3. Executa o agente.
+    logger.info(
+        "Execute request: agent_id=%s node_id=%s timeout=%d",
+        req.agentId,
+        req.nodeId,
+        req.timeout,
     )
+
+    result = await execute_agent(
+        agent_id=req.agentId,
+        node_id=req.nodeId,
+        inputs=req.inputs,
+        timeout=req.timeout,
+    )
+
+    # 4. Monta a resposta.
+    if result.status == "failed" and result.error and "not found" in result.error.lower():
+        return JSONResponse(
+            status_code=404,
+            content={"error": "agent_not_found", "code": "agent_not_found"},
+        )
+
+    response: dict[str, Any] = {
+        "status": result.status,
+        "outputs": result.outputs,
+        "action": result.action,
+        "iterations": result.iterations,
+        "logs": result.logs,
+    }
+    if result.error:
+        response["error"] = result.error
+
+    return JSONResponse(status_code=200, content=response)
