@@ -12,9 +12,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.db.models import Integration, User
+from app.db.models import User
 from app.integrations.registry import IntegrationRegistry
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -60,8 +59,8 @@ class TestIntegrationRegistry:
         )
         assert integration.id is not None
         assert integration.name == "my-github"
-        assert integration.type.value == "github"
-        assert integration.status.value == "active"
+        assert integration.type == "github"
+        assert integration.status == "active"
         assert integration.config["owner"] == "myorg"
 
     async def test_create_invalid_type(
@@ -203,7 +202,7 @@ class TestIntegrationRegistry:
         )
         assert updated.name == "updated-name"
         assert updated.config["owner"] == "org2"
-        assert updated.status.value == "disabled"
+        assert updated.status == "disabled"
 
     async def test_update_integration_not_found(
         self, session: AsyncSession, owner_id: uuid.UUID

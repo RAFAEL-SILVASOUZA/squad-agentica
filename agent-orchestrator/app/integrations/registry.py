@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.db.models import Integration, IntegrationStatus, IntegrationType
+from app.db.models import Integration
 
 
 class IntegrationRegistry:
@@ -111,10 +111,10 @@ class IntegrationRegistry:
         integration = Integration(
             id=uuid.uuid4(),
             owner_id=owner_id,
-            type=IntegrationType(type),
+            type=type,
             name=name,
             config=config,
-            status=IntegrationStatus(status),
+            status=status,
         )
         self._db.add(integration)
         await self._db.commit()
@@ -151,7 +151,7 @@ class IntegrationRegistry:
             integration.name = name
 
         if config is not None:
-            if integration.type == IntegrationType.github:
+            if integration.type == "github":
                 if "owner" not in config or not config["owner"]:
                     raise AppError(
                         400,
@@ -169,7 +169,7 @@ class IntegrationRegistry:
                     "invalid_status",
                     {"message": "Status deve ser 'active' ou 'disabled'."},
                 )
-            integration.status = IntegrationStatus(status)
+            integration.status = status
 
         await self._db.commit()
         await self._db.refresh(integration)
@@ -190,8 +190,8 @@ class IntegrationRegistry:
         result = await self._db.execute(
             select(Integration).where(
                 Integration.owner_id == owner_id,
-                Integration.type == IntegrationType.github,
-                Integration.status == IntegrationStatus.active,
+                Integration.type == "github",
+                Integration.status == "active",
             )
         )
         integration = result.scalars().first()

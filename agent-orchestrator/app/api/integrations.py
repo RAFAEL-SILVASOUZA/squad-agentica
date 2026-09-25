@@ -110,13 +110,23 @@ class RivvnStatusResponse(BaseModel):
 
 def _to_response(integration: Any) -> IntegrationResponse:
     """Converte um model Integration em IntegrationResponse (camelCase)."""
+    type_val = (
+        integration.type.value
+        if hasattr(integration.type, "value")
+        else str(integration.type)
+    )
+    status_val = (
+        integration.status.value
+        if hasattr(integration.status, "value")
+        else str(integration.status)
+    )
     return IntegrationResponse(
         id=integration.id,
         ownerId=str(integration.owner_id),
-        type=integration.type.value if hasattr(integration.type, "value") else str(integration.type),
+        type=type_val,
         name=integration.name,
         config=integration.config,
-        status=integration.status.value if hasattr(integration.status, "value") else str(integration.status),
+        status=status_val,
         createdAt=integration.created_at.isoformat() if integration.created_at else "",
         updatedAt=integration.updated_at.isoformat() if integration.updated_at else "",
     )
@@ -261,7 +271,11 @@ async def github_list_issues(
     """Lista issues de um repositório."""
     registry = IntegrationRegistry(db)
     await registry.get_github_integration(user.id)
-    label_list = [l.strip() for l in labels.split(",") if l.strip()] if labels else None
+    label_list = (
+        [item.strip() for item in labels.split(",") if item.strip()]
+        if labels
+        else None
+    )
     issues = await github_client.list_issues(owner, repo, state=state, labels=label_list)
     return GithubIssuesResponse(issues=issues)
 
@@ -280,16 +294,16 @@ async def rivvn_authorize(
 
     V1: sempre retorna 403 (contrato comercial não ativo).
     """
-    from app.db.models import RivvnConnection, RivvnContractStatus
-
     from sqlalchemy import select
+
+    from app.db.models import RivvnConnection
 
     result = await db.execute(
         select(RivvnConnection).where(RivvnConnection.owner_id == user.id)
     )
     connection = result.scalar_one_or_none()
 
-    if connection is None or connection.contract_status != RivvnContractStatus.active:
+    if connection is None or connection.contract_status != "active":
         raise AppError(
             403,
             "forbidden",
@@ -324,16 +338,16 @@ async def rivvn_callback(
 
     V1: sempre retorna 403 (contrato comercial não ativo).
     """
-    from app.db.models import RivvnConnection, RivvnContractStatus
-
     from sqlalchemy import select
+
+    from app.db.models import RivvnConnection
 
     result = await db.execute(
         select(RivvnConnection).where(RivvnConnection.owner_id == user.id)
     )
     connection = result.scalar_one_or_none()
 
-    if connection is None or connection.contract_status != RivvnContractStatus.active:
+    if connection is None or connection.contract_status != "active":
         raise AppError(
             403,
             "forbidden",
@@ -358,9 +372,9 @@ async def rivvn_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> RivvnStatusResponse:
     """Status da conexão Rivvn do usuário."""
-    from app.db.models import RivvnConnection, RivvnContractStatus, RivvnStatus
-
     from sqlalchemy import select
+
+    from app.db.models import RivvnConnection
 
     result = await db.execute(
         select(RivvnConnection).where(RivvnConnection.owner_id == user.id)
@@ -370,16 +384,8 @@ async def rivvn_status(
     if connection is None:
         return RivvnStatusResponse(connected=False, contractStatus="inactive")
 
-    contract_status = (
-        connection.contract_status.value
-        if hasattr(connection.contract_status, "value")
-        else str(connection.contract_status)
-    )
-    connected = (
-        connection.status == RivvnStatus.connected
-        if hasattr(connection.status, "value")
-        else connection.status == "connected"
-    )
+    contract_status = str(connection.contract_status)
+    connected = connection.status == "connected"
 
     return RivvnStatusResponse(connected=connected, contractStatus=contract_status)
 
@@ -390,9 +396,9 @@ async def rivvn_disconnect(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """Desconecta o Rivvn (remove a conexão)."""
-    from app.db.models import RivvnConnection
-
     from sqlalchemy import select
+
+    from app.db.models import RivvnConnection
 
     result = await db.execute(
         select(RivvnConnection).where(RivvnConnection.owner_id == user.id)

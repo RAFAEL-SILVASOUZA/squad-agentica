@@ -14,11 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError
 from app.db.models import (
     RivvnConnection,
-    RivvnContractStatus,
-    RivvnStatus,
     User,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -73,15 +70,15 @@ class TestRivvnGate:
         connection = RivvnConnection(
             id=uuid.uuid4(),
             owner_id=owner_id,
-            contract_status=RivvnContractStatus.inactive,
-            status=RivvnStatus.disconnected,
+            contract_status="inactive",
+            status="disconnected",
         )
         session.add(connection)
         await session.commit()
         await session.refresh(connection)
 
-        assert connection.contract_status == RivvnContractStatus.inactive
-        assert connection.status == RivvnStatus.disconnected
+        assert connection.contract_status == "inactive"
+        assert connection.status == "disconnected"
 
     async def test_rivvn_connection_expired(
         self, session: AsyncSession, owner_id: uuid.UUID
@@ -90,14 +87,14 @@ class TestRivvnGate:
         connection = RivvnConnection(
             id=uuid.uuid4(),
             owner_id=owner_id,
-            contract_status=RivvnContractStatus.expired,
-            status=RivvnStatus.expired,
+            contract_status="expired",
+            status="expired",
         )
         session.add(connection)
         await session.commit()
         await session.refresh(connection)
 
-        assert connection.contract_status == RivvnContractStatus.expired
+        assert connection.contract_status == "expired"
 
     async def test_rivvn_query_always_raises(
         self, session: AsyncSession, owner_id: uuid.UUID
@@ -140,8 +137,8 @@ class TestRivvnGate:
         connection = RivvnConnection(
             id=uuid.uuid4(),
             owner_id=owner_id,
-            contract_status=RivvnContractStatus.inactive,
-            status=RivvnStatus.disconnected,
+            contract_status="inactive",
+            status="disconnected",
         )
         session.add(connection)
         await session.commit()
