@@ -17,7 +17,6 @@ Segurança (spec 14.1):
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import httpx
@@ -46,9 +45,10 @@ def _get_token() -> str:
     Raises:
         AppError(502, "github_error"): se o token não está configurado.
     """
+    from app.core.config import settings
     from app.core.errors import AppError
 
-    token = os.environ.get("GITHUB_TOKEN", "")
+    token = settings.github_token
     if not token:
         raise AppError(
             502,

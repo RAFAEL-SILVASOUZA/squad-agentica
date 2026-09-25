@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-25T16:30:31.102Z
+finishedAt: 2026-09-25T18:49:55.150Z
 outcome: paused
 nodes:
   - id: arch
@@ -210,28 +210,99 @@ nodes:
       - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\types\next-auth.d.ts
   - id: auth-review
     name: Auth Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-orchestrator/app/main.py
+      - agent-orchestrator/tests/test_router_discovery.py
+      - agent-portal/app/(auth)/login/page.tsx
+      - agent-portal/app/(auth)/register/page.tsx
+      - docs/superpowers/handoffs/auth-review.md
+      - docs/superpowers/validacoes/auth-review.md
+      - nginx/conf.d/10-public.conf
   - id: be-agents
     name: Backend Agent CRUD
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\app\agents\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\app\agents\base.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\app\agents\service.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\app\agents\storage.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\app\agents\validator.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\app\api\agents.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\tests\test_agents_base.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\tests\test_agents_crud.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\tests\test_agents_storage.py
+      - C:\Projetos\squad-agentica.worktrees\be-agents\agent-orchestrator\tests\test_agents_validator.py
   - id: be-agent-chat
     name: Backend Agent Builder Chat
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\be-agent-chat\agent-orchestrator\app\agents\chat\conversation.py
+      - C:\Projetos\squad-agentica.worktrees\be-agent-chat\agent-orchestrator\app\agents\chat\proposal.py
+      - C:\Projetos\squad-agentica.worktrees\be-agent-chat\agent-orchestrator\app\api\agent_chat.py
+      - C:\Projetos\squad-agentica.worktrees\be-agent-chat\agent-orchestrator\tests\test_agent_chat.py
+      - agent-orchestrator/app/agents/chat/__init__.py
+      - agent-orchestrator/app/agents/chat/conversation.py
+      - agent-orchestrator/app/agents/chat/preview.py
+      - agent-orchestrator/app/agents/chat/proposal.py
+      - agent-orchestrator/app/api/agent_chat.py
+      - agent-orchestrator/tests/test_agent_chat.py
   - id: be-skills
     name: Backend Skills Tools MCP
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\_write_test.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\api\mcp_servers.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\api\skills.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\api\tools.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\mcp\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\mcp\client.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\mcp\registry.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\mcp\validator.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\skills\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\skills\builtins\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\skills\registry.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\skills\storage.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\tools\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\tools\builtins\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\tools\registry.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\tools\sandbox.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\app\tools\validator.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_mcp_client_mock.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_mcp_registry.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_skills.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_tools_blocklist.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_tools_registry.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_tools_sandbox.py
+      - C:\Projetos\squad-agentica.worktrees\be-skills\agent-orchestrator\tests\test_tools_validator.py
   - id: be-knowledge
     name: Backend Knowledge RAG
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\api\knowledge.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\knowledge\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\knowledge\chunker.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\knowledge\embedder.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\knowledge\rag.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\knowledge\rivvn.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\app\knowledge\storage.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\tests\test_knowledge_chunker.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\tests\test_knowledge_crud.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\tests\test_knowledge_embedder.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\tests\test_knowledge_rag.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\tests\test_knowledge_rivvn.py
+      - C:\Projetos\squad-agentica.worktrees\be-knowledge\agent-orchestrator\tests\test_knowledge_storage.py
   - id: be-integrations
     name: Backend Integrations
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\app\api\integrations.py
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\app\integrations\__init__.py
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\app\integrations\github.py
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\app\integrations\registry.py
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\tests\test_integrations_crud.py
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\tests\test_integrations_github_mock.py
+      - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\tests\test_integrations_rivvn_gate.py
   - id: be-review
     name: Backend Review
     status: pending

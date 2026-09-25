@@ -14,6 +14,7 @@ Variáveis de ambiente (vêm do `.env`, distribuídas na rede do compose):
   MINIO_ENDPOINT      endpoint S3 do Garage (ex: http://garage:3900)
   MINIO_BUCKET_AGENTS bucket de artefatos de agentes (.yml)   (default: agents)
   MINIO_BUCKET_SKILLS bucket de conteúdo de skills (.md)      (default: skills)
+  MINIO_BUCKET_KNOWLEDGE bucket de documentos de knowledge    (default: knowledge)
   GARAGE_WAIT_MAX     segundos máx. de espera pela saúde (default: 120)
 
 Saída de sucesso: exit 0. Falha de conexão após GARAGE_WAIT_MAX: exit 1.
@@ -32,6 +33,7 @@ def main() -> int:
     endpoint = os.environ.get("MINIO_ENDPOINT", "http://garage:3900")
     bucket_agents = os.environ.get("MINIO_BUCKET_AGENTS", "agents")
     bucket_skills = os.environ.get("MINIO_BUCKET_SKILLS", "skills")
+    bucket_knowledge = os.environ.get("MINIO_BUCKET_KNOWLEDGE", "knowledge")
     wait_max = int(os.environ.get("GARAGE_WAIT_MAX", "120"))
 
     # --- Aguardar o Garage responder (via API S3) ---
@@ -68,7 +70,7 @@ def main() -> int:
         secure=endpoint.startswith("https"),
     )
 
-    for bucket in [bucket_agents, bucket_skills]:
+    for bucket in [bucket_agents, bucket_skills, bucket_knowledge]:
         print(f"[garage-init] criando bucket {bucket}...")
         try:
             if not client.bucket_exists(bucket):
@@ -88,7 +90,7 @@ def main() -> int:
     except Exception as e:
         print(f"[garage-init] AVISO: falha ao listar buckets: {e}", file=sys.stderr)
 
-    print(f"[garage-init] buckets prontos: {bucket_agents}, {bucket_skills}")
+    print(f"[garage-init] buckets prontos: {bucket_agents}, {bucket_skills}, {bucket_knowledge}")
     print("[garage-init] bootstrap concluído com sucesso.")
     return 0
 

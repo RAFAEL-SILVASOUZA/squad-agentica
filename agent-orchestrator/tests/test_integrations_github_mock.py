@@ -103,7 +103,7 @@ class TestListRepos:
         ]
         mock_client = _make_mock_client([_response(200, json_data=mock_data)])
 
-        with patch("app.integrations.github.os.environ.get", return_value="fake-token"):
+        with patch("app.core.config.settings.github_token", "fake-token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 repos = await list_repos("myorg")
 
@@ -114,7 +114,7 @@ class TestListRepos:
 
     @pytest.mark.asyncio
     async def test_list_repos_token_not_configured(self) -> None:
-        with patch("app.integrations.github.os.environ.get", return_value=""):
+        with patch("app.core.config.settings.github_token", ""):
             with pytest.raises(AppError) as exc_info:
                 await list_repos("myorg")
         assert exc_info.value.status_code == 502
@@ -128,7 +128,7 @@ class TestListRepos:
             [_response(401, json_data={"message": "Bad credentials"})]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value="bad-token"):
+        with patch("app.core.config.settings.github_token", "bad-token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await list_repos("myorg")
@@ -151,7 +151,7 @@ class TestListRepos:
             ]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value="valid-token"):
+        with patch("app.core.config.settings.github_token", "valid-token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await list_repos("myorg")
@@ -174,7 +174,7 @@ class TestListRepos:
             ]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value="valid-token"):
+        with patch("app.core.config.settings.github_token", "valid-token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await list_repos("myorg")
@@ -202,7 +202,7 @@ class TestListPulls:
         ]
         mock_client = _make_mock_client([_response(200, json_data=mock_data)])
 
-        with patch("app.integrations.github.os.environ.get", return_value="token"):
+        with patch("app.core.config.settings.github_token", "token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 pulls = await list_pulls("org", "repo", state="open")
 
@@ -217,7 +217,7 @@ class TestListPulls:
             [_response(404, json_data={"message": "Not Found"})]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value="token"):
+        with patch("app.core.config.settings.github_token", "token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await list_pulls("org", "nonexistent")
@@ -246,7 +246,7 @@ class TestListIssues:
         ]
         mock_client = _make_mock_client([_response(200, json_data=mock_data)])
 
-        with patch("app.integrations.github.os.environ.get", return_value="token"):
+        with patch("app.core.config.settings.github_token", "token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 issues = await list_issues("org", "repo", state="open", labels=["bug"])
 
@@ -269,7 +269,7 @@ class TestListIssues:
         ]
         mock_client = _make_mock_client([_response(200, json_data=mock_data)])
 
-        with patch("app.integrations.github.os.environ.get", return_value="token"):
+        with patch("app.core.config.settings.github_token", "token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 issues = await list_issues("org", "repo")
 
@@ -295,7 +295,7 @@ class TestGetPrDiff:
         )
         mock_client = _make_mock_client([diff_resp, files_resp])
 
-        with patch("app.integrations.github.os.environ.get", return_value="token"):
+        with patch("app.core.config.settings.github_token", "token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 result = await get_pr_diff("org", "repo", 42)
 
@@ -312,7 +312,7 @@ class TestGetPrDiff:
             [_response(404, json_data={"message": "Not Found"})]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value="token"):
+        with patch("app.core.config.settings.github_token", "token"):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await get_pr_diff("org", "repo", 999)
@@ -334,7 +334,7 @@ class TestTokenSecurity:
             [_response(401, json_data={"message": "Bad credentials"})]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value=secret_token):
+        with patch("app.core.config.settings.github_token", secret_token):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await list_repos("myorg")
@@ -358,7 +358,7 @@ class TestTokenSecurity:
             ]
         )
 
-        with patch("app.integrations.github.os.environ.get", return_value=secret_token):
+        with patch("app.core.config.settings.github_token", secret_token):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 with pytest.raises(AppError) as exc_info:
                     await list_pulls("org", "repo")

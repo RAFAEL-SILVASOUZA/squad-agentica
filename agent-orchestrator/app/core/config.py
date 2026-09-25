@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     minio_endpoint: str = "http://minio:9001"
     minio_bucket_agents: str = "agents"
     minio_bucket_skills: str = "skills"
+    minio_bucket_knowledge: str = "knowledge"
+
+    # --- GitHub (integração, PAT com escopo repo:read) ---
+    github_token: str = ""
 
     # --- Admin (seed) ---
     admin_email: str = ""

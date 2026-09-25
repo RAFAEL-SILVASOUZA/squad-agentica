@@ -1,0 +1,3 @@
+# be-review validações
+
+- 2026-09-24: APROVADO. 320 testes passam, ruff limpo, todos os endpoints 9.2-9.5/9.8 presentes, auth opt-out, rate limits (chat 30/min, upload 10/min, login 5/min), shell opt-in com blocklist+timeout, sandbox com timeout+env isolado, segredos nunca retornados/logados, dados externos delimitados, Postgres+Garage consistência testada, nada pré-carregado no boot, 5 routers registrados, main.py íntegro. Mudanças aplicadas: config.py (+minio_bucket_knowledge, +github_token), .env.example (+MINIO_BUCKET_KNOWLEDGE, +GITHUB_TOKEN), garage/init.py (+bucket knowledge), github.py (usa settings.github_token), tests atualizados.
