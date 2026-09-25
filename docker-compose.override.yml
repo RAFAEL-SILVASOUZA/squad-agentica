@@ -1,0 +1,47 @@
+# Agent Portal — override de desenvolvimento (dono: infra-docker).
+# Bind mount do código nos três serviços; reload; sem rebuild.
+# Contêineres NÃO expõem porta no host (exceto NGINX :80); acesso pelo NGINX.
+# (protocolo comum veda `docker compose up --build` dos nós de implementação.)
+
+services:
+  orchestrator:
+    build:
+      context: ./agent-orchestrator
+      dockerfile: Dockerfile
+    # Dev: sobrepõe o entrypoint de produção (alembic + seed + uvicorn) para rodar
+    # uvicorn com --reload direto. Sem isso o command seria anexado ao entrypoint.
+    entrypoint: ["uvicorn"]
+    command: >
+      app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./agent-orchestrator:/app
+    # --reload exige watchfiles; instalado no pyproject do orchestrator.
+
+  agent-worker:
+    build:
+      context: ./agent-worker
+      dockerfile: Dockerfile
+    entrypoint: ["uvicorn"]
+    command: >
+      app.main:app --host 0.0.0.0 --port 9000 --reload
+    volumes:
+      - ./agent-worker:/app
+
+  portal:
+    build:
+      context: ./agent-portal
+      dockerfile: Dockerfile
+    # Dev: sobrepõe o entrypoint de produção (node server.js) para rodar `next dev`.
+    # Usa o binário local do Next (node_modules/.bin/next, presente no bind mount).
+    # O contrato §4 escreve `next dev --0.0.0.0:3000`, mas a CLI do Next 14 usa
+    # --hostname/--port separados (o --0.0.0.0:3000 combinado não existe). Os
+    # defaults já são 0.0.0.0:3000; explicitados por clareza.
+    entrypoint: ["node_modules/.bin/next"]
+    command: dev --hostname 0.0.0.0 --port 3000
+    environment:
+      # O Dockerfile de produção fixa NODE_ENV=production; em dev o next dev
+      # exige development (senão avisa "non-standard NODE_ENV").
+      NODE_ENV: development
+    volumes:
+      - ./agent-portal:/app
+    # next dev em dev lê o código montado; sem rebuild.
