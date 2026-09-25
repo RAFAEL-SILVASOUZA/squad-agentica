@@ -25,6 +25,7 @@ agent-portal/node_modules/
 out/
 build/
 dist/
+*.tsbuildinfo
 
 # Editor / OS
 .vscode/
