@@ -1,33 +1,63 @@
 """Seed do sistema: cria APENAS o usuário admin (contrato §0).
 
-Dono do skeleton: infra-docker. O nó db-seed implementa a criação real do admin.
+Dono: db-seed.
 Regras do contrato §0:
 - Nunca cria agente/skill/tool/pipeline no boot.
-- Não cria nada se ADMIN_EMAIL ou ADMIN_PASSWORD faltarem.
-- Idempotente: re-execução não duplica o admin.
+- Não cria nada se ADMIN_EMAIL ou ADMIN_PASSWORD faltarem (sai com código 0).
+- Idempotente: re-execução não duplica nem altera o admin.
+- Não faz drop, truncate nem update de dados existentes.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
+
+from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.security import hash_password
+from app.db.models import User
+from app.db.session import async_session_factory
 
 logger = logging.getLogger(__name__)
 
 
 async def _seed() -> None:
-    """Cria o admin se as credenciais estiverem presentes.
-
-    O nó db-seed substitui o corpo desta função pela criação real do ``User``
-    (bcrypt custo 12, idempotente por e-mail). Aqui fica o no-op de scaffold.
-    """
+    """Cria o admin se as credenciais estiverem presentes."""
     if not settings.admin_email or not settings.admin_password:
-        logger.info("seed: ADMIN_EMAIL/ADMIN_PASSWORD ausentes; nada a criar (contrato §0).")
+        logger.warning(
+            "seed: ADMIN_EMAIL ou ADMIN_PASSWORD ausente(s); nada a criar (contrato §0). "
+            "Defina as variáveis no ambiente para criar o usuário admin."
+        )
         return
-    # db-seed: INSERT ... ON CONFLICT (email) DO NOTHING para o admin.
-    logger.info("seed: admin seed é responsabilidade do nó db-seed (scaffold).")
+
+    email = settings.admin_email
+    password = settings.admin_password
+    name = settings.admin_name or "Administrador"
+
+    async with async_session_factory() as session:
+        # Idempotência: se o e-mail já existe, não altera nada.
+        existing = await session.execute(
+            select(User).where(User.email == email)
+        )
+        if existing.scalar_one_or_none() is not None:
+            logger.info("seed: admin %s já existe; nada a fazer.", email)
+            return
+
+        # Gera o UUID antes para que owner_id = id (self-referente, §11.19).
+        user_id = uuid.uuid4()
+        admin = User(
+            id=user_id,
+            email=email,
+            name=name,
+            password_hash=hash_password(password),
+            owner_id=user_id,
+        )
+        session.add(admin)
+        await session.commit()
+        logger.info("seed: admin %s criado com sucesso.", email)
 
 
 def main() -> None:
