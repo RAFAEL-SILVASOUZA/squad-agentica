@@ -28,3 +28,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """Dependência FastAPI: fornece uma sessão por request."""
     async with async_session_factory() as session:
         yield session
+
+
+# Alias canônico da dependência FastAPI (db-models).
+get_db = get_session
