@@ -40,9 +40,10 @@ consistency_mode = "consistent"
 # --- RPC (comunicação entre nós; em single-node, só este nó) ---
 # rpc_bind_addr: onde o daemon escuta RPC (todos os interfaces, porta 3901).
 # rpc_public_addr: endereço público que outros nós usariam para falar com este.
-# Em single-node, usa 127.0.0.1 (só o próprio nó acessa).
+# Em single-node, usa o hostname do container (garage) para que o init e o
+# healthcheck possam conectar pela rede Docker (não só localhost).
 rpc_bind_addr = "[::]:3901"
-rpc_public_addr = "127.0.0.1:3901"
+rpc_public_addr = "garage:3901"
 
 # rpc_secret: segredo de rede para autenticar RPC entre nós.
 # GERADO PELO BOOTSTRAP (garage/init.sh) e persistido em /var/lib/garage/meta/rpc_secret.
