@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.app_setup import apply_global_auth
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 
@@ -32,6 +33,9 @@ app.add_middleware(
 
 # Envelope de erro padrão (contrato §8).
 register_exception_handlers(app)
+
+# Proteção global opt-out (contrato §5): toda rota exige usuário exceto PUBLIC_PATHS.
+apply_global_auth(app)
 
 
 @app.get("/health")

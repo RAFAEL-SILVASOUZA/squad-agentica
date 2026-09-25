@@ -45,9 +45,9 @@ def test_router_discovery(tmp_path: Path) -> None:
         assert any(r.path == "/api/probe" for r in app.routes), "router de prova não foi descoberto"
 
         client = TestClient(app)
+        # Route is discovered AND protected by global auth (contrato §5).
         resp = client.get("/api/probe")
-        assert resp.status_code == 200
-        assert resp.json() == {"probed": True}
+        assert resp.status_code == 401, "new router should be protected by default"
     finally:
         # Limpa o módulo e o cache para não vazar para outros testes.
         PROBE_FILE.unlink(missing_ok=True)

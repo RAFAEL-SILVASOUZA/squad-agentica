@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-25T15:17:50.264Z
+finishedAt: 2026-09-25T16:30:31.102Z
 outcome: paused
 nodes:
   - id: arch
@@ -166,20 +166,48 @@ nodes:
       - C:\Projetos\squad-agentica\agent-orchestrator\_tmp_check.py
   - id: db-seed
     name: DB Seed
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/db-seed/agent-orchestrator/app/db/seed.py
+      - ../squad-agentica.worktrees/db-seed/agent-orchestrator/tests/_seed_e2e.py
+      - ../squad-agentica.worktrees/db-seed/agent-orchestrator/tests/test_seed.py
   - id: db-review
     name: DB Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-orchestrator/tests/_review_migrate.py
+      - docs/superpowers/handoffs/db-review.md
+      - docs/superpowers/validacoes/db-review.md
   - id: auth-backend
     name: Auth Backend
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/api/auth.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/__init__.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/app_setup.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/dependencies.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/jwt.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/rate_limiter.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/refresh_store.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/app/auth/schemas.py
+      - ../squad-agentica.worktrees/auth-backend/agent-orchestrator/tests/test_auth.py
   - id: auth-frontend
     name: Auth Frontend
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\(auth)\login\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\(auth)\login\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\(auth)\register\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\(auth)\register\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\api\auth\[...nextauth]\route.ts
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\api\session-token\route.ts
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\globals.css
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\app\layout.tsx
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\auth-options.ts
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\components\auth\SessionProvider.tsx
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\lib\auth-client.ts
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\middleware.ts
+      - C:\Projetos\squad-agentica.worktrees\auth-frontend\agent-portal\types\next-auth.d.ts
   - id: auth-review
     name: Auth Review
     status: pending
