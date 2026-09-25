@@ -21,7 +21,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentSnapshot:
-    """Snapshot do agente (dados do .yml / Postgres)."""
+    """Snapshot do agente (dados do .yml / Postgres, spec 4.1).
+
+    Inclui os campos de referência de capacidades (mochila) que o loader
+    (D8) resolve em runtime para montar o ``AgentCapabilities``.
+    """
 
     id: str
     name: str
@@ -33,6 +37,12 @@ class AgentSnapshot:
     max_iterations: int
     timeout: int
     shell_access: bool
+    # Capacidades (mochila) — spec 4.1 / 6.6.
+    skills: list[dict[str, Any]] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    mcp_servers: list[dict[str, Any]] = field(default_factory=list)
+    knowledge: list[dict[str, Any]] = field(default_factory=list)
+    integrations: list[dict[str, Any]] = field(default_factory=list)
     inputs: list[dict[str, Any]] = field(default_factory=list)
     outputs: list[dict[str, Any]] = field(default_factory=list)
     actions: list[str] = field(default_factory=list)
