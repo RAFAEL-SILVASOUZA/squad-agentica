@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-25T18:49:55.150Z
+finishedAt: 2026-09-26T02:43:03.198Z
 outcome: paused
 nodes:
   - id: arch
@@ -305,60 +305,135 @@ nodes:
       - C:\Projetos\squad-agentica.worktrees\be-integrations\agent-orchestrator\tests\test_integrations_rivvn_gate.py
   - id: be-review
     name: Backend Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - .env.example
+      - agent-orchestrator/app/core/config.py
+      - agent-orchestrator/app/integrations/github.py
+      - agent-orchestrator/tests/test_integrations_github_mock.py
+      - docs/superpowers/handoffs/be-review.md
+      - docs/superpowers/validacoes/be-review.md
+      - garage/init.py
   - id: pe-compiler
     name: Pipeline Compiler
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\pe-compiler\agent-orchestrator\app\compiler\graph_builder.py
+      - C:\Projetos\squad-agentica.worktrees\pe-compiler\agent-orchestrator\app\compiler\state.py
+      - C:\Projetos\squad-agentica.worktrees\pe-compiler\agent-orchestrator\tests\test_compiler_graph_builder.py
+      - agent-orchestrator/app/compiler/__init__.py
+      - agent-orchestrator/app/compiler/graph_builder.py
+      - agent-orchestrator/app/compiler/state.py
+      - agent-orchestrator/tests/test_compiler_graph_builder.py
   - id: pe-validator
     name: Pipeline Validator
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/pe-validator/agent-orchestrator/app/compiler/validator.py
+      - ../squad-agentica.worktrees/pe-validator/agent-orchestrator/tests/test_compiler_validator.py
   - id: pe-loader
     name: Pipeline Loader
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\pe-loader\agent-orchestrator\app\agents\base.py
+      - C:\Projetos\squad-agentica.worktrees\pe-loader\agent-orchestrator\app\skills\loader.py
+      - C:\Projetos\squad-agentica.worktrees\pe-loader\agent-orchestrator\tests\test_skills_loader.py
+      - agent-orchestrator/app/agents/base.py
+      - agent-orchestrator/app/skills/loader.py
+      - agent-orchestrator/tests/test_skills_loader.py
   - id: pe-review
     name: Pipeline Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-orchestrator/tests/test_pe_review_integration.py
+      - docs/superpowers/handoffs/pe-review.md
+      - docs/superpowers/validacoes/pe-review.md
   - id: rt-checkpoint
     name: Runtime Checkpoint e Worker Client
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/rt-checkpoint/agent-orchestrator/app/runtime/__init__.py
+      - ../squad-agentica.worktrees/rt-checkpoint/agent-orchestrator/app/runtime/checkpoint.py
+      - ../squad-agentica.worktrees/rt-checkpoint/agent-orchestrator/app/runtime/worker_client.py
+      - ../squad-agentica.worktrees/rt-checkpoint/agent-orchestrator/tests/test_rt_checkpoint.py
+      - ../squad-agentica.worktrees/rt-checkpoint/agent-orchestrator/tests/test_rt_worker_client.py
   - id: rt-executor
     name: Runtime Executor
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/rt-executor/agent-orchestrator/app/api/pipeline_runs.py
+      - ../squad-agentica.worktrees/rt-executor/agent-orchestrator/app/runtime/executor.py
+      - ../squad-agentica.worktrees/rt-executor/agent-orchestrator/tests/test_rt_executor.py
   - id: rt-worker
     name: Runtime Worker
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/app/core/__init__.py
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/app/core/llm.py
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/app/main.py
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/app/minio_client.py
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/app/worker.py
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/tests/test_health.py
+      - ../squad-agentica.worktrees/rt-worker/agent-worker/tests/test_worker_execute.py
   - id: rt-websocket
     name: Runtime WebSocket
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\rt-websocket\agent-orchestrator\app\api\ws.py
+      - C:\Projetos\squad-agentica.worktrees\rt-websocket\agent-orchestrator\app\runtime\websocket.py
+      - C:\Projetos\squad-agentica.worktrees\rt-websocket\agent-orchestrator\tests\test_rt_websocket.py
   - id: rt-review
     name: Runtime Review
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-orchestrator/tests/e2e_review_script.py
+      - agent-orchestrator/tests/test_rt_e2e_review.py
+      - docs/superpowers/handoffs/rt-review.md
+      - docs/superpowers/validacoes/rt-review.md
   - id: hitl-approval
     name: HITL Approval
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\hitl-approval\agent-orchestrator\app\api\approvals.py
+      - C:\Projetos\squad-agentica.worktrees\hitl-approval\agent-orchestrator\app\approvals\node_function.py
+      - C:\Projetos\squad-agentica.worktrees\hitl-approval\agent-orchestrator\app\approvals\service.py
+      - C:\Projetos\squad-agentica.worktrees\hitl-approval\agent-orchestrator\app\compiler\graph_builder.py
+      - C:\Projetos\squad-agentica.worktrees\hitl-approval\agent-orchestrator\tests\test_hitl_approval.py
+      - agent-orchestrator/app/api/approvals.py
+      - agent-orchestrator/app/approvals/__init__.py
+      - agent-orchestrator/app/approvals/node_function.py
+      - agent-orchestrator/app/approvals/service.py
+      - agent-orchestrator/app/runtime/executor.py
+      - agent-orchestrator/tests/test_hitl_approval.py
+      - docs/superpowers/handoffs/hitl-approval.md
   - id: hitl-notification
     name: HITL Notification
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/__init__.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/email.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/inapp.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/interface.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/service.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/slack.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/app/notifications/teams.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/tests/test_notify_email_disabled.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/tests/test_notify_fallback.py
+      - ../squad-agentica.worktrees/hitl-notification/agent-orchestrator/tests/test_notify_inapp.py
   - id: hitl-resume
     name: HITL Resume
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\hitl-resume\agent-orchestrator\tests\test_hitl_resume.py
+      - agent-orchestrator/app/approvals/resume.py
+      - agent-orchestrator/tests/test_hitl_resume.py
   - id: hitl-review
     name: HITL Review
-    status: pending
-    artifacts: []
+    status: failed
+    artifacts:
+      - agent-orchestrator/app/api/approvals.py
+      - agent-orchestrator/app/runtime/checkpoint.py
+    error: Request timed out.
   - id: fe-shell
     name: Frontend Shell
     status: pending

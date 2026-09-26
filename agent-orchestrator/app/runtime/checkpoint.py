@@ -28,6 +28,16 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 logger = logging.getLogger(__name__)
 
 
+def _to_psycopg_url(database_url: str) -> str:
+    """Convert a SQLAlchemy URL to a plain psycopg URL.
+
+    psycopg does not understand the ``+asyncpg`` driver suffix that
+    SQLAlchemy uses.  ``postgresql+asyncpg://user:pass@host:5432/db``
+    becomes ``postgresql://user:pass@host:5432/db``.
+    """
+    return database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
 async def create_checkpointer(database_url: str) -> AsyncPostgresSaver:
     """Create and initialize an AsyncPostgresSaver.
 
@@ -36,8 +46,9 @@ async def create_checkpointer(database_url: str) -> AsyncPostgresSaver:
     the ready-to-use saver.
 
     Args:
-        database_url: PostgreSQL connection string (e.g.
-            "postgresql://user:pass@host:5432/agent_portal").
+        database_url: PostgreSQL connection string. Accepts both the plain
+            psycopg format (``postgresql://user:pass@host:5432/db``) and the
+            SQLAlchemy format (``postgresql+asyncpg://user:pass@host:5432/db``).
 
     Returns:
         An AsyncPostgresSaver with tables created. The caller is responsible
@@ -47,7 +58,7 @@ async def create_checkpointer(database_url: str) -> AsyncPostgresSaver:
         psycopg.OperationalError: if the database is unreachable.
     """
     conn = await psycopg.AsyncConnection.connect(
-        database_url,
+        _to_psycopg_url(database_url),
         autocommit=True,
         row_factory=psycopg.rows.dict_row,
     )

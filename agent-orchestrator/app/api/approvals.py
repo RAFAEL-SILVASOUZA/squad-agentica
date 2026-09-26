@@ -256,7 +256,7 @@ async def respond_approval(
     if body.response is not None:
         resume_value["response"] = body.response
 
-    await _trigger_resume(approval, resume_value)
+    await _trigger_resume(approval, resume_value, db)
 
     return {
         "approvalId": str(approval.id),
@@ -265,9 +265,41 @@ async def respond_approval(
     }
 
 
+@router.delete("/approvals/{approval_id}")
+async def cancel_approval(
+    approval_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """DELETE /api/approvals/{id}
+
+    Cancela uma aprovação pendente (spec 9.6). 404 se já respondida.
+    """
+    result = await db.execute(
+        select(ApprovalRequest).where(
+            ApprovalRequest.id == approval_id,
+            ApprovalRequest.owner_id == user.owner_id,
+        )
+    )
+    approval = result.scalar_one_or_none()
+    if approval is None:
+        raise AppError(404, "not_found", "approval_not_found")
+
+    if approval.status != "pending":
+        raise AppError(404, "not_found", "approval_not_found")
+
+    approval.status = "cancelled"
+    approval.responded_by = str(user.owner_id)
+    approval.responded_at = datetime.now(UTC)
+    await db.commit()
+
+    return {"approvalId": str(approval.id), "status": "cancelled"}
+
+
 async def _trigger_resume(
     approval: ApprovalRequest,
     resume_value: dict[str, Any],
+    db: AsyncSession,
 ) -> None:
     """Chama compile_and_resume do nó hitl-resume (FASE 7, em paralelo).
 
@@ -303,15 +335,16 @@ async def _trigger_resume(
         checkpointer = await create_checkpointer(settings.database_url)
         thread_id = f"{approval.pipeline_id}:{approval.run_id}"
 
-        # compile_and_resume(pipeline_json, checkpointer, config, resume_value)
-        # O nó hitl-resume recompila o grafo do JSON (ADR-004) e chama
-        # ainvoke(Command(resume=...)).
+        # compile_and_resume recompila o grafo do JSON (ADR-004) e chama
+        # ainvoke(Command(resume=...)). A sessão é passada para que a
+        # pipeline seja carregada do DB.
         await compile_and_resume(
             pipeline_id=str(approval.pipeline_id),
             run_id=str(approval.run_id),
             checkpointer=checkpointer,
             thread_id=thread_id,
             resume_value=resume_value,
+            session=db,
         )
     except Exception:
         logger.exception(
