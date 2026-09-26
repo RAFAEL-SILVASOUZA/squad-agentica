@@ -54,6 +54,13 @@ export interface AgentDetailProps {
   onSave: (payload: AgentUpdatePayload) => Promise<void>;
   /** true enquanto salva. */
   saving?: boolean;
+  /**
+   * Key que força re-inicialização do formulário a partir da prop `agent`.
+   * A página de edição incrementa esta key a cada config_update do chat
+   * (spec §10) para o formulário refletir o draft sem perder a identidade
+   * dos campos (React remonta o subtree quando a key muda).
+   */
+  resetKey?: string | number;
 }
 
 const FLOW_ACTIONS: { value: FlowAction; label: string }[] = [
@@ -180,6 +187,30 @@ export function AgentDetail({
   const [integrationSel, setIntegrationSel] = React.useState("");
 
   const [nameError, setNameError] = React.useState<string | undefined>();
+
+  // Sincroniza o formulário quando a prop `agent` muda (config_update do
+  // chat via resetKey, spec §10). Mantém a identidade dos campos via
+  // useState inicial + chave de remonte no nível da página.
+  React.useEffect(() => {
+    if (!agent) return;
+    setName(agent.name);
+    setType(agent.type);
+    setDescription(agent.description);
+    setPrompt(agent.prompt);
+    setStrategy(agent.strategy);
+    setModel(agent.model);
+    setMaxIterations(String(agent.maxIterations));
+    setTimeout_(String(agent.timeout));
+    setShellAccess(agent.shellAccess);
+    setInputs(agent.inputs ?? []);
+    setOutputs(agent.outputs ?? []);
+    setActions(agent.actions ?? []);
+    setSkills(agent.skills ?? []);
+    setTools(agent.tools ?? []);
+    setMcpServers(agent.mcpServers ?? []);
+    setKnowledge(agent.knowledge ?? []);
+    setIntegrations(agent.integrations ?? []);
+  }, [agent]);
 
   const skillOptions = options.skills.map((s) => ({ value: s.id, label: s.name }));
   const toolOptions = options.tools.map((t) => ({ value: t.id, label: t.name }));
@@ -322,6 +353,7 @@ export function AgentDetail({
 
   return (
     <div
+      data-agent-detail
       style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",

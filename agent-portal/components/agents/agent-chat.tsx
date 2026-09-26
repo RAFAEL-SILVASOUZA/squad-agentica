@@ -36,6 +36,8 @@ export interface AgentChatProps {
   onConfigUpdate?: (config: Partial<Agent>) => void;
   /** Mensagem inicial do assistente (boas-vindas). */
   initialAssistantMessage?: string;
+  /** Chamado quando o streaming começa/termina (para o preview). */
+  onStreamingChange?: (streaming: boolean) => void;
 }
 
 let msgCounter = 0;
@@ -50,6 +52,7 @@ export function AgentChat({
   onDraftId,
   onConfigUpdate,
   initialAssistantMessage,
+  onStreamingChange,
 }: AgentChatProps) {
   const { addToast } = useToast();
   const [messages, setMessages] = React.useState<ChatMessage[]>(() =>
@@ -61,6 +64,11 @@ export function AgentChat({
   const [streaming, setStreaming] = React.useState(false);
   const [rateLimitedUntil, setRateLimitedUntil] = React.useState<number | null>(null);
   const [cooldown, setCooldown] = React.useState(0);
+
+  // Propaga o estado de streaming para o preview (spec §10).
+  React.useEffect(() => {
+    onStreamingChange?.(streaming);
+  }, [streaming, onStreamingChange]);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
