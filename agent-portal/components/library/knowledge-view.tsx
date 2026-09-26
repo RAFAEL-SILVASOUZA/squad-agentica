@@ -348,7 +348,7 @@ export function KnowledgeView() {
                       setDeleting(selectedBase);
                       setDeleteModalOpen(true);
                     }}
-                    style={{ background: "var(--error)", borderColor: "var(--error)", color: "#fff" }}
+                    style={{ background: "var(--error-strong)", borderColor: "var(--error-strong)", color: "#fff" }}
                   >
                     <Trash2 size={13} aria-hidden="true" />
                     Excluir
@@ -585,7 +585,7 @@ export function KnowledgeView() {
               size="sm"
               onClick={() => void handleDelete()}
               loading={deleteBusy}
-              style={{ background: "var(--error)", borderColor: "var(--error)", color: "#fff" }}
+              style={{ background: "var(--error-strong)", borderColor: "var(--error-strong)", color: "#fff" }}
             >
               <Trash2 size={13} aria-hidden="true" />
               Excluir

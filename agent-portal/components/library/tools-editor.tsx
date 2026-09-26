@@ -631,7 +631,7 @@ export function ToolsEditor() {
               size="sm"
               onClick={() => void handleDelete()}
               loading={deleteBusy}
-              style={{ background: "var(--error)", borderColor: "var(--error)", color: "#fff" }}
+              style={{ background: "var(--error-strong)", borderColor: "var(--error-strong)", color: "#fff" }}
             >
               <Trash2 size={13} aria-hidden="true" />
               Excluir
