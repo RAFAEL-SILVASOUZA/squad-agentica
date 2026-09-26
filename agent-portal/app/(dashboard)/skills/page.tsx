@@ -1,10 +1,10 @@
 "use client";
 
-import { BookOpen } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
+import { SkillsLibrary } from "@/components/library/skills-library";
 
 /**
- * Placeholder: skills (fe-library substitui).
+ * Skills (fe-library).
+ * Lista, cria, edita e exclui skills com editor markdown + preview.
  */
 export default function SkillsPage() {
   return (
@@ -19,11 +19,7 @@ export default function SkillsPage() {
       >
         Skills
       </h1>
-      <EmptyState
-        icon={BookOpen}
-        title="Nenhum skill ainda"
-        description="Esta tela será implementada pelo nó fe-library."
-      />
+      <SkillsLibrary />
     </div>
   );
 }

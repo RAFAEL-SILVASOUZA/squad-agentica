@@ -1,10 +1,10 @@
 "use client";
 
-import { Server } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
+import { MCPServersLibrary } from "@/components/library/mcp-servers-library";
 
 /**
- * Placeholder: MCP servers (fe-library substitui).
+ * MCP Servers (fe-library).
+ * Registra, testa e lista servidores MCP com tools descobertas.
  */
 export default function McpPage() {
   return (
@@ -19,11 +19,7 @@ export default function McpPage() {
       >
         MCP Servers
       </h1>
-      <EmptyState
-        icon={Server}
-        title="Nenhum servidor MCP"
-        description="Esta tela será implementada pelo nó fe-library."
-      />
+      <MCPServersLibrary />
     </div>
   );
 }

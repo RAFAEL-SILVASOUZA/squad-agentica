@@ -1,10 +1,13 @@
 "use client";
 
-import { FileText } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
+import { KnowledgeView } from "@/components/library/knowledge-view";
+import { GitHubIntegration } from "@/components/library/github-integration";
 
 /**
- * Placeholder: knowledge base (fe-library substitui).
+ * Knowledge (fe-library).
+ * Sidebar de bases, criar base com escopo, upload de documentos,
+ * consulta de teste com resultados e score. Rivvn desabilitado.
+ * Integração GitHub com token de segredo.
  */
 export default function KnowledgePage() {
   return (
@@ -19,11 +22,10 @@ export default function KnowledgePage() {
       >
         Knowledge
       </h1>
-      <EmptyState
-        icon={FileText}
-        title="Nenhuma base de conhecimento"
-        description="Esta tela será implementada pelo nó fe-library."
-      />
+      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <KnowledgeView />
+        <GitHubIntegration />
+      </div>
     </div>
   );
 }
