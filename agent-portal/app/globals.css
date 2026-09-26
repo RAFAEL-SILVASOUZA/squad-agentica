@@ -60,6 +60,12 @@
   --warning: #FBBF24;
   --error: #F87171;
   --info: #60A5FA;
+  /* Superfícies de botão (design system §5.1, mitigações obrigatórias):
+     texto BRANCO passa AA (>=4.5:1) sobre essas cores nos dois temas.
+     Usar em fundo de botão (Aprovar/Rejeitar/Excluir/Deploy); manter
+     --success/--error como token de estado (dots, bordas, badges). */
+  --success-strong: #047857; /* branco 5.48:1 */
+  --error-strong: #B91C1C;   /* branco 6.47:1 */
   --shadow: 0 2px 12px rgba(0,0,0,0.4);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
 }
@@ -78,6 +84,9 @@
   --warning: #D97706;
   --error: #DC2626;
   --info: #2563EB;
+  /* Mesma superfície escura nos dois temas: branco passa AA (>=4.5:1). */
+  --success-strong: #047857;
+  --error-strong: #B91C1C;
   --shadow: 0 2px 12px rgba(0,0,0,0.06);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
 }

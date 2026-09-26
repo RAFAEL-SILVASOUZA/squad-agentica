@@ -50,6 +50,16 @@ const TOAST_BORDERS: Record<ToastType, string> = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
 
+  // O portal só existe no client. Renderizá-lo no primeiro passo de hidratação
+  // (`typeof document !== "undefined"`) diverge do HTML do SSR e quebra a
+  // hidratação ("Hydration failed ... switch to client rendering"). Monta o
+  // portal após hidratar (mesmo padrão do app-topbar.tsx).
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const removeToast = React.useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -72,7 +82,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {typeof document !== "undefined" &&
+      {mounted &&
         createPortal(
           <div
             aria-live="polite"

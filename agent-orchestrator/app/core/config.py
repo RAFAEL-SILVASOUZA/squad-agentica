@@ -26,10 +26,14 @@ class Settings(BaseSettings):
     worker_token: str = "change-me-in-prod"
     worker_url: str = "http://nginx:8081/execute"
 
-    # --- MinIO ---
+    # --- MinIO / Garage (S3) ---
+    # O client Python `minio` aceita APENAS ``host:port`` como endpoint
+    # (schema ``http://``/``https://`` -> ValueError "path in endpoint is not
+    # allowed"). As variaveis aceitam os dois formatos; ``minio_endpoint_host``
+    # e ``minio_secure`` normalizam para o client. Dono: infra-docker.
     minio_root_user: str = "admin"
     minio_root_password: str = "change-me-in-prod"
-    minio_endpoint: str = "http://minio:9001"
+    minio_endpoint: str = "minio:9001"
     minio_bucket_agents: str = "agents"
     minio_bucket_skills: str = "skills"
     minio_bucket_knowledge: str = "knowledge"
@@ -70,6 +74,21 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def minio_endpoint_host(self) -> str:
+        """Endpoint para o client ``minio``: ``host:port`` (sem schema)."""
+        value = self.minio_endpoint.strip()
+        for prefix in ("https://", "http://"):
+            if value.startswith(prefix):
+                value = value[len(prefix):]
+                break
+        return value
+
+    @property
+    def minio_secure(self) -> bool:
+        """True se o endpoint foi declarado com ``https://``."""
+        return self.minio_endpoint.strip().startswith("https://")
 
 
 @lru_cache

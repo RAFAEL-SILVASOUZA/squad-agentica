@@ -1,6 +1,25 @@
 # fe-review — review da fase frontend (dashboard, agents, approvals, library)
 
-Veredito: **REJEITADO** (rodada 1). Registros: `docs/superpowers/validacoes/fe-review.md`.
+> ## ESTADO ATUAL — RODADA 3 (2026-09-26) — VEREDITO: **REJEITADO** (contraste AA, critério 6)
+> O bloco abaixo desta caixa é a rodada 1 (histórico). Para a rodada 3 vale o resumo abaixo.
+>
+> **A2 RESOLVIDO** (fe-library removeu `github-integration.tsx`+test e o uso em `knowledge/page.tsx`; merge `c889cf1`; verificado `git grep` = 0 refs a `/api/integrations/github`). **A1 continua OK** (`/`=dashboard, sem `/dashboard`).
+>
+> **CRITÉRIOS 1,2,3,4,5,7 PASSAM** no `main` integrado (evidência): `npx tsc --noEmit` exit 0; `npm run lint` "No ESLint warnings or errors"; `npx vitest run` **42 files / 354 tests passed**; `npm run build` exit 0 (15 rotas). Rotas do plano existem e navegam; sem endpoint inventado (todas as chamadas de `lib/*.ts` batem com `agent-orchestrator/app/api/`); auth NextAuth (token em cookie, nunca localStorage; via `GET /api/session-token`); estados vazio/loading/erro presentes; sem duplicação de shell. Editor/monitor (já aprovados) continuam no build e na navegação.
+>
+> **CRITÉRIO 6 FALHA (novo, bloqueante)** — texto branco sobre superfície de estado em botões de ação, falha WCAG AA no tema default (dark). Ratios medidos: branco sobre `--success` = **1.92:1 (dark)/3.77:1 (light)**; sobre `--error` = **2.77:1 (dark)/4.83:1 (light)**. DESIGN-SYSTEM §5.1 lista o botão "Aprovar" como mitigação obrigatória; §6 exige AA em todos os pares. Locais: [fe-approvals] `approval-panel.tsx:503`(Aprovar/success) e `:525`(Rejeitar/error); [fe-agents] `delete-agent-modal.tsx:46`(error); [fe-library] botões "Excluir" em `knowledge-view.tsx:351,588`, `mcp-servers-library.tsx:606`, `skills-library.tsx:553`, `tools-editor.tsx:634` (todos error). [fe-dashboard] **NADA A MUDAR** (usa `--accent`).
+>
+> **Correção preparada pelo revisor** (arquivo compartilhado `app/globals.css`): tokens `--success-strong:#047857` e `--error-strong:#B91C1C` (branco 5.48:1 / 6.47:1, passam AA nos dois temas). Cada nó troca `background`/`borderColor` do botão para o token `*-strong`, mantém texto branco e `--success`/`--error` como token de estado (dots/bordas/badges).
+>
+> **Fixes aplicados pelo revisor nesta rodada (commits no `main`):** (1) `components/ui/toast.tsx` — guard `mounted` no `createPortal` (elimina o erro de hidratação em todas as páginas; C2 em PENDENCIAS); (2) `app/globals.css` — tokens `--success-strong`/`--error-strong` (preparação do fix C3); (3) `agent-orchestrator/app/core/config.py` + `agents|skills|knowledge/storage.py` — o client `minio` rejeita endpoint com schema (`http://garage:3900` → ValueError "path in endpoint is not allowed"); adicionados `minio_endpoint_host`/`minio_secure` que normalizam o endpoint. Isso corrigia `GET/POST /api/agents` → 500 ao vivo. Verificação: `pytest` orchestrator **497 passed**; `GET /api/agents` 200 + CRUD de agente 200/204 no stack de pé.
+>
+> **Comandos (revalidar na rodada 4):** `cd agent-portal && npx tsc --noEmit && npm run lint && npx vitest run && npm run build`. Backend: `docker compose run --rm --no-deps --entrypoint python orchestrator -m pytest -q`.
+>
+> **Ressalvas NÃO bloqueantes (backend, fora do escopo FE):** B1 pipeline CRUD ausente (rt-executor/FASE 6), B2 `POST /api/auth/login` 500 (auth-backend + infra-docker). Ver `docs/superpowers/validacoes/PENDENCIAS.md`.
+>
+> ---
+
+Veredito: **REJEITADO** (rodada 1 — HISTÓRICO). Registros: `docs/superpowers/validacoes/fe-review.md`.
 Escopo revisado: os 4 nós de tela + a navegação/integração do portal inteiro. Editor e monitor
 já aprovados pelo fe-review-editor (`docs/superpowers/handoffs/fe-review-editor.md`) — **não revisados de novo**;
 confirmado que continuam no build e na navegação (rotas presentes no build, sem endpoint novo).

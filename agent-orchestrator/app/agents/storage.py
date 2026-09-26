@@ -50,10 +50,10 @@ class GarageAgentStorage:
 
     def __init__(self) -> None:
         self._client = Minio(
-            settings.minio_endpoint,
+            settings.minio_endpoint_host,
             access_key=settings.minio_root_user,
             secret_key=settings.minio_root_password,
-            secure=False,
+            secure=settings.minio_secure,
         )
         self._bucket = settings.minio_bucket_agents
 

@@ -56,10 +56,10 @@ class GarageKnowledgeStorage:
         # não na construção (permite instanciar em teste sem rede).
         if self._client is None:
             self._client = Minio(
-                settings.minio_endpoint,
+                settings.minio_endpoint_host,
                 access_key=settings.minio_root_user,
                 secret_key=settings.minio_root_password,
-                secure=False,
+                secure=settings.minio_secure,
             )
         return self._client
 
