@@ -256,7 +256,10 @@ describe("SkillsLibrary", () => {
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: "Excluir skill" })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /^excluir$/i }));
+    const confirm = screen.getByRole("button", { name: /^excluir$/i });
+    // AA: texto branco exige o token forte (--error puro falha no tema dark)
+    expect(confirm.getAttribute("style")).toContain("var(--error-strong)");
+    fireEvent.click(confirm);
 
     await waitFor(() => {
       expect(mockDelete).toHaveBeenCalledWith("/api/skills/skill-1");
