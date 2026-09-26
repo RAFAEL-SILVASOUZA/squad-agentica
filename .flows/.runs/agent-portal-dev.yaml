@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-26T02:43:03.198Z
+finishedAt: 2026-09-26T17:23:12.606Z
 outcome: paused
 nodes:
   - id: arch
@@ -433,23 +433,26 @@ nodes:
     artifacts:
       - agent-orchestrator/app/api/approvals.py
       - agent-orchestrator/app/runtime/checkpoint.py
+      - docs/superpowers/handoffs/hitl-review.md
+      - docs/superpowers/plans/GUIA-API-FRONTEND.md
+      - docs/superpowers/validacoes/hitl-review.md
     error: Request timed out.
   - id: fe-shell
     name: Frontend Shell
     status: done
     artifacts:
       - agent-portal/README.md
-      - "agent-portal/app/(dashboard)/agents/[id]/page.tsx"
-      - "agent-portal/app/(dashboard)/agents/new/page.tsx"
-      - "agent-portal/app/(dashboard)/approvals/page.tsx"
-      - "agent-portal/app/(dashboard)/knowledge/page.tsx"
-      - "agent-portal/app/(dashboard)/layout.tsx"
-      - "agent-portal/app/(dashboard)/mcp/page.tsx"
-      - "agent-portal/app/(dashboard)/page.tsx"
-      - "agent-portal/app/(dashboard)/pipelines/[id]/page.tsx"
-      - "agent-portal/app/(dashboard)/pipelines/[id]/run/page.tsx"
-      - "agent-portal/app/(dashboard)/skills/page.tsx"
-      - "agent-portal/app/(dashboard)/tools/page.tsx"
+      - agent-portal/app/(dashboard)/agents/[id]/page.tsx
+      - agent-portal/app/(dashboard)/agents/new/page.tsx
+      - agent-portal/app/(dashboard)/approvals/page.tsx
+      - agent-portal/app/(dashboard)/knowledge/page.tsx
+      - agent-portal/app/(dashboard)/layout.tsx
+      - agent-portal/app/(dashboard)/mcp/page.tsx
+      - agent-portal/app/(dashboard)/page.tsx
+      - agent-portal/app/(dashboard)/pipelines/[id]/page.tsx
+      - agent-portal/app/(dashboard)/pipelines/[id]/run/page.tsx
+      - agent-portal/app/(dashboard)/skills/page.tsx
+      - agent-portal/app/(dashboard)/tools/page.tsx
       - agent-portal/app/globals.css
       - agent-portal/app/layout.tsx
       - agent-portal/app/page.test.tsx
@@ -494,32 +497,106 @@ nodes:
       - agent-portal/lib/websocket.ts
   - id: fe-dashboard
     name: Frontend Dashboard
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\app\(dashboard)\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\app\(dashboard)\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\agent-card.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\agent-card.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\index.ts
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\pending-approvals.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\pending-approvals.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\recent-runs.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\recent-runs.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\stats-strip.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-dashboard\agent-portal\components\dashboard\stats-strip.tsx
   - id: fe-agents
     name: Frontend Agents
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/app/(dashboard)/agents/[id]/page.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/app/(dashboard)/agents/new/page.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/agent-chat.test.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/agent-chat.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/agent-detail.test.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/agent-detail.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/agent-preview.test.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/agent-preview.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/delete-agent-modal.test.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/delete-agent-modal.tsx
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/components/agents/index.ts
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/lib/agent-chat.test.ts
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/lib/agent-chat.ts
+      - ../squad-agentica.worktrees/fe-agents/agent-portal/lib/agents.ts
+      - docs/superpowers/handoffs/fe-agents.md
   - id: fe-flow-editor
     name: Frontend Flow Editor
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-portal/app/(dashboard)/pipelines/[id]/page.test.tsx
+      - agent-portal/app/(dashboard)/pipelines/[id]/page.tsx
+      - agent-portal/app/(dashboard)/pipelines/page.test.tsx
+      - agent-portal/app/(dashboard)/pipelines/page.tsx
+      - agent-portal/components/FlowEditor.tsx
+      - agent-portal/components/flow/agent-node.test.tsx
+      - agent-portal/components/flow/agent-node.tsx
+      - agent-portal/components/flow/agent-palette.tsx
+      - agent-portal/components/flow/index.ts
+      - agent-portal/components/flow/pipeline-edge.test.tsx
+      - agent-portal/components/flow/pipeline-edge.tsx
   - id: fe-flow-edges
     name: Frontend Flow Edges
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\app\(dashboard)\pipelines\[id]\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\app\(dashboard)\pipelines\[id]\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\EdgePanel.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\EdgePanel.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\FlowEditor.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\flow\agent-node.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\flow\pipeline-edge.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\flow\validation.test.ts
+      - C:\Projetos\squad-agentica.worktrees\fe-flow-edges\agent-portal\components\flow\validation.ts
   - id: fe-monitor
     name: Frontend Monitor
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\app\(dashboard)\pipelines\[id]\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\app\(dashboard)\pipelines\[id]\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\app\(dashboard)\pipelines\[id]\run\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\components\monitor\index.ts
+      - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\components\monitor\pipeline-monitor.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\components\monitor\pipeline-monitor.tsx
   - id: fe-approvals
     name: Frontend Approvals
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\approvals\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\approvals\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\layout.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\components\approvals\approval-panel.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\components\approvals\approval-panel.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\components\approvals\index.ts
   - id: fe-library
     name: Frontend Library
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\knowledge\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\mcp\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\skills\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\tools\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\github-integration.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\github-integration.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\knowledge-view.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\knowledge-view.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\markdown-preview.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\markdown-preview.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\mcp-servers-library.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\mcp-servers-library.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\skills-library.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\skills-library.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\tools-editor.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\tools-editor.tsx
   - id: fe-review-editor
     name: Frontend Review Editor e Monitor
     status: pending
