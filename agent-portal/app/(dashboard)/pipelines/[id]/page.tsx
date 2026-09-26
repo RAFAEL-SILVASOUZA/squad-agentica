@@ -241,11 +241,6 @@ export default function PipelineDetailPage() {
         onSave={handleSave}
         onEdgeSelect={handleEdgeSelect}
         disabled={pipeline.status === "running"}
-        {/*
-          Extension point for fe-flow-edges:
-          Pass edgePanelSlot={<EdgePanel edge={selectedEdge} ... />} here.
-          The selectedEdge state is available via handleEdgeSelect.
-        */}
       />
     </div>
   );
