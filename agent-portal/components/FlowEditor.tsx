@@ -42,9 +42,24 @@ export interface FlowEditorProps {
   agents: Agent[];
   onSave: (nodes: PipelineNode[], edges: PipelineEdge[]) => Promise<void>;
   onEdgeSelect?: (edge: PipelineEdge | null) => void;
+  /**
+   * Notifica a pagina quando uma aresta muda via painel (fe-flow-edges).
+   * O canvas atualiza a aresta localmente; a pagina revalida e persiste.
+   */
+  onEdgeChange?: (edge: PipelineEdge) => void;
+  /**
+   * Notifica a pagina quando o grafo muda (nos/arestas), com debounce interno.
+   * A pagina usa para revalidacao em tempo real (fe-flow-edges).
+   */
+  onGraphChange?: (nodes: PipelineNode[], edges: PipelineEdge[]) => void;
   /** Slot for the edge panel (fe-flow-edges will plug in here). */
   edgePanelSlot?: React.ReactNode;
   disabled?: boolean;
+  /**
+   * Ids com erro de validacao (fe-flow-edges). Nossos/arestas destacadas
+   * em var(--error) para o usuario localizar o problema no canvas.
+   */
+  errorIdSets?: { nodeIds: Set<string>; edgeIds: Set<string> };
 }
 
 interface HistoryEntry {
@@ -127,8 +142,11 @@ function FlowEditorInner({
   agents,
   onSave,
   onEdgeSelect,
+  onEdgeChange,
+  onGraphChange,
   edgePanelSlot,
   disabled,
+  errorIdSets,
 }: FlowEditorProps) {
   const { addToast } = useToast();
   const { zoomIn, zoomOut, fitView, screenToFlowPosition } = useReactFlow();
@@ -288,6 +306,54 @@ function FlowEditorInner({
     [nodes, edges, setNodes, pushHistory]
   );
 
+  // Graph change -> notify page (fe-flow-edges revalidation, debounced)
+  const onGraphChangeRef = React.useRef(onGraphChange);
+  onGraphChangeRef.current = onGraphChange;
+  React.useEffect(() => {
+    if (!onGraphChangeRef.current) return;
+    const t = setTimeout(() => {
+      onGraphChangeRef.current?.(
+        flowNodesToPipelineNodes(nodes),
+        flowEdgesToPipelineEdges(edges)
+      );
+    }, 150);
+    return () => clearTimeout(t);
+  }, [nodes, edges]);
+
+  // Edge change from EdgePanel (fe-flow-edges): update the edge in place
+  const handleEdgeChange = React.useCallback(
+    (edge: PipelineEdge) => {
+      const newEdges = edges.map((e) =>
+        e.id === edge.id
+          ? {
+              ...e,
+              data: {
+                edgeType: edge.type,
+                condition: edge.condition,
+                label: edge.label,
+                requiresApproval: edge.requiresApproval,
+                dataMapping: edge.dataMapping,
+              },
+            }
+          : e
+      );
+      setEdges(newEdges);
+      pushHistory(nodes, newEdges);
+      onEdgeChange?.(edge);
+    },
+    [edges, nodes, setEdges, pushHistory, onEdgeChange]
+  );
+
+  // Highlight edges with validation errors (fe-flow-edges)
+  const displayEdges = React.useMemo(() => {
+    if (!errorIdSets?.edgeIds.size) return edges;
+    return edges.map((e) => {
+      if (!errorIdSets.edgeIds.has(e.id)) return e;
+      const data = (e.data ?? { edgeType: "flow" as const }) as PipelineEdgeData;
+      return { ...e, data: { ...data, hasError: true } };
+    });
+  }, [edges, errorIdSets]);
+
   // Delete selected node
   const handleDeleteNode = React.useCallback(() => {
     const selectedNode = nodes.find((n) => n.selected);
@@ -339,7 +405,7 @@ function FlowEditorInner({
 
   // Selection change → notify parent
   const onSelectionChange = React.useCallback(
-    ({ edges: selectedEdges }: OnSelectionChangeParams) => {
+    ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
       if (onEdgeSelect) {
         if (selectedEdges.length > 0) {
           const edge = selectedEdges[0];
@@ -419,6 +485,15 @@ function FlowEditorInner({
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   }, []);
+
+  // Error highlight on nodes (fe-flow-edges)
+  const displayNodes = React.useMemo(() => {
+    if (!errorIdSets?.nodeIds.size) return nodes;
+    return nodes.map((n) => {
+      if (!errorIdSets.nodeIds.has(n.id)) return n;
+      return { ...n, data: { ...n.data, hasError: true } };
+    });
+  }, [nodes, errorIdSets]);
 
   return (
     <div
@@ -586,8 +661,8 @@ function FlowEditorInner({
 
       {/* React Flow canvas */}
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={displayNodes}
+        edges={displayEdges}
         onNodesChange={onNodesChangeWrapper}
         onEdgesChange={onEdgesChangeWrapper}
         onConnect={onConnect}

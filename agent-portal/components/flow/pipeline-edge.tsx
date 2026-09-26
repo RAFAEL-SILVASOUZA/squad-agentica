@@ -19,6 +19,8 @@ export interface PipelineEdgeData {
   label?: string;
   requiresApproval?: boolean;
   dataMapping?: { sourceOutput: string; targetInput: string };
+  /** fe-flow-edges: true quando a aresta tem erro de validacao (destaque em vermelho). */
+  hasError?: boolean;
   [key: string]: unknown;
 }
 
@@ -56,6 +58,7 @@ export function PipelineEdgeComponent({
   const isData = edgeData?.edgeType === "data";
   const hasCondition = !!edgeData?.condition;
   const requiresApproval = !!edgeData?.requiresApproval;
+  const hasError = !!edgeData?.hasError;
 
   // Determine stroke style
   let stroke: string;
@@ -63,7 +66,12 @@ export function PipelineEdgeComponent({
   let strokeWidth: number;
   let opacity: number;
 
-  if (isData) {
+  if (hasError) {
+    stroke = "var(--error)";
+    strokeDasharray = isData ? "5,4" : undefined;
+    strokeWidth = 2;
+    opacity = 1;
+  } else if (isData) {
     stroke = "var(--info)";
     strokeDasharray = "5,4";
     strokeWidth = 1.5;

@@ -24,7 +24,13 @@ export type AgentNode = Node<AgentNodeData>;
  * Design: DESIGN-SYSTEM.md §2.19
  */
 export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
-  const { label, agentSnapshot, inputs, outputs, isEntry } = data;
+  const { label, agentSnapshot, inputs, outputs, isEntry, hasError } = data;
+
+  const borderColor = hasError
+    ? "var(--error)"
+    : selected
+      ? "var(--accent)"
+      : "var(--border)";
 
   return (
     <div
@@ -32,12 +38,14 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
       style={{
         width: 160,
         background: "var(--bg-elevated)",
-        border: `1px solid ${selected ? "var(--accent)" : "var(--border)"}`,
+        border: `1px solid ${borderColor}`,
         borderRadius: "var(--radius)",
         padding: 14,
         cursor: "grab",
         transition: "border-color 0.2s",
         position: "relative",
+        outline: hasError ? "2px solid var(--error)" : "none",
+        outlineOffset: 2,
       }}
     >
       {/* Entry indicator */}
