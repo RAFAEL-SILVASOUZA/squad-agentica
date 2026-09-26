@@ -500,8 +500,8 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                     disabled={responding}
                     loading={responding}
                     style={{
-                      background: "var(--success)",
-                      borderColor: "var(--success)",
+                      background: "var(--success-strong)",
+                      borderColor: "var(--success-strong)",
                       color: "#fff",
                     }}
                   >
@@ -522,8 +522,8 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                     disabled={responding}
                     loading={responding}
                     style={{
-                      background: "var(--error)",
-                      borderColor: "var(--error)",
+                      background: "var(--error-strong)",
+                      borderColor: "var(--error-strong)",
                       color: "#fff",
                     }}
                   >
