@@ -43,8 +43,8 @@ export function DeleteAgentModal({
             onClick={onConfirm}
             loading={deleting}
             style={{
-              background: "var(--error)",
-              borderColor: "var(--error)",
+              background: "var(--error-strong)",
+              borderColor: "var(--error-strong)",
             }}
           >
             <Trash2 size={14} aria-hidden="true" />
