@@ -1,10 +1,10 @@
 "use client";
 
-import { Wrench } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
+import { ToolsEditor } from "@/components/library/tools-editor";
 
 /**
- * Placeholder: tools custom (fe-library substitui).
+ * Tools Custom (fe-library).
+ * Lista, cria, edita, valida, deploya e testa tools custom.
  */
 export default function ToolsPage() {
   return (
@@ -19,11 +19,7 @@ export default function ToolsPage() {
       >
         Tools Custom
       </h1>
-      <EmptyState
-        icon={Wrench}
-        title="Nenhuma tool ainda"
-        description="Esta tela será implementada pelo nó fe-library."
-      />
+      <ToolsEditor />
     </div>
   );
 }
