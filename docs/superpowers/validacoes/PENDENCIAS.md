@@ -55,3 +55,8 @@ exige AA em todos os pares. Locais: [fe-approvals] `approval-panel.tsx:503`(Apro
 e `--error-strong:#B91C1C` (branco 5.48:1 / 6.47:1, passam AA nos dois temas). Cada nó troca o
 `background`/`borderColor` do botão para o token `*-strong`, mantendo texto branco e `--success`/`--error` como
 token de estado (dots/bordas/badges). [fe-dashboard] sem mudança (usa `--accent`).
+
+> **Atualização 2026-09-26 (fe-review rodada 4):** C3 RESOLVIDO (retries mergeados: `211c4f2`, `dcf4d38`, `1f2505a`; grep confirma que não há texto sobre `--success`/`--error` no portal). C2 VERIFICADO em build de produção com Chromium headless: 0 erros de hidratação em `/login` e `/register`.
+
+## C4 [fe-agents / fe-dashboard] — Grid de agentes editado fora do mapa de donos (NÃO bloqueante)
+`2b88668` (fe-agents) acrescentou busca e filtro por tipo em `app/(dashboard)/page.tsx` (dono: fe-dashboard, contrato linha 529). A mudança é aditiva e coberta por testes. Pequena melhoria de UX: montar as opções do select de tipo a partir da lista sem filtro, porque hoje, depois de filtrar, só aparece o tipo escolhido.
