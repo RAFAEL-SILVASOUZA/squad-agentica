@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Bot, RefreshCw, GitBranch, CheckCircle2 } from "lucide-react";
+import { Plus, Bot, RefreshCw, GitBranch, CheckCircle2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -16,6 +16,7 @@ import {
 } from "@/components/dashboard";
 import { api } from "@/lib/api";
 import { getWebSocketClient, disposeWebSocketClient } from "@/lib/websocket";
+import { filterAgentsBySearchAndType } from "@/lib/agent-filter";
 import type {
   Agent,
   ApprovalRequest,
@@ -39,14 +40,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface DashboardData {
   agents: Agent[];
+  totalAgents: number;
   runningPipelines: { id: string; name: string }[];
   recentRuns: RecentRunItem[];
   pendingApprovals: ApprovalRequest[];
 }
 
-async function fetchDashboardData(): Promise<DashboardData> {
+async function fetchDashboardData(
+  typeFilter: string | null
+): Promise<DashboardData> {
   const [agentsRes, approvalsRes] = await Promise.all([
-    api.list<Agent>("/api/agents", { page: 1, limit: 50 }),
+    api.list<Agent>("/api/agents", {
+      page: 1,
+      limit: 50,
+      query: { type: typeFilter ?? undefined },
+    }),
     api.list<ApprovalRequest>("/api/approvals", {
       page: 1,
       limit: 20,
@@ -95,7 +103,13 @@ async function fetchDashboardData(): Promise<DashboardData> {
       new Date(a.run.startedAt ?? 0).getTime()
   );
 
-  return { agents, runningPipelines, recentRuns, pendingApprovals };
+  return {
+    agents,
+    totalAgents: agentsRes.total,
+    runningPipelines,
+    recentRuns,
+    pendingApprovals,
+  };
 }
 
 export default function DashboardPage() {
@@ -103,26 +117,59 @@ export default function DashboardPage() {
   const [data, setData] = React.useState<DashboardData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState("");
+  const [typeFilter, setTypeFilter] = React.useState("");
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await fetchDashboardData();
-      setData(result);
-    } catch (e) {
-      const message =
-        e instanceof Error ? e.message : "Falha ao carregar o dashboard";
-      setError(message);
-      addToast("error", message);
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast]);
+  const load = React.useCallback(
+    async (typeOverride?: string) => {
+      setLoading(true);
+      setError(null);
+      const type = typeOverride !== undefined ? typeOverride : typeFilter;
+      try {
+        const result = await fetchDashboardData(type || null);
+        setData(result);
+      } catch (e) {
+        const message =
+          e instanceof Error ? e.message : "Falha ao carregar o dashboard";
+        setError(message);
+        addToast("error", message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [typeFilter, addToast]
+  );
 
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  const handleTypeChange = React.useCallback(
+    (value: string) => {
+      setTypeFilter(value);
+      void load(value);
+    },
+    [load]
+  );
+
+  const agentTypes = React.useMemo(() => {
+    if (!data) return [];
+    const seen = new Map<string, number>();
+    for (const agent of data.agents) {
+      seen.set(agent.type, (seen.get(agent.type) ?? 0) + 1);
+    }
+    return Array.from(seen.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([value, count]) => ({ value, label: `${value} (${count})` }));
+  }, [data]);
+
+  const visibleAgents = React.useMemo(
+    () => (data ? filterAgentsBySearchAndType(data.agents, search, typeFilter) : []),
+    [data, search, typeFilter]
+  );
+
+  const noMatch =
+    data !== null && data.agents.length > 0 && visibleAgents.length === 0;
 
   // WebSocket: pipeline:status atualiza runs recentes em tempo real.
   // Ao reconectar, refetch via REST (contrato §7).
@@ -247,7 +294,7 @@ export default function DashboardPage() {
           >
             {loading
               ? "Carregando…"
-              : `${data?.agents.length ?? 0} agentes · ${stats.runningPipelines} pipelines em execução`}
+              : `${data?.totalAgents ?? 0} agentes · ${stats.runningPipelines} pipelines em execução`}
           </p>
         </div>
         <Link href="/agents/new">
@@ -293,19 +340,88 @@ export default function DashboardPage() {
 
       {/* Grid de agentes / estado de primeiro uso (portal vazio) */}
       <section aria-labelledby="agents-heading" style={{ marginBottom: "24px" }}>
-        <h2
-          id="agents-heading"
-          style={{
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "var(--text-secondary)",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            margin: "0 0 10px",
-          }}
-        >
-          Agentes
-        </h2>
+          <h2
+            id="agents-heading"
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "var(--text-secondary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              margin: "0 0 10px",
+            }}
+          >
+            Agentes
+          </h2>
+          <div
+            role="search"
+            aria-label="Buscar e filtrar agentes"
+            style={{
+              display: "flex",
+              gap: "8px",
+              flexWrap: "wrap",
+              marginBottom: "12px",
+            }}
+          >
+            <label
+              htmlFor="agents-search"
+              style={{ position: "absolute", left: -9999 }}
+            >
+              Buscar agente
+            </label>
+            <input
+              id="agents-search"
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, descrição ou tipo…"
+              style={{
+                flex: "1 1 220px",
+                minWidth: 180,
+                padding: "10px 14px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-elevated)",
+                color: "var(--text)",
+                fontSize: "13px",
+                fontFamily: "var(--font)",
+                outline: "none",
+                transition: "border-color var(--transition)",
+              }}
+            />
+            <label
+              htmlFor="agents-type-filter"
+              style={{ position: "absolute", left: -9999 }}
+            >
+              Filtrar por tipo
+            </label>
+            <select
+              id="agents-type-filter"
+              value={typeFilter}
+              onChange={(e) => handleTypeChange(e.target.value)}
+              style={{
+                flex: "1 1 180px",
+                minWidth: 150,
+                padding: "10px 14px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-elevated)",
+                color: "var(--text)",
+                fontSize: "13px",
+                fontFamily: "var(--font)",
+                outline: "none",
+                cursor: "pointer",
+                transition: "border-color var(--transition)",
+              }}
+            >
+              <option value="">Todos os tipos</option>
+              {agentTypes.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.value}
+                </option>
+              ))}
+            </select>
+          </div>
         {isEmpty && !loading && !error ? (
           <Card style={{ marginBottom: "12px" }}>
             <EmptyState
@@ -378,6 +494,22 @@ export default function DashboardPage() {
               </Card>
             ))}
           </div>
+        ) : noMatch && !loading && !error ? (
+          <EmptyState
+            icon={Search}
+            title="Nenhum agente encontrado"
+            description="Nenhum agente corresponde à busca e ao filtro. Limpe os filtros para ver todos os agentes."
+            action={
+              <Button
+                onClick={() => {
+                  setSearch("");
+                  handleTypeChange("");
+                }}
+              >
+                Limpar filtros
+              </Button>
+            }
+          />
         ) : data && data.agents.length > 0 ? (
           <div
             style={{
@@ -386,7 +518,7 @@ export default function DashboardPage() {
               gap: "12px",
             }}
           >
-            {data.agents.map((agent) => (
+            {visibleAgents.map((agent) => (
               <AgentCard
                 key={agent.id}
                 agent={agent}

@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import {
   AgentChat,
   AgentDetail,
+  AgentPreview,
   DeleteAgentModal,
 } from "@/components/agents";
 import { api, ApiError } from "@/lib/api";
@@ -72,6 +73,16 @@ export default function AgentDetailPage() {
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [draftId, setDraftId] = React.useState<string | null>(null);
+  // Config parcial do chat de edição (config_update, spec §10). O agente
+  // exibido no formulário é a fusão do agente salvo + o último config_update.
+  const [chatConfig, setChatConfig] = React.useState<Partial<Agent>>({});
+  const [chatStreaming, setChatStreaming] = React.useState(false);
+
+  const handleChatConfigUpdate = React.useCallback((config: Partial<Agent>) => {
+    // O modo edição do backend devolve a config COMPLETA do draft
+    // (build_preview), então substitui o config anterior do chat.
+    setChatConfig(config);
+  }, []);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -277,14 +288,36 @@ export default function AgentDetailPage() {
           chatPath={`/api/agents/${agent.id}/chat`}
           draftId={draftId}
           onDraftId={setDraftId}
+          onConfigUpdate={handleChatConfigUpdate}
+          onStreamingChange={setChatStreaming}
           initialAssistantMessage={`Olá! Posso ajudar a ajustar o agente "${agent.name}". O que você quer mudar?`}
         />
-        <AgentDetail
-          agent={agent}
-          options={options ?? { skills: [], tools: [], mcpServers: [], knowledge: [] }}
-          onSave={handleSave}
-          saving={saving}
-        />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+            minWidth: 0,
+          }}
+        >
+          {/* Preview do draft atualizado pelo chat (spec §10.1). */}
+          <AgentPreview
+            config={
+              Object.keys(chatConfig).length > 0 ? { ...agent, ...chatConfig } : agent
+            }
+            streaming={chatStreaming}
+          />
+          <AgentDetail
+            agent={
+              Object.keys(chatConfig).length > 0
+                ? ({ ...agent, ...chatConfig } as Agent)
+                : agent
+            }
+            options={options ?? { skills: [], tools: [], mcpServers: [], knowledge: [] }}
+            onSave={handleSave}
+            saving={saving}
+          />
+        </div>
       </div>
 
       <DeleteAgentModal

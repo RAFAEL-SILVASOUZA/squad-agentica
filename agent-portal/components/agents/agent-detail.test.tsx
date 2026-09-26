@@ -235,4 +235,45 @@ describe("AgentDetail", () => {
     expect(screen.getByText("Nenhum servidor cadastrado")).toBeInTheDocument();
     expect(screen.getByText("Nenhuma base cadastrada")).toBeInTheDocument();
   });
+
+  it("syncs the form when the agent prop changes (config_update via chat)", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    // Renderiza com o agente original.
+    const { rerender } = render(
+      <ToastProvider>
+        <AgentDetail
+          options={makeOptions()}
+          onSave={onSave}
+          agent={makeAgent()}
+        />
+      </ToastProvider>
+    );
+
+    expect(screen.getByDisplayValue("Backend Developer")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("iterativo")).toBeInTheDocument();
+
+    // A pagina de edicao recebe um config_update do chat e atualiza o
+    // agent state; o formulario deve sincronizar com a nova config.
+    rerender(
+      <ToastProvider>
+        <AgentDetail
+          options={makeOptions()}
+          onSave={onSave}
+          agent={makeAgent({ name: "Dev Ajustado", strategy: "paralelo" })}
+        />
+      </ToastProvider>
+    );
+
+    expect(screen.getByDisplayValue("Dev Ajustado")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("paralelo")).toBeInTheDocument();
+
+    // O save persiste a config aplicada pelo chat.
+    fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalled();
+    });
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.name).toBe("Dev Ajustado");
+    expect(payload.strategy).toBe("paralelo");
+  });
 });

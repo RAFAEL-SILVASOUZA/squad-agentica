@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import DashboardPage from "./page";
 import { ToastProvider } from "@/components/ui/toast";
+import { filterAgentsBySearchAndType } from "@/lib/agent-filter";
 import type { Agent, ApprovalRequest, PipelineRun } from "@/lib/types";
 
 // Mocks de lib/api e lib/websocket (contrato: mock de lib/api.ts e lib/websocket.ts).
@@ -156,12 +157,15 @@ describe("DashboardPage", () => {
     mockWsClient();
     renderPage();
 
+    // O card leva href=/agents/agent-1 e mostra o tipo do agente.
+    // (O select de filtro também lista o tipo; por isso usamos o link por href.)
     await waitFor(() => {
-      expect(screen.getByText("Coordinador")).toBeInTheDocument();
+      const link = screen
+        .getAllByRole("link")
+        .find((el) => el.getAttribute("href") === "/agents/agent-1");
+      expect(link).not.toBeUndefined();
+      expect(link?.textContent).toContain("Coordinador");
     });
-
-    const link = screen.getByRole("link", { name: /abrir agente planner/i });
-    expect(link).toHaveAttribute("href", "/agents/agent-1");
   });
 
   it("renders pending approvals list", async () => {
@@ -315,5 +319,129 @@ describe("DashboardPage", () => {
     await waitFor(() => {
       expect(api.list).toHaveBeenCalledTimes(4);
     });
+  });
+
+  it("filters agents client-side by search term", async () => {
+    (api.list as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        items: [
+          makeAgent({ id: "a1", name: "Planner", type: "Coordinador" }),
+          makeAgent({
+            id: "a2",
+            name: "Backend Developer",
+            type: "Developer",
+            description: "Escreve APIs REST",
+          }),
+        ],
+        total: 2,
+        page: 1,
+        limit: 50,
+      })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+
+    mockWsClient();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Planner")).toBeInTheDocument();
+      expect(screen.getByText("Backend Developer")).toBeInTheDocument();
+    });
+
+    const search = screen.getByLabelText("Buscar agente");
+    fireEvent.change(search, { target: { value: "api" } });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Planner")).not.toBeInTheDocument();
+      expect(screen.getByText("Backend Developer")).toBeInTheDocument();
+    });
+  });
+
+  it("filters agents by type via the type selector (server-side param)", async () => {
+    (api.list as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        items: [
+          makeAgent({ id: "a1", name: "Planner", type: "Coordinador" }),
+          makeAgent({ id: "a2", name: "Dev", type: "Developer" }),
+        ],
+        total: 2,
+        page: 1,
+        limit: 50,
+      })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+
+    mockWsClient();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Planner")).toBeInTheDocument();
+    });
+
+    const typeFilter = screen.getByLabelText("Filtrar por tipo");
+    fireEvent.change(typeFilter, { target: { value: "Developer" } });
+
+    // A chamada de refetch leva type=Developer.
+    await waitFor(() => {
+      const calls = (api.list as unknown as ReturnType<typeof vi.fn>).mock.calls
+        .filter((c: unknown[]) => c[0] === "/api/agents");
+      expect(calls[calls.length - 1][1]).toEqual(
+        expect.objectContaining({
+          query: expect.objectContaining({ type: "Developer" }),
+        })
+      );
+    });
+  });
+
+  it("shows a no-match empty state with a clear-filters action", async () => {
+    (api.list as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        items: [makeAgent({ id: "a1", name: "Planner", type: "Coordinador" })],
+        total: 1,
+        page: 1,
+        limit: 50,
+      })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+
+    mockWsClient();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Planner")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Buscar agente"), {
+      target: { value: "zzz" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Nenhum agente encontrado")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /limpar filtros/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Planner")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("filterAgentsBySearchAndType", () => {
+  const agents: Agent[] = [
+    makeAgent({ id: "a1", name: "Planner", type: "Coordinador", description: "Monta o plano" }),
+    makeAgent({ id: "a2", name: "Dev", type: "Developer", description: "APIs" }),
+  ];
+
+  it("returns all agents when search and filter are empty", () => {
+    expect(filterAgentsBySearchAndType(agents, "", "")).toHaveLength(2);
+  });
+
+  it("matches name, description and type case-insensitively", () => {
+    expect(filterAgentsBySearchAndType(agents, "plano", "")).toHaveLength(1);
+    expect(filterAgentsBySearchAndType(agents, "apis", "")).toHaveLength(1);
+    expect(filterAgentsBySearchAndType(agents, "coordinador", "")).toHaveLength(1);
+  });
+
+  it("combines type filter and search", () => {
+    expect(filterAgentsBySearchAndType(agents, "dev", "Developer")).toHaveLength(1);
+    expect(filterAgentsBySearchAndType(agents, "dev", "Coordinador")).toHaveLength(0);
   });
 });
