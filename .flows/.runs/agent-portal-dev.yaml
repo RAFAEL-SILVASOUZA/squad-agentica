@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-26T20:36:42.825Z
+finishedAt: 2026-09-26T21:38:21.040Z
 outcome: paused
 nodes:
   - id: arch
@@ -580,7 +580,7 @@ nodes:
       - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\components\monitor\pipeline-monitor.tsx
   - id: fe-approvals
     name: Frontend Approvals
-    status: pending
+    status: done
     artifacts:
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\approvals\page.test.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\approvals\page.tsx
@@ -592,7 +592,7 @@ nodes:
       - agent-portal/components/approvals/approval-panel.tsx
   - id: fe-library
     name: Frontend Library
-    status: pending
+    status: done
     artifacts:
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\knowledge\page.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\mcp\page.tsx
@@ -619,7 +619,7 @@ nodes:
       - docs/superpowers/validacoes/fe-review-editor.md
   - id: fe-review
     name: Frontend Review
-    status: pending
+    status: done
     artifacts:
       - agent-orchestrator/_tmp_probe.py
       - agent-orchestrator/app/agents/storage.py
@@ -636,7 +636,7 @@ nodes:
       - docs/superpowers/validacoes/fe-review.md
   - id: qa-integration
     name: QA Integration
-    status: pending
+    status: done
     artifacts: []
   - id: qa-e2e
     name: QA E2E

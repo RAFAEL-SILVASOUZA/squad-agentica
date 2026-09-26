@@ -4892,6 +4892,12 @@ nodes:
       \"## Resultado de QA Integration\": o que já passou e falhou na API. Não repita cenários de API: aqui o que importa é a jornada do usuário no navegador.
 
 
+      **Falhas já conhecidas não se reinvestigam.** O relatório `docs/superpowers/handoffs/qa-integration.md` lista as falhas F1–F20, com causa e arquivo. Quando uma jornada quebrar por uma delas (ex.: run sempre `failed` = F1, upload 500 = F5, CRUD de pipeline ausente = F9), marque a jornada como `bloqueada por F#`, contorne se for barato (ex.: semear a pipeline pela API/banco como a suíte de integração faz) e siga para a próxima. Gaste o tempo no que só a interface revela: telas quebradas, estados vazio/erro/loading, botões sem ação, navegação, tempo real, console. Numere as falhas novas a partir de E1 e inclua no relatório um mapa `jornada -> F#/E#`.
+
+
+      **Limite de tempo.** Não fique preso numa jornada: depois de duas tentativas sem avanço, registre a evidência e siga. Escreva o relatório em `docs/superpowers/handoffs/qa-e2e.md` à medida que avança, para não perder o trabalho se for interrompido. Remova os usuários de teste ao terminar.
+
+
       ## Você roda sozinho nesta etapa
 
       Pode instalar Playwright e os navegadores, subir o stack e usar `LLM_PROVIDER=mock`.
@@ -5001,9 +5007,15 @@ nodes:
 
       3. Não mude teste para ele passar sem que o comportamento esteja certo segundo spec e contrato; se o teste estava errado, justifique com a fonte.
 
-      4. Não adicione funcionalidade nem refatore o que não está ligado às falhas.
+      4. **Lacuna de spec/contrato é falha, não funcionalidade nova.** O que a spec ou o `CONTRATO-TECNICO.md` exige e não existe (endpoint ausente como o CRUD/validate de pipeline e `GET /api/artifacts/:id`, evento WS do contrato §7 que não é emitido, gravação de checkpoints/artefatos) deve ser implementado aqui, seguindo o contrato à risca. Não marque isso como \"fora do escopo\". O que você não deve fazer é acrescentar algo que spec/contrato não pedem, nem refatorar o que não está ligado às falhas.
 
-      5. Ao final, rode as suítes das áreas que você tocou e os cenários de integração e E2E que falhavam. A execução completa é do próximo nó.
+      5. **Ordem de trabalho: primeiro o que bloqueia os outros testes.** Comece pelas falhas que impedem qualquer run de completar (no relatório de integração: executor, setup do checkpointer, cliente S3 do worker, bucket do Garage, registro do hook de aprovação, envelope de erro 422), depois isolamento por dono e coerência do run (runId único, status gravado no banco, run órfão), depois as lacunas de contrato. Commite por assunto à medida que cada grupo fica verde e anote o progresso em `docs/superpowers/handoffs/qa-fix.md`: se o contexto apertar ou você for interrompido, o próximo agente retoma dali.
+
+      6. **Banco novo.** Há falha que só aparece em banco vazio (setup do checkpointer). Para validar, recrie o ambiente com `docker compose down -v` + `docker compose up -d --build` pelo menos uma vez, depois das correções de runtime.
+
+      7. **Paralelismo opcional.** Se você tiver ferramenta de subagentes, pode delegar grupos independentes (ex.: CRUD de pipeline) a subagentes em worktree (regime do item 11 do preâmbulo, merge `--no-ff` no `main`), mantendo você como único dono de `main` e do stack. Sem subagentes, siga a ordem do item 5.
+
+      8. Ao final, rode as suítes das áreas que você tocou e os cenários de integração e E2E que falhavam. A execução completa é do próximo nó.
 
 
       ## Resposta final
@@ -5089,11 +5101,13 @@ nodes:
 
       1. Para cada falha média ou baixa: reproduza, corrija pela causa raiz e adicione ou ajuste um teste. Não mascare no teste.
 
-      2. Limite: correções locais, que não mudem contrato público nem exijam refatoração. O que não couber vai para `docs/superpowers/validacoes/PENDENCIAS.md` com motivo e risco.
+      2. Limite: correções locais, que não mudem contrato público nem exijam refatoração. Adequar o código ao contrato (ex.: o worker devolver a porta declarada do agente em vez de uma chave genérica `output`) **não** é mudar contrato: corrija. O que não couber vai para `docs/superpowers/validacoes/PENDENCIAS.md` com motivo e risco.
 
-      3. Não adicione funcionalidade nem refatore o que não está ligado às falhas.
+      3. Não adicione funcionalidade nem refatore o que não está ligado às falhas, com UMA exceção obrigatória (item 4).
 
-      4. Ao final, rode **todas** as suítes (unitárias de backend e frontend, integração e E2E) e `npm run build`. Se algo que o QA Fix corrigiu quebrou de novo, corrija também.
+      4. **Provedor de LLM e embeddings compatível com OpenAI, configurável (pedido do usuário para o teste final).** Hoje só há `LLM_PROVIDER=mock|openai` sem URL nem modelo configuráveis. Acrescente, no orchestrator e no worker (e no `docker-compose.yml`/`.env.example`, com default que mantém o comportamento atual e `mock` como padrão): `OPENAI_BASE_URL` e `LLM_MODEL` para o chat de construção e a execução de agentes; `EMBEDDING_BASE_URL` e `EMBEDDING_MODEL` para os embeddings. A coluna é `vector(1536)` fixa (`EMBEDDING_DIM`): se o modelo devolver dimensão menor, complete com zeros até `EMBEDDING_DIM` (preserva cosseno e produto interno); se devolver maior, falhe com erro claro. Chave vazia deve ser aceita para servidores locais (use um placeholder). Cubra com testes unitários (URL/modelo repassados, padding). No `.env` local (não versionado), configure: `LLM_PROVIDER=openai`, `OPENAI_BASE_URL=http://192.168.18.4:1234/v1`, `LLM_MODEL=Qwen3.8-27B-Q8_0`, `EMBEDDING_PROVIDER=openai`, `EMBEDDING_BASE_URL=http://192.168.18.4:4321/v1`, `EMBEDDING_MODEL=nomic-embed-text-v1.5` (768 dimensões, confirmado), `OPENAI_API_KEY=local`. As suítes automatizadas continuam rodando com mock (sobrescreva por variável de ambiente na execução dos testes).
+
+      5. Ao final, rode **todas** as suítes (unitárias de backend e frontend, integração e E2E) e `npm run build`. Se algo que o QA Fix corrigiu quebrou de novo, corrija também.
 
 
       ## Resposta final
@@ -5168,20 +5182,22 @@ nodes:
 
       ## Verificação (execute tudo de novo, não confie em relatório)
 
-      Rode as suítes com os provedores mock. Se o `.env` tiver chave real de LLM e embeddings, rode também a jornada de aceite com o provedor real; se não tiver, registre isso como ressalva, não como falha.
+      Rode as suítes automatizadas com os provedores mock. A jornada de aceite e o teste de telas rodam com o **provedor real local** configurado pelo QA Fix Médias e Baixas no `.env`: LLM `Qwen3.8-27B-Q8_0` em `http://192.168.18.4:1234/v1` e embeddings `nomic-embed-text-v1.5` em `http://192.168.18.4:4321/v1`. Antes, confira que os dois respondem (`GET /v1/models`); se algum estiver fora do ar, registre como ressalva e rode com mock.
 
-      1. Suba o ambiente do zero: `docker compose down`, `docker compose up -d --build`, espere os healthchecks.
+      1. Suba o ambiente do zero, **com banco vazio**: `docker compose down -v` (o `-v` apaga os volumes; sem ele o banco antigo continua e falhas de banco novo passam despercebidas), `docker compose up -d --build`, espere os healthchecks e confira que o `garage-init` criou todos os buckets.
 
-      2. Rode as suítes: pytest do orchestrator e do worker, testes do portal, testes de integração e os E2E (Playwright) que o QA criou.
+      2. Rode as suítes: pytest do orchestrator e do worker, testes do portal, testes de integração (`tests/integration/`) e os E2E (Playwright) que o QA criou.
 
-      3. Jornada de aceite do plano, num banco vazio: registrar e logar, criar agente pelo chat de construção, criar uma skill e uma knowledge base com um documento, montar pipeline de 2 agentes com uma aresta de aprovação no editor, executar, acompanhar no monitor, aprovar, ver o run terminar com resultado.
+      3. Jornada de aceite do plano, no banco vazio e com o provedor real: registrar e logar, criar agente pelo chat de construção, criar uma skill e uma knowledge base com um documento (conferir que a busca devolve trecho relevante), montar pipeline de 2 agentes com uma aresta de aprovação no editor, executar, acompanhar no monitor, aprovar, ver o run terminar com resultado gerado pelo modelo.
+
+      4. **Teste tela por tela no navegador, com o provedor real.** Percorra cada rota do portal (login, registro, dashboard, agentes: lista/novo/detalhe, pipelines: editor e monitor, aprovações, skills, tools, MCP, knowledge, e as demais do plano de frontend) e, em cada uma: carrega sem erro no console, estados vazio/loading/erro fazem sentido, todo botão tem ação e a ação funciona de verdade contra o backend, tempo real atualiza quando aplicável. Registre em `docs/superpowers/validacoes/qa-final.md` uma tabela tela, resultado e evidência (screenshot ou trecho de log). Falha em tela = critério bloqueante 2.
 
 
       ## Critérios bloqueantes
 
       1. Todas as suítes passam na sua execução.
 
-      2. A jornada de aceite completa sem intervenção manual fora da UI.
+      2. A jornada de aceite completa sem intervenção manual fora da UI, e todas as telas do item 4 passam.
 
       3. Nenhuma falha crítica ou alta em aberto; itens da spec seção 13 \"Incluído\" cobertos (ou registrados em `docs/superpowers/validacoes/PENDENCIAS.md` com justificativa aceitável, como Rivvn).
 
@@ -5200,7 +5216,7 @@ nodes:
 
       ## Protocolo de validação (este nó tem arestas retry para: qa-fix, qa-fix-rest)
 
-      - Você DEVE chamar a tool `flow_validate` antes da resposta final.
+      - Você DEVE chamar a tool `flow_validate` antes da resposta final. Se ela não existir na sua sessão (execução fora do runner), registre o veredito em `docs/superpowers/validacoes/qa-final.md` e comece a resposta final com a linha `VEREDITO: APROVADO` ou `VEREDITO: REJEITADO`.
 
       - **Antes de verificar, confira os merges:** `git worktree list` e `git branch --list 'wt/*'`. Todo nó de implementação desta fase precisa ter feito merge do próprio branch no `main` (`git log --oneline --merges`). Branch `wt/*` de nó desta fase ainda não mergeado é critério bloqueante: rejeite citando o nó.
 
