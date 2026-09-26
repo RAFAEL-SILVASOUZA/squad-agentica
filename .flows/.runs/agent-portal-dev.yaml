@@ -429,15 +429,69 @@ nodes:
       - agent-orchestrator/tests/test_hitl_resume.py
   - id: hitl-review
     name: HITL Review
-    status: failed
+    status: done
     artifacts:
       - agent-orchestrator/app/api/approvals.py
       - agent-orchestrator/app/runtime/checkpoint.py
     error: Request timed out.
   - id: fe-shell
     name: Frontend Shell
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-portal/README.md
+      - "agent-portal/app/(dashboard)/agents/[id]/page.tsx"
+      - "agent-portal/app/(dashboard)/agents/new/page.tsx"
+      - "agent-portal/app/(dashboard)/approvals/page.tsx"
+      - "agent-portal/app/(dashboard)/knowledge/page.tsx"
+      - "agent-portal/app/(dashboard)/layout.tsx"
+      - "agent-portal/app/(dashboard)/mcp/page.tsx"
+      - "agent-portal/app/(dashboard)/page.tsx"
+      - "agent-portal/app/(dashboard)/pipelines/[id]/page.tsx"
+      - "agent-portal/app/(dashboard)/pipelines/[id]/run/page.tsx"
+      - "agent-portal/app/(dashboard)/skills/page.tsx"
+      - "agent-portal/app/(dashboard)/tools/page.tsx"
+      - agent-portal/app/globals.css
+      - agent-portal/app/layout.tsx
+      - agent-portal/app/page.test.tsx
+      - agent-portal/app/page.tsx
+      - agent-portal/components/layout/app-shell.tsx
+      - agent-portal/components/layout/app-sidebar.tsx
+      - agent-portal/components/layout/app-topbar.tsx
+      - agent-portal/components/layout/index.ts
+      - agent-portal/components/layout/notifications-badge.tsx
+      - agent-portal/components/ui/badge.test.tsx
+      - agent-portal/components/ui/badge.tsx
+      - agent-portal/components/ui/button.test.tsx
+      - agent-portal/components/ui/button.tsx
+      - agent-portal/components/ui/card.test.tsx
+      - agent-portal/components/ui/card.tsx
+      - agent-portal/components/ui/drawer.test.tsx
+      - agent-portal/components/ui/drawer.tsx
+      - agent-portal/components/ui/empty-state.test.tsx
+      - agent-portal/components/ui/empty-state.tsx
+      - agent-portal/components/ui/index.ts
+      - agent-portal/components/ui/input.test.tsx
+      - agent-portal/components/ui/input.tsx
+      - agent-portal/components/ui/modal.test.tsx
+      - agent-portal/components/ui/modal.tsx
+      - agent-portal/components/ui/select.test.tsx
+      - agent-portal/components/ui/select.tsx
+      - agent-portal/components/ui/skeleton.test.tsx
+      - agent-portal/components/ui/skeleton.tsx
+      - agent-portal/components/ui/table.test.tsx
+      - agent-portal/components/ui/table.tsx
+      - agent-portal/components/ui/tabs.test.tsx
+      - agent-portal/components/ui/tabs.tsx
+      - agent-portal/components/ui/textarea.tsx
+      - agent-portal/components/ui/toast.test.tsx
+      - agent-portal/components/ui/toast.tsx
+      - agent-portal/components/ui/toggle.test.tsx
+      - agent-portal/components/ui/toggle.tsx
+      - agent-portal/lib/api.test.ts
+      - agent-portal/lib/api.ts
+      - agent-portal/lib/types.ts
+      - agent-portal/lib/websocket.test.ts
+      - agent-portal/lib/websocket.ts
   - id: fe-dashboard
     name: Frontend Dashboard
     status: pending
