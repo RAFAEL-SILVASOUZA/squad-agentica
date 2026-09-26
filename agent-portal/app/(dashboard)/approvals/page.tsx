@@ -1,29 +1,68 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
+import * as React from "react";
+import { ApprovalPanel } from "@/components/approvals/approval-panel";
 
 /**
- * Placeholder: aprovações (fe-approvals substitui).
+ * Página de aprovações (fe-approvals, protótipo view-approvals).
+ * - Header: título + subtítulo com contexto.
+ * - ApprovalPanel: fila de pendentes + ações aprovar/rejeitar/argumentar/cancelar.
+ * - onPendingCountChange atualiza o badge da sidebar/topbar via layout.
+ *
+ * Portal nasce vazio (contrato §0): sem seed ilustrativo.
  */
 export default function ApprovalsPage() {
+  const [pendingCount, setPendingCount] = React.useState(0);
+
+  // O layout do dashboard consome pendingCount via contexto ou prop.
+  // Aqui usamos um callback que o layout injeta via React context.
+  const handlePendingCountChange = React.useCallback((count: number) => {
+    setPendingCount(count);
+    // Dispara um evento custom para o layout ouvir (evita prop drilling).
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("approvals:pending-count", { detail: { count } })
+      );
+    }
+  }, []);
+
   return (
     <div>
-      <h1
+      <div
         style={{
-          fontSize: "20px",
-          fontWeight: 700,
-          color: "var(--text)",
-          margin: "0 0 24px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "16px",
+          marginBottom: "20px",
+          flexWrap: "wrap",
         }}
       >
-        Aprovações
-      </h1>
-      <EmptyState
-        icon={CheckCircle2}
-        title="Nenhuma aprovação pendente"
-        description="Esta tela será implementada pelo nó fe-approvals."
-      />
+        <div>
+          <h1
+            style={{
+              fontSize: "20px",
+              fontWeight: 700,
+              color: "var(--text)",
+              margin: 0,
+            }}
+          >
+            Aprovações
+          </h1>
+          <p
+            style={{
+              fontSize: "12px",
+              color: "var(--text-secondary)",
+              margin: "4px 0 0",
+            }}
+          >
+            {pendingCount > 0
+              ? `${pendingCount} ${pendingCount === 1 ? "agente aguardando" : "agentes aguardando"} sua decisão`
+              : "Fila de aprovações pendentes"}
+          </p>
+        </div>
+      </div>
+      <ApprovalPanel onPendingCountChange={handlePendingCountChange} />
     </div>
   );
 }
