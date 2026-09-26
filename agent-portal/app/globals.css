@@ -1,14 +1,49 @@
-/* globals.css — tokens do design system (dono: fe-shell). */
-/* Scaffold mínimo da FASE 1: fe-shell substitui por o design system completo. */
+/* globals.css — tokens do design system (dono: fe-shell).
+ * Fonte: docs/superpowers/plans/DESIGN-SYSTEM.md §1.8 (bloco CSS pronto).
+ * Os components/ui/* consomem var(--...), nunca cores soltas.
+ */
 
 :root {
+  /* Marca */
   --accent: #E85D26;
   --accent-hover: #F06B35;
   --accent-subtle: rgba(232, 93, 38, 0.12);
+
+  /* Design tokens */
   --radius: 10px;
   --radius-sm: 6px;
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'Fira Code', monospace;
   --transition: 0.2s ease;
+
+  /* Escala de espaçamento (derivada dos valores do protótipo) */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-10: 20px;
+  --space-12: 24px;
+
+  /* Tamanhos tipográficos */
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-md: 12px;
+  --text-lg: 13px;
+  --text-xl: 14px;
+  --text-icon: 15px;
+  --text-xl2: 16px;
+  --text-stat: 18px;
+  --text-title: 20px;
+
+  /* Pesos tipográficos */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
 }
 
 [data-theme="dark"] {
@@ -62,10 +97,61 @@ body {
 
 a {
   color: inherit;
+  text-decoration: none;
 }
 
 /* Focus visible (design system §5) */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Animações (design system §1.6) */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

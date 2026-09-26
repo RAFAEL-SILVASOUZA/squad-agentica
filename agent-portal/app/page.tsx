@@ -1,8 +1,9 @@
+import { redirect } from "next/navigation";
+
+/**
+ * Raiz: redireciona para /dashboard (que está dentro do grupo (dashboard)).
+ * O middleware protege as rotas autenticadas.
+ */
 export default function HomePage() {
-  return (
-    <main style={{ padding: "2rem" }}>
-      <h1>Agent Portal</h1>
-      <p>Portal de pipelines de agentes de IA. Placeholder da FASE 1.</p>
-    </main>
-  );
+  redirect("/dashboard");
 }

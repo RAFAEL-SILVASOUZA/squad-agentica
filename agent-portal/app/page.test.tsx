@@ -1,10 +1,17 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn(() => {
+    throw new Error("NEXT_REDIRECT");
+  }),
+}));
+
+import { redirect } from "next/navigation";
 import HomePage from "./page";
 
-describe("HomePage (scaffold)", () => {
-  it("renders the Agent Portal heading", () => {
-    render(<HomePage />);
-    expect(screen.getByRole("heading", { name: /agent portal/i })).toBeInTheDocument();
+describe("HomePage (fe-shell)", () => {
+  it("redirects to /dashboard", () => {
+    expect(() => HomePage()).toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/dashboard");
   });
 });
