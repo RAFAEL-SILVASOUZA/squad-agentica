@@ -5,7 +5,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import type { ApprovalRequest } from "@/lib/types";
+import { getWebSocketClient, disposeWebSocketClient } from "@/lib/websocket";
+import type { ApprovalRequest, ApprovalNewEvent, ApprovalResolvedEvent } from "@/lib/types";
 
 /**
  * Layout do grupo autenticado (dashboard).
@@ -27,28 +28,72 @@ export default function DashboardLayout({
     }
   }, [status, router]);
 
-  // Badge de aprovações pendentes (fe-approvals, contrato §2.14).
+  // Badge de aprovações pendentes (fe-approvals, contrato §7).
   // 1) Fetch inicial via REST para popular o badge ao carregar o shell.
-  // 2) Listener de evento custom disparado pela página /approvals
-  //    quando a contagem muda (aprovar/rejeitar/cancelar).
+  // 2) WebSocket: approval:new incrementa, approval:resolved decrementa.
+  // 3) Ao reconectar, refetch REST (contrato §7).
+  // 4) Listener de evento custom disparado pela página /approvals
+  //    quando a contagem muda (aprovar/rejeitar/cancelar), mantendo o
+  //    badge sincronizado sem depender do estado local do painel.
   React.useEffect(() => {
     if (status !== "authenticated") return;
 
     let cancelled = false;
+    let wsClient: ReturnType<typeof getWebSocketClient> | null = null;
 
-    // Fetch inicial: contagem de aprovações pendentes.
-    api
-      .list<ApprovalRequest>("/api/approvals", {
-        page: 1,
-        limit: 1,
-        query: { status: "pending" },
-      })
-      .then((res) => {
-        if (!cancelled) setPendingApprovals(res.total);
-      })
-      .catch(() => {
-        // WS indisponível ou erro: badge fica em 0 (não bloqueia o shell).
-      });
+    const fetchCount = () =>
+      api
+        .list<ApprovalRequest>("/api/approvals", {
+          page: 1,
+          limit: 1,
+          query: { status: "pending" },
+        })
+        .then((res) => {
+          if (!cancelled) setPendingApprovals(res.total);
+        })
+        .catch(() => {
+          // Erro no fetch: badge mantém o último valor (não bloqueia o shell).
+        });
+
+    void fetchCount();
+
+    // WebSocket (contrato §7): eventos em tempo real para o badge.
+    const connectWs = async () => {
+      try {
+        const tokenRes = await fetch("/api/session-token", {
+          method: "GET",
+          credentials: "same-origin",
+        });
+        if (!tokenRes.ok) return;
+        const { accessToken } = (await tokenRes.json()) as {
+          accessToken: string;
+        };
+        wsClient = getWebSocketClient(accessToken);
+
+        const onNew = (eventData: Record<string, unknown>) => {
+          const event = eventData as unknown as ApprovalNewEvent;
+          if (typeof event.approvalId !== "string") return;
+          setPendingApprovals((prev) => prev + 1);
+        };
+
+        const onResolved = (eventData: Record<string, unknown>) => {
+          const event = eventData as unknown as ApprovalResolvedEvent;
+          if (typeof event.approvalId !== "string") return;
+          setPendingApprovals((prev) => Math.max(0, prev - 1));
+        };
+
+        wsClient.on("approval:new", onNew);
+        wsClient.on("approval:resolved", onResolved);
+        wsClient.onReconnect(() => {
+          void fetchCount();
+        });
+        wsClient.connect();
+      } catch {
+        // WS indisponível: o badge segue apenas com REST.
+      }
+    };
+
+    void connectWs();
 
     // Listener: a página /approvals dispara "approvals:pending-count"
     // quando o usuário responde/cancela uma aprovação.
@@ -63,6 +108,7 @@ export default function DashboardLayout({
     return () => {
       cancelled = true;
       window.removeEventListener("approvals:pending-count", handler);
+      disposeWebSocketClient();
     };
   }, [status]);
 

@@ -11,13 +11,14 @@ import type { ApprovalRequest } from "@/lib/types";
 const mockList = vi.fn();
 const mockPost = vi.fn();
 const mockDelete = vi.fn();
+const mockGet = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   api: {
     list: (...args: unknown[]) => mockList(...args),
     post: (...args: unknown[]) => mockPost(...args),
     delete: (...args: unknown[]) => mockDelete(...args),
-    get: vi.fn(),
+    get: (...args: unknown[]) => mockGet(...args),
     put: vi.fn(),
     patch: vi.fn(),
   },
@@ -33,6 +34,68 @@ vi.mock("@/lib/api", () => ({
     }
   },
 }));
+
+// Mock de WebSocket (contrato §7): handlers capturados por canal.
+type WsHandler = (data: Record<string, unknown>) => void;
+const wsHandlers = new Map<string, WsHandler[]>();
+let wsReconnectHandler: (() => void) | null = null;
+const mockGetWsClient = vi.fn();
+const mockDisposeWsClient = vi.fn();
+
+const wsClientStub = {
+  on: (channel: string, handler: WsHandler) => {
+    const list = wsHandlers.get(channel) ?? [];
+    list.push(handler);
+    wsHandlers.set(channel, list);
+  },
+  off: (channel: string, handler: WsHandler) => {
+    const list = wsHandlers.get(channel) ?? [];
+    wsHandlers.set(
+      channel,
+      list.filter((h) => h !== handler)
+    );
+  },
+  onReconnect: (handler: () => void) => {
+    wsReconnectHandler = handler;
+  },
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  setToken: vi.fn(),
+};
+
+vi.mock("@/lib/websocket", () => ({
+  getWebSocketClient: (token: string) => {
+    mockGetWsClient(token);
+    return wsClientStub;
+  },
+  disposeWebSocketClient: () => {
+    mockDisposeWsClient();
+  },
+}));
+
+function emitWs(channel: string, data: Record<string, unknown>) {
+  const list = wsHandlers.get(channel) ?? [];
+  for (const handler of list) {
+    void handler(data);
+  }
+}
+
+// Mock fetch para o token de sessão (o painel busca /api/session-token).
+const mockFetch = vi.fn();
+
+globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+function mockSessionToken() {
+  mockFetch.mockImplementation(async (url: string) => {
+    if (String(url).includes("/api/session-token")) {
+      return {
+        ok: true,
+        json: async () => ({ accessToken: "test-token" }),
+      } as Response;
+    }
+    throw new Error(`unexpected fetch: ${String(url)}`);
+  });
+}
 
 // ─── Test data ───────────────────────────────────────────────────────────────
 
@@ -70,6 +133,10 @@ function renderPanel(props: Partial<React.ComponentProps<typeof ApprovalPanel>> 
 describe("ApprovalPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wsHandlers.clear();
+    wsReconnectHandler = null;
+    mockFetch.mockReset();
+    mockSessionToken();
     mockList.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20 });
   });
 
@@ -268,6 +335,85 @@ describe("ApprovalPanel", () => {
       expect(screen.getByRole("button", { name: /tentar novamente/i })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: /tentar novamente/i }));
+    await waitFor(() => {
+      expect(mockList).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("subscribes to approval:new and approval:resolved on mount", async () => {
+    renderPanel();
+    await waitFor(() => {
+      expect(wsHandlers.get("approval:new")).toHaveLength(1);
+      expect(wsHandlers.get("approval:resolved")).toHaveLength(1);
+    });
+    expect(mockGetWsClient).toHaveBeenCalledWith("test-token");
+  });
+
+  it("adds a new approval card on approval:new event", async () => {
+    mockList.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20 });
+    const freshApproval = makeApproval({
+      id: "appr-2",
+      message: "Aprovar nova etapa?",
+    } as Partial<ApprovalRequest> & { nodeId?: string });
+    (freshApproval as unknown as Record<string, unknown>).nodeId = "node-9";
+    mockGet.mockResolvedValue(freshApproval);
+
+    const onCount = vi.fn();
+    renderPanel({ onPendingCountChange: onCount });
+    await waitFor(() => {
+      expect(wsHandlers.get("approval:new")).toHaveLength(1);
+    });
+
+    emitWs("approval:new", {
+      approvalId: "appr-2",
+      pipelineId: "pipe-1",
+      runId: "run-1",
+      nodeId: "node-9",
+      message: "Aprovar nova etapa?",
+      at: "2026-09-26T10:05:00Z",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Aprovar nova etapa?")).toBeInTheDocument();
+    });
+    expect(onCount).toHaveBeenCalledWith(1);
+  });
+
+  it("removes the card on approval:resolved event", async () => {
+    const approval = makeApproval();
+    mockList.mockResolvedValue({ items: [approval], total: 1, page: 1, limit: 20 });
+    const onCount = vi.fn();
+    renderPanel({ onPendingCountChange: onCount });
+    await waitFor(() => {
+      expect(screen.getByText("Aprovar deploy para produção?")).toBeInTheDocument();
+    });
+    onCount.mockClear();
+
+    emitWs("approval:resolved", {
+      approvalId: "appr-1",
+      pipelineId: "pipe-1",
+      runId: "run-1",
+      nodeId: "node-7",
+      decision: "approved",
+      at: "2026-09-26T10:10:00Z",
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Aprovar deploy para produção?")).not.toBeInTheDocument();
+    });
+    expect(onCount).toHaveBeenCalledWith(0);
+  });
+
+  it("refetches the list on WebSocket reconnect", async () => {
+    renderPanel();
+    await waitFor(() => {
+      expect(wsHandlers.get("approval:new")).toHaveLength(1);
+    });
+    expect(mockList).toHaveBeenCalledTimes(1);
+
+    // Dispara o handler de reconexão registrado pelo painel.
+    wsReconnectHandler?.();
+
     await waitFor(() => {
       expect(mockList).toHaveBeenCalledTimes(2);
     });

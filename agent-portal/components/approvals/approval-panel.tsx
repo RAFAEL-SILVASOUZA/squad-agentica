@@ -20,7 +20,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
-import type { ApprovalRequest } from "@/lib/types";
+import { getWebSocketClient, disposeWebSocketClient } from "@/lib/websocket";
+import type {
+  ApprovalRequest,
+  ApprovalNewEvent,
+  ApprovalResolvedEvent,
+} from "@/lib/types";
 
 /**
  * Extensão local: o backend retorna `nodeId` (spec §4.5) mas o tipo
@@ -138,10 +143,10 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         setArgument("");
         const label =
           decision === "approved"
-            ? "Aprovação aprovada"
+            ? "Aprovação aprovada. Pipeline retomada."
             : decision === "rejected"
-              ? "Aprovação rejeitada"
-              : "Argumento enviado";
+              ? "Aprovação rejeitada. Pipeline cancelada neste ramo."
+              : "Argumento enviado. Pipeline retomada com feedback.";
         addToast("success", label);
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) {
@@ -163,6 +168,79 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
     },
     [addToast, onPendingCountChange]
   );
+
+  // Tempo real (contrato §7): approval:new adiciona o card,
+  // approval:resolved remove; ao reconectar, refetch REST.
+  React.useEffect(() => {
+    let cancelled = false;
+    let wsClient: ReturnType<typeof getWebSocketClient> | null = null;
+    let onNew: ((eventData: Record<string, unknown>) => void) | null = null;
+    let onResolved: ((eventData: Record<string, unknown>) => void) | null = null;
+
+    const connect = async () => {
+      try {
+        const tokenRes = await fetch("/api/session-token", {
+          method: "GET",
+          credentials: "same-origin",
+        });
+        if (!tokenRes.ok) return;
+        const { accessToken } = (await tokenRes.json()) as {
+          accessToken: string;
+        };
+        wsClient = getWebSocketClient(accessToken);
+
+        onNew = async (eventData: Record<string, unknown>) => {
+          const event = eventData as unknown as ApprovalNewEvent;
+          if (!event.approvalId) return;
+          try {
+            const fresh = await api.get<ApprovalRequestWithNode>(
+              `/api/approvals/${event.approvalId}`
+            );
+            if (cancelled) return;
+            setApprovals((prev) => {
+              if (prev.some((a) => a.id === fresh.id)) return prev;
+              const next = [fresh, ...prev];
+              onPendingCountChange?.(next.length);
+              return next;
+            });
+          } catch {
+            // Evento sem correspondência REST (outro owner / já respondida):
+            // sincroniza com a fonte de verdade.
+            void load();
+          }
+        };
+
+        onResolved = (eventData: Record<string, unknown>) => {
+          const event = eventData as unknown as ApprovalResolvedEvent;
+          if (!event.approvalId) return;
+          setApprovals((prev) => {
+            if (!prev.some((a) => a.id === event.approvalId)) return prev;
+            const next = prev.filter((a) => a.id !== event.approvalId);
+            onPendingCountChange?.(next.length);
+            return next;
+          });
+        };
+
+        wsClient.on("approval:new", onNew);
+        wsClient.on("approval:resolved", onResolved);
+        wsClient.onReconnect(() => {
+          void load();
+        });
+        wsClient.connect();
+      } catch {
+        // WS indisponível: o painel segue apenas com REST + listener local.
+      }
+    };
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      if (wsClient && onNew) wsClient.off("approval:new", onNew);
+      if (wsClient && onResolved) wsClient.off("approval:resolved", onResolved);
+      disposeWebSocketClient();
+    };
+  }, [load, onPendingCountChange]);
 
   const handleCancel = React.useCallback(
     async (approvalId: string) => {
