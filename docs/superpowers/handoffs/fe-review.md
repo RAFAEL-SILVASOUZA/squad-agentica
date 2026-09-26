@@ -19,18 +19,18 @@ confirmado que continuam no build e na navegação (rotas presentes no build, se
 - Merges no main presentes: dashboard `ca0e063`, agents `68021d0`, approvals `4bcacee`, library `af56344` (+ editor `7865f77`, monitor `12b6a42`, flow-edges `f925aa1`).
 - Todos os 4 nós deram merge → critério de merge OK.
 
-## A) PROBLEMAS BLOQUEANTES (ação obrigatória)
+## A) PROBLEMAS BLOQUEANTES (estado atual)
 
-### A1 [fe-dashboard + fe-shell] Dashboard inacessível — conflito de rota `/` (CRITÉRIO 2)
-Sintoma: `GET /` → 307 → `/dashboard` → **404**. A sidebar "Dashboard" (`href="/dashboard"`) é **link morto**.
-Causa (evidência do build manifest `agent-portal/.next/app-build-manifest.json`):
-- `app/page.tsx` (fe-shell, `redirect("/dashboard")`) resolve para a rota `/` e foi o que gerou `/page` (138 B).
-- `app/(dashboard)/page.tsx` (fe-dashboard, o dashboard real) **NÃO aparece** no manifest (`/(dashboard)/page` ausente): como route group `(dashboard)` é transparente, os dois arquivos disputam `/` e o redirect da raiz sombreou o dashboard.
-Donos: `app/page.tsx` é fe-shell (`20248e7`); `app/(dashboard)/page.tsx` é fe-dashboard (`623a33b`).
-Correção (atribuída a fe-dashboard, pois fe-shell não está nas arestas de retry deste nó):
-1. **Remover `agent-portal/app/page.tsx`** (o redirect para `/dashboard`) e o teste `agent-portal/app/page.test.tsx`. Assim `app/(dashboard)/page.tsx` passa a ser a rota `/` (dashboard acessível em `/`).
-2. **Corrigir o link do sidebar**: em `agent-portal/components/layout/app-sidebar.tsx`, o item Dashboard usa `href="/dashboard"` e `isActive` compara com `"/dashboard"` — mudar para `"/"` (rotas reais do plano: dashboard é `/`).
-3. Revalidar: `npm run build` deve agora listar `/` como o dashboard (~138 B some, dashboard aparece) e **não** deve haver rota `/dashboard`; `vitest` passa com `page.test.tsx` da raiz removido.
+### A1 [fe-dashboard + fe-shell] Dashboard inacessível — conflito de rota `/` (CRITÉRIO 2) — **CORRIGIDO pelo revisor (commit `6058ea9`)**
+Sintoma (rodada 1): `GET /` → 307 → `/dashboard` → **404**. A sidebar "Dashboard" (`href="/dashboard"`) era **link morto**.
+Causa (evidência do build manifest `agent-portal/.next/app-build-manifest.json`): `app/page.tsx` (fe-shell, `redirect("/dashboard")`) e `app/(dashboard)/page.tsx` (fe-dashboard) disputam `/` (route group transparente); o redirect da raiz sombreou o dashboard (`/(dashboard)/page` ausente do manifest).
+**O revisor APLICOU a correção** (arquivos compartilhados fe-shell, fora do escopo dos 4 nós de retry; protocolo permite ao revisor unblocking de arquivo compartilhado) e COMMITOU no `main` (`6058ea9`):
+1. Removido `agent-portal/app/page.tsx` + `app/page.test.tsx` → `app/(dashboard)/page.tsx` agora é a rota `/` (dentro do grupo `(dashboard)`, herda o `AppShell` + guarda de sessão de `(dashboard)/layout.tsx`).
+2. `agent-portal/components/layout/app-sidebar.tsx`: item Dashboard `href` e `isActive` de `/dashboard` → `/`.
+3. `app/(auth)/login/page.test.tsx` + `register/page.test.tsx`: `callbackUrl`/assert de `/dashboard` → `/` (o default do código já era `/`).
+Verificação pós-fix (saída real): `npx tsc --noEmit` exit 0; `npm run lint` limpo; `npx vitest run` 42 files/354 tests; `npm run build` exit 0 — rota `/` = 5.21 kB (dashboard), **sem rota `/dashboard`**; manifest agora tem `/(dashboard)/page`. Nenhum nó precisa re-fazer A1.
+
+### A2 [fe-library] Endpoints inventados + botão morto no Knowledge (CRITÉRIOS 3 e 6) — **ABERTO, corrigir no re-run**
 
 ### A2 [fe-library] Endpoints inventados + botão morto no Knowledge (CRITÉRIOS 3 e 6)
 Sintoma: `components/library/github-integration.tsx` chama 4 endpoints que **não existem** nem no backend nem em nenhum plano/contrato:
