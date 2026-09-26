@@ -15,6 +15,7 @@ import {
   Shield,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import type { LucideIcon } from "lucide-react";
 import type {
   Agent,
   PortDef,
@@ -58,7 +59,7 @@ function SectionTitle({
   icon: Icon,
   children,
 }: {
-  icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
@@ -129,7 +130,7 @@ function Section({
   title,
   children,
 }: {
-  icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
+  icon: LucideIcon;
   title: string;
   children: React.ReactNode;
 }) {
