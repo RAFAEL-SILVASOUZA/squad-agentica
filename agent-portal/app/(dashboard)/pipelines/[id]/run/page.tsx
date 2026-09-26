@@ -1,29 +1,22 @@
 "use client";
 
-import { Monitor } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
+import * as React from "react";
+import { useParams } from "next/navigation";
+import { PipelineMonitor } from "@/components/monitor";
 
 /**
- * Placeholder: monitor de pipeline (fe-monitor substitui).
+ * Monitor de execução em tempo real (fe-monitor).
+ *
+ * - Grafo da pipeline em modo leitura com status por nó.
+ * - Logs em streaming com auto-scroll pausável, filtro por nó e nível.
+ * - Painel do nó selecionado: inputs, outputs, iterações, erro.
+ * - Ações: iniciar, pausar, retomar, parar (estados otimistas + reconciliação).
+ * - Histórico de runs e checkpoints com retomar a partir do último checkpoint.
+ * - Reconexão do WebSocket sem perder eventos (refetch do estado ao reconectar).
  */
 export default function PipelineRunPage() {
-  return (
-    <div>
-      <h1
-        style={{
-          fontSize: "20px",
-          fontWeight: 700,
-          color: "var(--text)",
-          margin: "0 0 24px",
-        }}
-      >
-        Monitor
-      </h1>
-      <EmptyState
-        icon={Monitor}
-        title="Monitor de execução"
-        description="Esta tela será implementada pelo nó fe-monitor."
-      />
-    </div>
-  );
+  const params = useParams<{ id: string }>();
+  const pipelineId = params.id;
+
+  return <PipelineMonitor pipelineId={pipelineId} />;
 }

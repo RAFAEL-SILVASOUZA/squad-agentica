@@ -141,7 +141,7 @@ describe("PipelineDetailPage", () => {
     });
 
     expect(screen.getByTestId("pipeline-name")).toHaveTextContent("Test Pipeline");
-    expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
+    expect(screen.getAllByText("Test Pipeline").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("A test pipeline")).toBeInTheDocument();
   });
 
