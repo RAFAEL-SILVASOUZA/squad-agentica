@@ -31,7 +31,7 @@ describe("LoginPage", () => {
     mockRouter.replace.mockClear();
     mockRouter.refresh.mockClear();
     mockUseSession.mockReturnValue({ data: null, status: "unauthenticated" });
-    mockSearchParams.set("callbackUrl", "/dashboard");
+    mockSearchParams.set("callbackUrl", "/");
   });
 
   it("renders email and password fields with labels", () => {
@@ -152,7 +152,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     await waitFor(() => {
-      expect(mockRouter.replace).toHaveBeenCalledWith("/dashboard");
+      expect(mockRouter.replace).toHaveBeenCalledWith("/");
     });
   });
 });

@@ -28,7 +28,7 @@ describe("RegisterPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseSession.mockReturnValue({ data: null, status: "unauthenticated" });
-    mockSearchParams.set("callbackUrl", "/dashboard");
+    mockSearchParams.set("callbackUrl", "/");
   });
 
   it("renders name, email, password and confirm password fields", () => {
@@ -164,7 +164,7 @@ describe("RegisterPage", () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+      expect(mockRouter.push).toHaveBeenCalledWith("/");
     });
   });
 
@@ -205,7 +205,7 @@ describe("RegisterPage", () => {
     render(<RegisterPage />);
 
     await waitFor(() => {
-      expect(mockRouter.replace).toHaveBeenCalledWith("/dashboard");
+      expect(mockRouter.replace).toHaveBeenCalledWith("/");
     });
   });
 });

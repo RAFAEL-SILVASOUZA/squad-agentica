@@ -37,7 +37,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Principal",
     items: [
       {
-        href: "/dashboard",
+        href: "/",
         label: "Dashboard",
         icon: LayoutGrid,
       },
@@ -93,7 +93,7 @@ export function AppSidebar({ pendingApprovals = 0 }: AppSidebarProps) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   };
 
