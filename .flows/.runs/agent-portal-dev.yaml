@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-26T17:23:12.606Z
+finishedAt: 2026-09-26T20:36:42.825Z
 outcome: paused
 nodes:
   - id: arch
@@ -528,6 +528,17 @@ nodes:
       - ../squad-agentica.worktrees/fe-agents/agent-portal/lib/agent-chat.test.ts
       - ../squad-agentica.worktrees/fe-agents/agent-portal/lib/agent-chat.ts
       - ../squad-agentica.worktrees/fe-agents/agent-portal/lib/agents.ts
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\app\(dashboard)\agents\[id]\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\app\(dashboard)\agents\[id]\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\app\(dashboard)\page.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\app\(dashboard)\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\components\agents\agent-chat.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\components\agents\agent-detail.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\components\agents\agent-detail.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\components\agents\agent-preview.test.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\components\agents\delete-agent-modal.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-agents\agent-portal\lib\agent-filter.ts
+      - C:\Projetos\squad-agentica\docs\superpowers\handoffs\fe-agents.md
       - docs/superpowers/handoffs/fe-agents.md
   - id: fe-flow-editor
     name: Frontend Flow Editor
@@ -569,17 +580,19 @@ nodes:
       - C:\Projetos\squad-agentica.worktrees\fe-monitor\agent-portal\components\monitor\pipeline-monitor.tsx
   - id: fe-approvals
     name: Frontend Approvals
-    status: done
+    status: pending
     artifacts:
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\approvals\page.test.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\approvals\page.tsx
+      - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\layout.test.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\app\(dashboard)\layout.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\components\approvals\approval-panel.test.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\components\approvals\approval-panel.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-approvals\agent-portal\components\approvals\index.ts
+      - agent-portal/components/approvals/approval-panel.tsx
   - id: fe-library
     name: Frontend Library
-    status: done
+    status: pending
     artifacts:
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\knowledge\page.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\app\(dashboard)\mcp\page.tsx
@@ -597,14 +610,30 @@ nodes:
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\skills-library.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\tools-editor.test.tsx
       - C:\Projetos\squad-agentica.worktrees\fe-library\agent-portal\components\library\tools-editor.tsx
+      - agent-portal/app/(dashboard)/knowledge/page.tsx
   - id: fe-review-editor
     name: Frontend Review Editor e Monitor
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - docs/superpowers/handoffs/fe-review-editor.md
+      - docs/superpowers/validacoes/fe-review-editor.md
   - id: fe-review
     name: Frontend Review
     status: pending
-    artifacts: []
+    artifacts:
+      - agent-orchestrator/_tmp_probe.py
+      - agent-orchestrator/app/agents/storage.py
+      - agent-orchestrator/app/core/config.py
+      - agent-orchestrator/app/knowledge/storage.py
+      - agent-orchestrator/app/skills/storage.py
+      - agent-portal/app/(auth)/login/page.test.tsx
+      - agent-portal/app/(auth)/register/page.test.tsx
+      - agent-portal/app/globals.css
+      - agent-portal/components/layout/app-sidebar.tsx
+      - agent-portal/components/ui/toast.tsx
+      - docs/superpowers/handoffs/fe-review.md
+      - docs/superpowers/validacoes/PENDENCIAS.md
+      - docs/superpowers/validacoes/fe-review.md
   - id: qa-integration
     name: QA Integration
     status: pending
