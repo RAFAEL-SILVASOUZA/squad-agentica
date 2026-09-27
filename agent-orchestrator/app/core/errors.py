@@ -7,6 +7,7 @@ Dono: infra-docker. Envelope do contrato §8:
 from typing import Any
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -45,11 +46,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        # F13/B2: ``exc.errors()`` carrega ``ctx`` com objetos Python crus
+        # (ex.: a ``ValueError`` lançada por um ``field_validator``), que a
+        # serialização JSON da resposta não consegue converter e virava 500
+        # (``Object of type ValueError is not JSON serializable``). Passamos
+        # pelo ``jsonable_encoder`` para garantir um payload serializável.
+        errors = jsonable_encoder(exc.errors())
         return error_response(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "unprocessable",
             "schema_validation",
-            {"errors": exc.errors()},
+            {"errors": errors},
         )
 
     @app.exception_handler(Exception)

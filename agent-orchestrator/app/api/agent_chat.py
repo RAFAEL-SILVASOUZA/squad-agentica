@@ -277,6 +277,29 @@ async def agent_chat_confirm(
     if draft is None:
         raise AppError(404, "not_found", "draft_not_found")
 
+    # E2: confirmar um draft SEM NOME criava "Unnamed Agent" no banco.
+    # O nome é o mínimo de utilizabilidade do rascunho (o LLM do build
+    # sempre propõe um; sem ele, o agente não é identificável). O restante
+    # do contrato (ports/actions) é checado abaixo (invalid_graph).
+    config = draft.config or {}
+    if not str(config.get("name") or "").strip():
+        raise AppError(
+            400,
+            "validation error",
+            "incomplete_draft",
+            {"missing": ["name"]},
+        )
+
+    # Contrato do agente (ports/actions): 400 invalid_graph se inválido.
+    contract_errors = validate_config(config)
+    if contract_errors:
+        raise AppError(
+            400,
+            "validation error",
+            "invalid_graph",
+            {"errors": contract_errors},
+        )
+
     # Convert draft to agent data and save via service.
     data = draft_to_agent_data(draft)
     service = AgentService()

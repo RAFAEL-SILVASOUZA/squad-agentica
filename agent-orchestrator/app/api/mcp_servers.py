@@ -102,6 +102,16 @@ class MCPServerTestResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+_MASKED = "***"
+
+
+def _mask_env(env: dict[str, str] | None) -> dict[str, str]:
+    """Mascara os valores de ``env`` (F12/contrato §8: segredos nunca são
+    devolvidos em resposta). As chaves permanecem (o portal mostra quais
+    variáveis estão configuradas); os valores viram ``***``."""
+    return {k: _MASKED for k in (env or {})}
+
+
 def _to_response(server: Any) -> MCPServerResponse:
     """Converte um model MCPServer em MCPServerResponse."""
     tools = [
@@ -119,7 +129,7 @@ def _to_response(server: Any) -> MCPServerResponse:
         transport=server.transport,
         command=server.command,
         url=server.url,
-        env=server.env or {},
+        env=_mask_env(server.env),
         status=server.status,
         lastConnectedAt=server.last_connected_at.isoformat() if server.last_connected_at else None,
         discoveredTools=tools,
@@ -205,25 +215,33 @@ async def update_mcp_server(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MCPServerResponse:
     """Atualiza um servidor MCP."""
-    # Se transport/command/url mudaram, valida a nova config.
-    if body.transport or body.command or body.url:
-        registry = MCPRegistry(db)
-        existing = await registry.get(server_id, user.id)
-        new_transport = body.transport or existing.transport
-        new_command = body.command if body.command is not None else existing.command
-        new_url = body.url if body.url is not None else existing.url
-        new_env = body.env if body.env is not None else existing.env
+    registry = MCPRegistry(db)
+    existing = await registry.get(server_id, user.id)
 
+    # F12: se o cliente devolve o valor mascarado (``***``) de uma chave
+    # existente, mantemos o valor real gravado (o valor real nunca é exposto,
+    # então "não mexer" é expresso assim).
+    env_to_save = None
+    if body.env is not None:
+        merged = dict(existing.env or {})
+        for k, v in body.env.items():
+            if v == _MASKED and k in (existing.env or {}):
+                merged[k] = existing.env[k]
+            else:
+                merged[k] = v
+        env_to_save = merged
+
+    # Se transport/command/url mudaram, valida a nova config.
+    if body.transport or body.command or body.url or body.env is not None:
         errors = validate_mcp_config(
-            transport=new_transport,
-            command=new_command,
-            url=new_url,
-            env=new_env,
+            transport=body.transport or existing.transport,
+            command=body.command if body.command is not None else existing.command,
+            url=body.url if body.url is not None else existing.url,
+            env=env_to_save if env_to_save is not None else (existing.env or {}),
         )
         if errors:
             raise AppError(422, "validation failed", "mcp_config_invalid", {"errors": errors})
 
-    registry = MCPRegistry(db)
     server = await registry.update(
         server_id=server_id,
         owner_id=user.id,
@@ -232,7 +250,7 @@ async def update_mcp_server(
         transport=body.transport,
         command=body.command,
         url=body.url,
-        env=body.env,
+        env=env_to_save,
     )
     return _to_response(server)
 

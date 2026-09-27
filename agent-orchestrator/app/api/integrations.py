@@ -108,6 +108,29 @@ class RivvnStatusResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+_MASKED = "***"
+
+# Chaves de config que são segredo (F12/contrato §8: nunca devolvidas).
+_SECRET_KEYS = {"token", "secret", "password", "api_key", "apikey", "credentials", "auth"}
+
+
+def _mask_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Mascara os valores de segredo no config (F12).
+
+    Regra: qualquer chave que contenha ``token``/``secret``/``password``/
+    ``key``/``credentials``/``auth`` (case-insensitive) vira ``***``; o resto
+    do config (ex.: ``owner``) permanece legível.
+    """
+    masked: dict[str, Any] = {}
+    for k, v in (config or {}).items():
+        lower = k.lower()
+        if any(s in lower for s in _SECRET_KEYS):
+            masked[k] = _MASKED
+        else:
+            masked[k] = v
+    return masked
+
+
 def _to_response(integration: Any) -> IntegrationResponse:
     """Converte um model Integration em IntegrationResponse (camelCase)."""
     type_val = (
@@ -125,7 +148,7 @@ def _to_response(integration: Any) -> IntegrationResponse:
         ownerId=str(integration.owner_id),
         type=type_val,
         name=integration.name,
-        config=integration.config,
+        config=_mask_config(integration.config),
         status=status_val,
         createdAt=integration.created_at.isoformat() if integration.created_at else "",
         updatedAt=integration.updated_at.isoformat() if integration.updated_at else "",
@@ -197,11 +220,24 @@ async def update_integration(
 ) -> IntegrationResponse:
     """Atualiza uma integração."""
     registry = IntegrationRegistry(db)
+    # F12: o valor mascarado (``***``) devolvido por uma chave existente
+    # significa "não mexer" (o valor real nunca é exposto, então é assim que
+    # o cliente expressa a inalteração).
+    config_to_save = body.config
+    if body.config is not None:
+        existing = await registry.get(integration_id, user.id)
+        merged = dict(existing.config or {})
+        for k, v in body.config.items():
+            if v == _MASKED and k in (existing.config or {}):
+                merged[k] = existing.config[k]
+            else:
+                merged[k] = v
+        config_to_save = merged
     integration = await registry.update(
         integration_id=integration_id,
         owner_id=user.id,
         name=body.name,
-        config=body.config,
+        config=config_to_save,
         status=body.status,
     )
     return _to_response(integration)

@@ -336,6 +336,34 @@ class TestConfirmation:
         # Agent should be in storage.
         assert data["id"] in mock_storage.store
 
+    async def test_confirm_draft_without_name_rejected(self, client: AsyncClient):
+        """E2: draft SEM nome não pode ser confirmado ("Unnamed Agent").
+
+        Com o LLM mock real, um draft sem nome no config gerava um agente
+        "Unnamed Agent" no banco. O confirm agora rejeita com 400
+        incomplete_draft antes de gravar qualquer coisa.
+        """
+        unnamed_llm = MockChatLLM(
+            '{"text": "Ok.", "config": {"type": "custom", '
+            '"actions": ["follow", "finalize"]}}'
+        )
+        with patch("app.api.agent_chat.get_llm_client", return_value=unnamed_llm):
+            resp = await client.post(
+                "/api/agents/chat",
+                json={"message": "Quero um agente"},
+            )
+        events = _parse_sse_events(resp.text)
+        draft_id = [e for e in events if e["type"] == "done"][0]["data"]["draftId"]
+
+        confirm_resp = await client.post(
+            "/api/agents/chat/confirm",
+            json={"draftId": draft_id},
+        )
+        assert confirm_resp.status_code == 400
+        body = confirm_resp.json()
+        assert body["code"] == "incomplete_draft"
+        assert "name" in body["details"]["missing"]
+
     async def test_confirm_invalid_draft(self, client: AsyncClient):
         confirm_resp = await client.post(
             "/api/agents/chat/confirm",
