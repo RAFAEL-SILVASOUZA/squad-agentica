@@ -1,5 +1,23 @@
 # PENDENCIAS (pendências de fase — fora do escopo dos nós FE desta revisão)
 
+## Atualização QA Fix + QA Fix Médias e Baixas — 2026-09-27
+
+- **B1 resolvido:** CRUD/validate de pipelines implementado e coberto por integração e E2E.
+- **B2 (500) resolvido:** erro de validação serializado no envelope 422.
+- **F15–F18, F20 resolvidos** no qa-fix-rest; F19 resolvido pelo qa-fix. Detalhe: `docs/superpowers/handoffs/qa-fix-rest.md`.
+- **Aberto — E2E da Jornada 8 (loop até maxIterations):** o teste `e2e/tests/08-loop.spec.ts` continua `test.skip` incondicional (escrito quando F1/F6/F7 bloqueavam). O loop por rejeição é coberto pela integração (`test_05_hitl.py::test_reject_loops_back_to_source`). Risco baixo; reescrever o E2E com aprovações reais é trabalho futuro.
+- **Aberto — GitHub com API fake contra o stack:** pulado na integração (exige subir o orchestrator com `GITHUB_API_BASE` de um servidor fake); a configuração é coberta por teste unitário.
+- **Aberto — `next dev` no Windows não recarrega** mudanças do bind mount: após editar o portal, reiniciar o container `portal`. Só afeta desenvolvimento.
+- **Ressalva — provedor real local:** em 2026-09-27 os servidores `192.168.18.4:1234` (LLM) e `:4321` (embeddings) recusaram conexão; a jornada de aceite rodou com mock. Repetir a jornada com o provedor real quando estiverem no ar (`.env` já configurado).
+- **Aberto (baixa) — card de aprovação** mostra UUID da pipeline e id interno do nó (`approval_node_…`) em vez de nomes (`components/approvals/approval-panel.tsx`).
+- **Aberto (baixa) — logs do monitor** emitidos antes de abrir a tela não voltam (sem endpoint de histórico de logs no contrato); o status dos nós é recomposto pelos checkpoints.
+- **Aberto (baixa) — editor antes do 1º save** mostra erros de entrada indefinida (UUID nulo) que somem ao salvar.
+- **Aberto (dev) — avisos de console:** tags SVG do React Flow (`defs/marker/path`) e setState durante render em `ApprovalPanel`.
+- **E2E a frio:** a 1ª execução de `01-auth` após (re)start do `next dev` estoura 30s na compilação do dashboard; aquecido passa. Aquecer as rotas antes da suíte.
+- **Débito de lint preexistente:** ruff acusa imports não usados em `app/approvals/resume.py`, `tests/test_hitl_resume.py` e `tests/test_pe_review_integration.py` (arquivos não tocados pelo QA).
+
+As seções abaixo preservam o histórico da revisão de frontend.
+
 Pendências registradas que NÃO bloqueiam os 4 nós de frontend (dashboard/agents/approvals/library)
 porque não são código FE. Detalhamento completo em `docs/superpowers/handoffs/fe-review.md`.
 
