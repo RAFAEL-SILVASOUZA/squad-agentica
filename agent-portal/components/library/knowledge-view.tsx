@@ -112,6 +112,8 @@ export function KnowledgeView() {
 
   const [query, setQuery] = React.useState("");
   const [queryResults, setQueryResults] = React.useState<QueryResult[]>([]);
+  // Distingue "ainda não buscou" de "buscou e não achou" (estado vazio).
+  const [queryDone, setQueryDone] = React.useState(false);
   const [queryBusy, setQueryBusy] = React.useState(false);
   const [queryError, setQueryError] = React.useState<string | null>(null);
 
@@ -215,25 +217,32 @@ export function KnowledgeView() {
     const formData = new FormData();
     formData.append("file", file);
 
+    // Simula progresso (o backend não suporta upload com progresso via fetch)
+    const interval = setInterval(() => {
+      setUploadProgress((p) => Math.min(p + 10, 90));
+    }, 200);
     try {
-      // Simula progresso (o backend não suporta upload com progresso via fetch)
-      const interval = setInterval(() => {
-        setUploadProgress((p) => Math.min(p + 10, 90));
-      }, 200);
 
       // E10: NUNCA fixar Content-Type manualmente em FormData — o browser
       // precisa inserir o próprio boundary em ``multipart/form-data``. Fixar
       // o header sem boundary gerava 400 no parse multipart do backend.
       await api.post(`/api/knowledge/${selectedBase.id}/upload`, formData);
 
-      clearInterval(interval);
       setUploadProgress(100);
       addToast("success", "Documento enviado para ingestão");
+      // O contador da sidebar vem da listagem de bases; sem isto ficava em
+      // "0 documentos" até recarregar a página.
+      setBases((prev) =>
+        prev.map((b) =>
+          b.id === selectedBase.id ? { ...b, documentCount: b.documentCount + 1 } : b
+        )
+      );
       await loadDocuments(selectedBase.id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Erro ao enviar documento";
       addToast("error", msg || "Erro ao enviar documento");
     } finally {
+      clearInterval(interval);
       setUploading(false);
       setUploadProgress(0);
     }
@@ -244,6 +253,7 @@ export function KnowledgeView() {
     setQueryBusy(true);
     setQueryError(null);
     setQueryResults([]);
+    setQueryDone(false);
 
     try {
       const res = await api.post<{ chunks: QueryResult[] }>("/api/knowledge/query", {
@@ -251,6 +261,7 @@ export function KnowledgeView() {
         query: query.trim(),
       });
       setQueryResults(res.chunks);
+      setQueryDone(true);
     } catch (e) {
       setQueryError(e instanceof Error ? e.message : "Erro na consulta");
     } finally {
@@ -480,6 +491,9 @@ export function KnowledgeView() {
                     id="knowledge-query"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleQuery();
+                    }}
                     placeholder="Digite uma pergunta para testar a busca..."
                     disabled={queryBusy}
                   />
@@ -491,6 +505,11 @@ export function KnowledgeView() {
                 {queryError && (
                   <p role="alert" style={{ fontSize: "12px", color: "var(--error)", margin: "8px 0 0" }}>
                     {queryError}
+                  </p>
+                )}
+                {queryDone && queryResults.length === 0 && (
+                  <p role="status" style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0 0" }}>
+                    Nenhum trecho acima do limiar de similaridade da base. Reformule a pergunta ou reduza o limiar.
                   </p>
                 )}
                 {queryResults.length > 0 && (

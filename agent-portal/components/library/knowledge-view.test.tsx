@@ -234,6 +234,29 @@ describe("KnowledgeView", () => {
     });
   });
 
+  it("shows an empty state when the query finds nothing", async () => {
+    mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
+    mockGet.mockResolvedValue([makeDoc()]);
+    mockPost.mockResolvedValue({ chunks: [] });
+    renderView();
+    fireEvent.click(await screen.findByText("Base de documentação"));
+    const queryInput = document.getElementById("knowledge-query") as HTMLInputElement;
+    fireEvent.change(queryInput, { target: { value: "nada" } });
+    fireEvent.click(screen.getByRole("button", { name: /buscar/i }));
+    expect(await screen.findByText(/Nenhum trecho acima do limiar/)).toBeInTheDocument();
+  });
+
+  it("increments the base document count after an upload", async () => {
+    mockList.mockResolvedValue({ items: [makeBase({ documentCount: 0 })], total: 1, page: 1, limit: 100 });
+    mockGet.mockResolvedValue([]);
+    mockPost.mockResolvedValue(undefined);
+    renderView();
+    fireEvent.click(await screen.findByText("Base de documentação"));
+    const fileInput = document.getElementById("knowledge-upload") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "a.md")] } });
+    expect(await screen.findByText("1 documentos")).toBeInTheDocument();
+  });
+
   it("asks confirmation and deletes a base", async () => {
     mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
     mockGet.mockResolvedValue([makeDoc()]);
