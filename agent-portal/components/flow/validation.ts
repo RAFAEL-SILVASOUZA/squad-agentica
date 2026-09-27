@@ -51,14 +51,14 @@ export function validateDataMapping(
   }
   const src = findPort(sourceNode?.agentSnapshot.outputs ?? [], dataMapping.sourceOutput);
   if (!src) {
-    return `sourceOutput "${dataMapping.sourceOutput}" nao existe nos outputs do agente de origem`;
+    return `sourceOutput "${dataMapping.sourceOutput}" não existe nos outputs do agente de origem`;
   }
   const tgt = findPort(targetNode?.agentSnapshot.inputs ?? [], dataMapping.targetInput);
   if (!tgt) {
-    return `targetInput "${dataMapping.targetInput}" nao existe nos inputs do agente de destino`;
+    return `targetInput "${dataMapping.targetInput}" não existe nos inputs do agente de destino`;
   }
   if (src.type && tgt.type && src.type !== tgt.type) {
-    return `tipo incompativel: "${src.type}" (sourceOutput) vs "${tgt.type}" (targetInput)`;
+    return `tipo incompatível: "${src.type}" (sourceOutput) vs "${tgt.type}" (targetInput)`;
   }
   return null;
 }
@@ -105,7 +105,7 @@ export function validateGraph(
       if (!covered) {
         errors.push({
           rule: 6,
-          message: `input required "${input.name}" de "${node.agentSnapshot.name}" nao e atendido por nenhuma data edge`,
+          message: `input required "${input.name}" de "${node.agentSnapshot.name}" não é atendido por nenhuma data edge`,
           nodeId: node.id,
         });
       }
@@ -122,7 +122,7 @@ export function validateGraph(
     if (!hasIncoming) {
       errors.push({
         rule: 8,
-        message: `"${node.agentSnapshot.name}" e um no orfao: sem flow edge nem data edge de entrada`,
+        message: `"${node.agentSnapshot.name}" é um nó órfão: sem flow edge nem data edge de entrada`,
         nodeId: node.id,
       });
     }
@@ -132,7 +132,7 @@ export function validateGraph(
   if (entryNodeId && !nodeById.has(entryNodeId)) {
     errors.push({
       rule: 9,
-      message: `entryNodeId "${entryNodeId}" nao referencia um no existente`,
+      message: `entryNodeId "${entryNodeId}" não referencia um nó existente`,
     });
   }
 
@@ -144,7 +144,7 @@ export function validateGraph(
     if (first) {
       errors.push({
         rule: 11,
-        message: `flow edges duplicadas entre ${e.source} e ${e.target} com a mesma condicao`,
+        message: `flow edges duplicadas entre ${e.source} e ${e.target} com a mesma condição`,
         edgeId: e.id,
       });
     } else {

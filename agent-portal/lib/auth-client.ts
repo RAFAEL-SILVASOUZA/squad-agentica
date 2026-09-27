@@ -1,4 +1,5 @@
 import { signIn, signOut } from "next-auth/react";
+import { errorMessageFromBody } from "./api";
 
 /**
  * Client-side auth helpers.
@@ -40,12 +41,9 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     });
 
     if (!res.ok) {
-      let message = "Registration failed";
+      let message = "Falha no cadastro.";
       try {
-        const data = await res.json();
-        if (data.error) {
-          message = data.error;
-        }
+        message = errorMessageFromBody(res.status, await res.json());
       } catch {
         // ignore parse error
       }
@@ -60,12 +58,12 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     });
 
     if (signInResult?.error) {
-      return { ok: false, error: "Sign-in failed after registration" };
+      return { ok: false, error: "Conta criada, mas o login automático falhou. Entre pela tela de login." };
     }
 
     return { ok: true };
   } catch {
-    return { ok: false, error: "Network error during registration" };
+    return { ok: false, error: "Falha de rede durante o cadastro." };
   }
 }
 

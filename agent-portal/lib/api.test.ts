@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { api, ApiError, invalidateToken } from "./api";
+import { api, ApiError, errorMessageFromBody, invalidateToken } from "./api";
 
 const mockFetch = vi.fn();
 
@@ -79,7 +79,7 @@ describe("api", () => {
       const apiErr = e as ApiError;
       expect(apiErr.status).toBe(404);
       expect(apiErr.code).toBe("agent_not_found");
-      expect(apiErr.message).toBe("not_found");
+      expect(apiErr.message).toBe("Recurso não encontrado.");
     }
   });
 
@@ -210,5 +210,30 @@ describe("api", () => {
     const opts = secondCall[1] as RequestInit;
     expect(opts.body).toBe(formData);
     expect((opts.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+  });
+});
+
+describe("errorMessageFromBody (E1)", () => {
+  it("maps specific codes to pt-BR text instead of the raw envelope", () => {
+    expect(errorMessageFromBody(409, { error: "conflict", code: "email_already_exists" })).toBe(
+      "Já existe uma conta com este e-mail."
+    );
+    expect(errorMessageFromBody(409, { error: "conflict", code: "agent_name_exists" })).toBe(
+      "Já existe um agente com este nome."
+    );
+  });
+
+  it("falls back to the generic error class with the first validation detail", () => {
+    expect(
+      errorMessageFromBody(422, {
+        error: "unprocessable",
+        code: "schema_validation",
+        details: { errors: [{ loc: ["body", "outputs", 0, "type"], msg: "invalid port type" }] },
+      })
+    ).toBe("Dados inválidos. outputs.0.type: invalid port type");
+  });
+
+  it("keeps FastAPI detail outside the envelope", () => {
+    expect(errorMessageFromBody(404, { detail: "Not Found" })).toBe("Not Found");
   });
 });

@@ -195,6 +195,14 @@ describe("AgentDetail", () => {
     expect(payload.skills).toEqual([{ skillId: "sk-2", config: {} }]);
   });
 
+  it("shows the skill name, not its id, on the backpack chip (E3)", () => {
+    renderDetail({ agent: makeAgent({ skills: [] }) });
+    fireEvent.change(screen.getByLabelText("Selecionar skill"), { target: { value: "sk-2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar skill" }));
+    expect(screen.getByRole("button", { name: "Remover test-runner" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remover sk-2" })).not.toBeInTheDocument();
+  });
+
   it("adds an integration from the selector", async () => {
     const { onSave } = renderDetail({ agent: makeAgent({ integrations: [] }) });
     const integSelect = screen.getByLabelText("Selecionar integração");

@@ -225,11 +225,29 @@ describe("ToolsEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /executar teste/i }));
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith("/api/tools/tool-1/test", { input: { data: "teste" } });
+      expect(mockPost).toHaveBeenCalledWith("/api/tools/tool-1/test", { args: { data: "teste" } });
     });
     await waitFor(() => {
       expect(screen.getByText("Sucesso")).toBeInTheDocument();
     });
+  });
+
+  it("teaches the execute(**kwargs) signature the sandbox calls (E7)", async () => {
+    renderEditor();
+    fireEvent.click(await screen.findByRole("button", { name: /criar primeira tool/i }));
+    const script = await screen.findByLabelText("Script");
+    expect(script.getAttribute("placeholder")).toContain("def execute(**kwargs)");
+  });
+
+  it("shows the sandbox error message instead of a bare Erro (E7)", async () => {
+    mockList.mockResolvedValue({ items: [makeTool()], total: 1, page: 1, limit: 100 });
+    mockPost.mockResolvedValue({
+      result: { error: "module has no attribute 'execute'", traceback: "Traceback ..." },
+    });
+    renderEditor();
+    fireEvent.click(await screen.findByRole("button", { name: /testar tool calcular hash/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /executar teste/i }));
+    expect(await screen.findByText(/module has no attribute 'execute'/)).toBeInTheDocument();
   });
 
   it("asks confirmation and deletes a tool", async () => {

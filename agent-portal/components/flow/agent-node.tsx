@@ -65,7 +65,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
             letterSpacing: "0.5px",
           }}
         >
-          Entry
+          Entrada
         </div>
       )}
 

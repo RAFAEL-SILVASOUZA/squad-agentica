@@ -147,7 +147,8 @@ function FlowEditorInner({
   edgePanelSlot,
   disabled,
   errorIdSets,
-}: FlowEditorProps) {
+  forwardedRef,
+}: FlowEditorProps & { forwardedRef?: React.Ref<FlowEditorHandle> }) {
   const { addToast } = useToast();
   const { zoomIn, zoomOut, fitView, screenToFlowPosition } = useReactFlow();
 
@@ -321,6 +322,7 @@ function FlowEditorInner({
   }, [nodes, edges]);
 
   // Edge change from EdgePanel (fe-flow-edges): update the edge in place
+  // E13: este callback é o núcleo — a pagina o expõe via ref.updateEdge.
   const handleEdgeChange = React.useCallback(
     (edge: PipelineEdge) => {
       const newEdges = edges.map((e) =>
@@ -333,6 +335,8 @@ function FlowEditorInner({
                 label: edge.label,
                 requiresApproval: edge.requiresApproval,
                 dataMapping: edge.dataMapping,
+                approvalChannel: edge.approvalChannel,
+                approvalMessage: edge.approvalMessage,
               },
             }
           : e
@@ -342,6 +346,17 @@ function FlowEditorInner({
       onEdgeChange?.(edge);
     },
     [edges, nodes, setEdges, pushHistory, onEdgeChange]
+  );
+
+  // E13: expõe updateEdge para a pagina (EdgePanel -> canvas interno)
+  React.useImperativeHandle(
+    forwardedRef,
+    () => ({
+      updateEdge: (edge: PipelineEdge) => {
+        handleEdgeChange(edge);
+      },
+    }),
+    [handleEdgeChange]
   );
 
   // Highlight edges with validation errors (fe-flow-edges)
@@ -376,9 +391,9 @@ function FlowEditorInner({
       const pipelineEdges = flowEdgesToPipelineEdges(edges);
       await onSave(pipelineNodes, pipelineEdges);
       setDirty(false);
-      addToast("success", "Pipeline saved");
+      addToast("success", "Pipeline salvo");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save pipeline";
+      const message = err instanceof Error ? err.message : "Falha ao salvar o pipeline";
       addToast("error", message);
     } finally {
       setSaving(false);
@@ -528,16 +543,16 @@ function FlowEditorInner({
             size="sm"
             onClick={() => setShowPalette(true)}
             disabled={disabled}
-            aria-label="Add agent"
+            aria-label="Adicionar agente"
           >
             <Plus size={13} aria-hidden="true" />
-            Agent
+            Agente
           </Button>
           <Button
             size="sm"
             onClick={handleUndo}
             disabled={disabled || historyIndex <= 0}
-            aria-label="Undo"
+            aria-label="Desfazer"
           >
             <Undo2 size={13} aria-hidden="true" />
           </Button>
@@ -545,7 +560,7 @@ function FlowEditorInner({
             size="sm"
             onClick={handleRedo}
             disabled={disabled || historyIndex >= history.length - 1}
-            aria-label="Redo"
+            aria-label="Refazer"
           >
             <Redo2 size={13} aria-hidden="true" />
           </Button>
@@ -553,7 +568,7 @@ function FlowEditorInner({
             size="sm"
             onClick={handleDeleteNode}
             disabled={disabled}
-            aria-label="Delete selected node"
+            aria-label="Excluir nó selecionado"
           >
             <Trash2 size={13} aria-hidden="true" />
           </Button>
@@ -561,21 +576,21 @@ function FlowEditorInner({
           <Button
             size="sm"
             onClick={() => zoomOut({ duration: 200 })}
-            aria-label="Zoom out"
+            aria-label="Diminuir zoom"
           >
             <ZoomOut size={13} aria-hidden="true" />
           </Button>
           <Button
             size="sm"
             onClick={() => zoomIn({ duration: 200 })}
-            aria-label="Zoom in"
+            aria-label="Aumentar zoom"
           >
             <ZoomIn size={13} aria-hidden="true" />
           </Button>
           <Button
             size="sm"
             onClick={() => fitView({ padding: 0.2, duration: 300 })}
-            aria-label="Fit to view"
+            aria-label="Ajustar à tela"
           >
             <Maximize size={13} aria-hidden="true" />
           </Button>
@@ -590,7 +605,7 @@ function FlowEditorInner({
                 marginRight: 4,
               }}
             >
-              Unsaved changes
+              Alterações não salvas
             </span>
           )}
           <Button
@@ -598,10 +613,10 @@ function FlowEditorInner({
             variant="primary"
             onClick={handleSave}
             disabled={disabled || !dirty || saving}
-            aria-label="Save pipeline"
+            aria-label="Salvar pipeline"
           >
             <Save size={13} aria-hidden="true" />
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
       </div>
@@ -633,7 +648,7 @@ function FlowEditorInner({
               display: "inline-block",
             }}
           />
-          Flow
+          Fluxo
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span
@@ -644,7 +659,7 @@ function FlowEditorInner({
               display: "inline-block",
             }}
           />
-          Condition
+          Condição
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span
@@ -655,7 +670,7 @@ function FlowEditorInner({
               display: "inline-block",
             }}
           />
-          Data
+          Dados
         </span>
       </div>
 
@@ -736,6 +751,16 @@ function FlowEditorInner({
 }
 
 /**
+ * Handle imperativo exposto pelo FlowEditor (E13: EdgePanel -> grafo interno).
+ * A pagina chama `updateEdge` quando o EdgePanel altera uma aresta, para
+ * sincronizar o estado interno do canvas com a edição.
+ */
+export interface FlowEditorHandle {
+  /** Atualiza uma aresta no canvas (chamado pelo EdgePanel via pagina). */
+  updateEdge: (edge: PipelineEdge) => void;
+}
+
+/**
  * FlowEditor: React Flow wrapper for pipeline editing.
  *
  * Public API:
@@ -745,16 +770,19 @@ function FlowEditorInner({
  * - `onEdgeSelect`: called when an edge is selected (null when deselected)
  * - `edgePanelSlot`: React node rendered in the right panel area (for fe-flow-edges)
  * - `disabled`: disables all interactions (e.g., during a run)
+ * - `ref`: FlowEditorHandle com `updateEdge` para sincronizar o EdgePanel
  *
  * Extension point for fe-flow-edges:
  * - Pass `edgePanelSlot={<EdgePanel ... />}` to render the edge configuration panel
  * - Use `onEdgeSelect` to know which edge is selected
- * - The edge panel can call `onSave` to persist edge changes
+ * - Call `ref.current.updateEdge(edge)` to persist EdgePanel edits into the canvas
  */
-export function FlowEditor(props: FlowEditorProps) {
-  return (
-    <ReactFlowProvider>
-      <FlowEditorInner {...props} />
-    </ReactFlowProvider>
-  );
-}
+export const FlowEditor = React.forwardRef<FlowEditorHandle, FlowEditorProps>(
+  function FlowEditor(props, ref) {
+    return (
+      <ReactFlowProvider>
+        <FlowEditorInner {...props} forwardedRef={ref} />
+      </ReactFlowProvider>
+    );
+  }
+);

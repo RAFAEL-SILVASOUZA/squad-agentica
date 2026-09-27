@@ -18,7 +18,7 @@ export function AgentPalette({ agents, onAddAgent, onClose }: AgentPaletteProps)
   return (
     <div
       role="dialog"
-      aria-label="Add agent to pipeline"
+      aria-label="Adicionar agente ao pipeline"
       style={{
         position: "absolute",
         top: 56,
@@ -56,11 +56,11 @@ export function AgentPalette({ agents, onAddAgent, onClose }: AgentPaletteProps)
           }}
         >
           <Plus size={14} aria-hidden="true" />
-          Add Agent
+          Adicionar agente
         </span>
         <button
           onClick={onClose}
-          aria-label="Close palette"
+          aria-label="Fechar paleta"
           style={{
             background: "none",
             border: "none",
@@ -87,9 +87,9 @@ export function AgentPalette({ agents, onAddAgent, onClose }: AgentPaletteProps)
               color: "var(--text-muted)",
             }}
           >
-            No agents available.
+            Nenhum agente disponível.
             <br />
-            <span style={{ fontSize: 11 }}>Create an agent first.</span>
+            <span style={{ fontSize: 11 }}>Crie um agente primeiro.</span>
           </div>
         ) : (
           <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>

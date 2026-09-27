@@ -140,6 +140,10 @@ function Chip({ label, onRemove }: { label: string; onRemove?: () => void }) {
   );
 }
 
+// E4: whitelist de tipos de port (spec 4.1 / app/agents/validator.py):
+// qualquer outro tipo faz o save do agente cair em 400 no backend.
+const PORT_TYPE_OPTIONS = ["document", "code", "artifact", "signal"];
+
 export function AgentDetail({
   agent,
   options,
@@ -219,14 +223,21 @@ export function AgentDetail({
     value: k.id,
     label: k.name,
   }));
+  // E3: chips mostram o nome do item da biblioteca, não o UUID guardado na
+  // mochila (id sem correspondência, ex.: item excluído, cai no próprio id).
+  const nameOf = (list: { value: string; label: string }[], id: string) =>
+    list.find((o) => o.value === id)?.label ?? id;
 
   const addPort = (
     setter: React.Dispatch<React.SetStateAction<PortDef[]>>,
     list: PortDef[]
   ) => {
+    // E4: nova porta nasce com tipo DENTRO da whitelist do contrato
+    // (spec 4.1: "document" | "code" | "artifact" | "signal"). "string" era
+    // fora da whitelist e qualquer save com a porta vazia dava 400.
     setter([
       ...list,
-      { name: "", type: "string", required: false },
+      { name: "", type: "document", required: false },
     ]);
   };
 
@@ -461,7 +472,7 @@ export function AgentDetail({
                   />
                   <select
                     aria-label={`Tipo da entrada ${i + 1}`}
-                    value={port.type}
+                    value={PORT_TYPE_OPTIONS.includes(port.type) ? port.type : "document"}
                     onChange={(e) => updatePort(setInputs, i, { type: e.target.value })}
                     style={{
                       padding: "6px 8px",
@@ -473,7 +484,7 @@ export function AgentDetail({
                       outline: "none",
                     }}
                   >
-                    {["string", "number", "boolean", "object", "array"].map((t) => (
+                    {PORT_TYPE_OPTIONS.map((t) => (
                       <option key={t} value={t}>
                         {t}
                       </option>
@@ -572,7 +583,7 @@ export function AgentDetail({
                   />
                   <select
                     aria-label={`Tipo da saída ${i + 1}`}
-                    value={port.type}
+                    value={PORT_TYPE_OPTIONS.includes(port.type) ? port.type : "document"}
                     onChange={(e) => updatePort(setOutputs, i, { type: e.target.value })}
                     style={{
                       padding: "6px 8px",
@@ -584,7 +595,7 @@ export function AgentDetail({
                       outline: "none",
                     }}
                   >
-                    {["string", "number", "boolean", "object", "array"].map((t) => (
+                    {PORT_TYPE_OPTIONS.map((t) => (
                       <option key={t} value={t}>
                         {t}
                       </option>
@@ -768,7 +779,7 @@ export function AgentDetail({
                 {skills.map((s) => (
                   <Chip
                     key={s.skillId}
-                    label={s.skillId}
+                    label={nameOf(skillOptions, s.skillId)}
                     onRemove={() =>
                       setSkills((prev) => prev.filter((x) => x.skillId !== s.skillId))
                     }
@@ -820,7 +831,7 @@ export function AgentDetail({
                 {tools.map((t) => (
                   <Chip
                     key={t.toolId}
-                    label={t.toolId}
+                    label={nameOf(toolOptions, t.toolId)}
                     onRemove={() =>
                       setTools((prev) => prev.filter((x) => x.toolId !== t.toolId))
                     }
@@ -872,7 +883,7 @@ export function AgentDetail({
                 {mcpServers.map((m) => (
                   <Chip
                     key={m.serverId}
-                    label={m.serverId}
+                    label={nameOf(mcpOptions, m.serverId)}
                     onRemove={() =>
                       setMcpServers((prev) =>
                         prev.filter((x) => x.serverId !== m.serverId)
@@ -926,7 +937,7 @@ export function AgentDetail({
                 {knowledge.map((k) => (
                   <Chip
                     key={k.reference}
-                    label={k.reference}
+                    label={nameOf(knowledgeOptions, k.reference)}
                     onRemove={() =>
                       setKnowledge((prev) =>
                         prev.filter((x) => x.reference !== k.reference)

@@ -88,7 +88,7 @@ test.describe("Jornada 2: primeiro uso (estados vazios)", () => {
     await expect(h1).toBeVisible({ timeout: 30_000 });
 
     // Estado vazio OU erro de listagem (F9/B1: GET /api/pipelines ausente).
-    const empty = page.getByRole("button", { name: /Create first pipeline/i });
+    const empty = page.getByRole("button", { name: /Criar primeiro pipeline/i });
     const errorBanner = page.getByText("Failed to load pipelines");
     const outcome = await Promise.race([
       empty

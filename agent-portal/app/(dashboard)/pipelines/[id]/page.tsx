@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Agent, Pipeline, PipelineNode, PipelineEdge } from "@/lib/types";
-import { FlowEditor } from "@/components/FlowEditor";
+import { FlowEditor, type FlowEditorHandle } from "@/components/FlowEditor";
 import { EdgePanel } from "@/components/EdgePanel";
 import {
   validateGraph,
@@ -55,6 +55,9 @@ export default function PipelineDetailPage() {
 
   const pipelineId = params.id;
 
+  // E13: ref para sincronizar EdgePanel -> canvas interno do FlowEditor
+  const flowEditorRef = React.useRef<FlowEditorHandle>(null);
+
   const [pipeline, setPipeline] = React.useState<Pipeline | null>(null);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -92,7 +95,7 @@ export default function PipelineDetailPage() {
           setError(err.message);
         }
       } else {
-        setError("Failed to load pipeline");
+        setError("Falha ao carregar o pipeline");
       }
     } finally {
       setLoading(false);
@@ -123,7 +126,7 @@ export default function PipelineDetailPage() {
       } catch (err) {
         if (err instanceof ApiError) {
           if (err.status === 409) {
-            addToast("error", "Pipeline has a run in progress. Stop the run before editing.");
+            addToast("error", "O pipeline tem uma execução em andamento. Pare a execução antes de editar.");
           } else {
             throw err;
           }
@@ -149,10 +152,13 @@ export default function PipelineDetailPage() {
     []
   );
 
-  // Mudanca vinda do EdgePanel: espelha e revalida
+  // Mudanca vinda do EdgePanel: espelha, revalida e sincroniza o canvas
+  // E13: sem o updateEdge no FlowEditor, a edição ficava só na pagina e o
+  // Save (que usa o estado interno do editor) nunca gravava a mudança.
   const handleEdgeChange = React.useCallback((edge: PipelineEdge) => {
     setSelectedEdge(edge);
     setWorkEdges((prev) => prev.map((e) => (e.id === edge.id ? edge : e)));
+    flowEditorRef.current?.updateEdge(edge);
   }, []);
 
   // Validacao: local (imediata, mesmas regras do compiler) + servidor (debounce)
@@ -242,7 +248,7 @@ export default function PipelineDetailPage() {
           setPipeline(res);
         } catch (err) {
           if (err instanceof ApiError && err.status === 409) {
-            addToast("error", "Pipeline has a run in progress. Stop the run before executing.");
+            addToast("error", "O pipeline tem uma execução em andamento. Pare a execução antes de executar de novo.");
             return;
           }
           throw err;
@@ -253,14 +259,14 @@ export default function PipelineDetailPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
-          addToast("error", "This pipeline is already running.");
+          addToast("error", "Este pipeline já está em execução.");
         } else if (err.status === 400) {
-          addToast("error", "Invalid graph. Fix the validation errors before executing.");
+          addToast("error", "Grafo inválido. Corrija os erros de validação antes de executar.");
         } else {
-          addToast("error", err.message || "Failed to execute pipeline");
+          addToast("error", err.message || "Falha ao executar o pipeline");
         }
       } else {
-        addToast("error", "Failed to execute pipeline");
+        addToast("error", "Falha ao executar o pipeline");
       }
     } finally {
       setExecuting(false);
@@ -284,12 +290,12 @@ export default function PipelineDetailPage() {
     return (
       <EmptyState
         icon={GitBranch}
-        title="Pipeline not found"
-        description="This pipeline does not exist or was deleted."
+        title="Pipeline não encontrado"
+        description="Este pipeline não existe ou foi excluído."
         action={
           <Button onClick={() => router.push("/pipelines")}>
             <ArrowLeft size={14} aria-hidden="true" />
-            Back to pipelines
+            Voltar para pipelines
           </Button>
         }
       />
@@ -315,17 +321,17 @@ export default function PipelineDetailPage() {
           <AlertTriangle size={18} style={{ color: "var(--error)" }} aria-hidden="true" />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-              Failed to load pipeline
+              Falha ao carregar o pipeline
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{error}</div>
           </div>
           <Button
             size="sm"
             onClick={fetchPipeline}
-            aria-label="Retry loading pipeline"
+            aria-label="Carregar o pipeline de novo"
           >
             <RefreshCw size={12} aria-hidden="true" />
-            Retry
+            Tentar novamente
           </Button>
         </div>
         <Button
@@ -333,7 +339,7 @@ export default function PipelineDetailPage() {
           onClick={() => router.push("/pipelines")}
         >
           <ArrowLeft size={12} aria-hidden="true" />
-          Back to pipelines
+          Voltar para pipelines
         </Button>
       </div>
     );
@@ -358,7 +364,7 @@ export default function PipelineDetailPage() {
           <Button
             size="sm"
             onClick={() => router.push("/pipelines")}
-            aria-label="Back to pipelines"
+            aria-label="Voltar para pipelines"
           >
             <ArrowLeft size={14} aria-hidden="true" />
           </Button>
@@ -399,7 +405,7 @@ export default function PipelineDetailPage() {
               }}
             >
               <Loader2 size={12} aria-hidden="true" style={{ animation: "spin 1s linear infinite" }} />
-              Validating graph
+              Validando o grafo
             </span>
           )}
           {validation.status === "done" && hasErrors && (
@@ -415,7 +421,7 @@ export default function PipelineDetailPage() {
               }}
             >
               <AlertTriangle size={13} aria-hidden="true" />
-              {errors.length} {errors.length === 1 ? "validation error" : "validation errors"}
+              {errors.length} {errors.length === 1 ? "erro de validação" : "erros de validação"}
             </span>
           )}
           {validation.status === "done" && !hasErrors && workNodes.length > 0 && (
@@ -431,13 +437,13 @@ export default function PipelineDetailPage() {
               }}
             >
               <CheckCircle2 size={13} aria-hidden="true" />
-              Graph is valid
+              Grafo válido
             </span>
           )}
           <Button
             size="sm"
             onClick={() => router.push(`/pipelines/${pipelineId}/run`)}
-            aria-label="View pipeline monitor"
+            aria-label="Ver monitor do pipeline"
           >
             Monitor
           </Button>
@@ -447,28 +453,28 @@ export default function PipelineDetailPage() {
             onClick={handleExecute}
             disabled={hasErrors || isRunning || executing}
             loading={executing}
-            aria-label="Execute pipeline"
+            aria-label="Executar pipeline"
             title={
               hasErrors
-                ? "Fix the validation errors before executing"
+                ? "Corrija os erros de validação antes de executar"
                 : isRunning
-                  ? "Pipeline is already running"
-                  : "Create a new run and open the monitor"
+                  ? "O pipeline já está em execução"
+                  : "Cria uma execução e abre o monitor"
             }
           >
             <Play size={13} aria-hidden="true" />
-            Execute
+            Executar
           </Button>
         </div>
       </div>
 
       {/* Flow Editor + EdgePanel */}
       <FlowEditor
+        ref={flowEditorRef}
         pipeline={pipeline}
         agents={agents}
         onSave={handleSave}
         onEdgeSelect={setSelectedEdge}
-        onEdgeChange={handleEdgeChange}
         onGraphChange={handleGraphChange}
         errorIdSets={ids}
         disabled={pipeline.status === "running"}

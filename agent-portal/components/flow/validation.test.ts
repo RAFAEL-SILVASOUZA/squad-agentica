@@ -70,17 +70,17 @@ describe("validateDataMapping (checagem de tipo)", () => {
 
   it("rejeita sourceOutput inexistente", () => {
     const err = validateDataMapping({ sourceOutput: "nope", targetInput: "task" }, planner, coder);
-    expect(err).toMatch(/nao existe nos outputs/);
+    expect(err).toMatch(/não existe nos outputs/);
   });
 
   it("rejeita targetInput inexistente", () => {
     const err = validateDataMapping({ sourceOutput: "plan", targetInput: "nope" }, planner, coder);
-    expect(err).toMatch(/nao existe nos inputs/);
+    expect(err).toMatch(/não existe nos inputs/);
   });
 
   it("rejeita tipo incompativel", () => {
     const err = validateDataMapping({ sourceOutput: "plan_json", targetInput: "task" }, planner, coder);
-    expect(err).toMatch(/tipo incompativel/);
+    expect(err).toMatch(/tipo incompatível/);
   });
 
   it("rejeita dataMapping ausente/incompleto", () => {

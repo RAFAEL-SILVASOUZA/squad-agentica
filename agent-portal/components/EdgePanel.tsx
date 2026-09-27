@@ -175,7 +175,7 @@ export function EdgePanel({
   return (
     <div
       role="region"
-      aria-label={`Configuracao da aresta ${sourceNode?.agentSnapshot.name ?? edge.source} para ${targetNode?.agentSnapshot.name ?? edge.target}`}
+      aria-label={`Configuração da aresta ${sourceNode?.agentSnapshot.name ?? edge.source} para ${targetNode?.agentSnapshot.name ?? edge.target}`}
       style={{
         width: 260,
         background: "var(--bg-elevated)",
@@ -243,8 +243,8 @@ export function EdgePanel({
             })
           }
           options={[
-            { value: "flow", label: "Flow (ordem de execucao)" },
-            { value: "data", label: "Data (propaga output)" },
+            { value: "flow", label: "Fluxo (ordem de execução)" },
+            { value: "data", label: "Dados (propaga output)" },
           ]}
         />
 
@@ -260,7 +260,7 @@ export function EdgePanel({
                 color: "var(--text-muted)",
               }}
             >
-              Condicao
+              Condição
             </div>
             <label
               style={{
@@ -274,7 +274,7 @@ export function EdgePanel({
               <input
                 id="edge-has-condition"
                 type="checkbox"
-                aria-label="Definir condicao de acao"
+                aria-label="Definir condição de ação"
                 checked={!!condition}
                 disabled={disabled}
                 onChange={(e) => {
@@ -290,7 +290,7 @@ export function EdgePanel({
                 style={{ accentColor: "var(--accent)" }}
               />
               <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                Condicao de acao (senao, incondicional)
+                Condição de ação (senão, incondicional)
               </span>
             </label>
             {condition && (
@@ -338,7 +338,7 @@ export function EdgePanel({
                         marginBottom: 6,
                       }}
                     >
-                      Acoes
+                      Ações
                     </span>
                     <div
                       style={{ display: "flex", flexDirection: "column", gap: 4 }}
@@ -369,7 +369,7 @@ export function EdgePanel({
                   </div>
                 ) : (
                   <Select
-                    label="Acao"
+                    label="Ação"
                     id="edge-action"
                     value={typeof condition.value === "string" ? condition.value : ""}
                     disabled={disabled}
@@ -413,7 +413,7 @@ export function EdgePanel({
               value={dataMapping?.sourceOutput ?? ""}
               disabled={disabled}
               placeholder={
-                sourceOutputs.length ? "Selecione um output" : "Sem outputs disponiveis"
+                sourceOutputs.length ? "Selecione um output" : "Sem outputs disponíveis"
               }
               onValueChange={(v) => handleMappingChange("sourceOutput", v)}
               options={sourceOutputs.map((p) => ({
@@ -427,7 +427,7 @@ export function EdgePanel({
               value={dataMapping?.targetInput ?? ""}
               disabled={disabled}
               placeholder={
-                targetInputs.length ? "Selecione um input" : "Sem inputs disponiveis"
+                targetInputs.length ? "Selecione um input" : "Sem inputs disponíveis"
               }
               onValueChange={(v) => handleMappingChange("targetInput", v)}
               options={targetInputs.map((p) => ({
@@ -460,8 +460,8 @@ export function EdgePanel({
                     margin: 0,
                   }}
                 >
-                  Ordem de execucao: implicita (roda apos o source), a menos que
-                  exista uma flow edge explicita entre o mesmo par.
+                  Ordem de execução: implícita (roda após o source), a menos que
+                  exista uma flow edge explícita entre o mesmo par.
                 </p>
               )
             )}
@@ -509,8 +509,8 @@ export function EdgePanel({
           }}
         >
           <Toggle
-            label="Requer aprovacao"
-            description="Insere um no de aprovacao (HITL) nesta transicao"
+            label="Requer aprovação"
+            description="Insere um nó de aprovação (HITL) nesta transição"
             checked={edge.requiresApproval}
             disabled={disabled}
             onChange={handleRequiresApproval}
@@ -526,7 +526,7 @@ export function EdgePanel({
               }}
             >
               <Select
-                label="Canal de notificacao"
+                label="Canal de notificação"
                 id="edge-approval-channel"
                 value={edge.approvalChannel ?? "in-app"}
                 disabled={disabled}
@@ -536,12 +536,12 @@ export function EdgePanel({
                 options={CHANNELS.map((c) => ({ value: c, label: c }))}
               />
               <Textarea
-                label="Mensagem de notificacao"
+                label="Mensagem de notificação"
                 id="edge-approval-message"
                 rows={2}
                 value={edge.approvalMessage ?? ""}
                 disabled={disabled}
-                placeholder="Contexto enviado ao humano na notificacao"
+                placeholder="Contexto enviado ao humano na notificação"
                 onChange={(e) =>
                   onChange({ ...edge, approvalMessage: e.target.value })
                 }
@@ -551,7 +551,7 @@ export function EdgePanel({
               >
                 <Shield size={12} aria-hidden="true" />
                 <span>
-                  Alvo de rejeicao (V1): derivado pelo compiler — devolve ao
+                  Alvo de rejeição (V1): derivado pelo compiler — devolve ao
                   source ou encerra (reject_handler).
                 </span>
               </div>

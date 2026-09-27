@@ -189,10 +189,10 @@ describe("PipelineDetailPage", () => {
     render(<PipelineDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Pipeline not found")).toBeInTheDocument();
+      expect(screen.getByText("Pipeline não encontrado")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: /back to pipelines/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /voltar para pipelines/i })).toBeInTheDocument();
   });
 
   it("shows error state with retry on API failure", async () => {
@@ -203,10 +203,10 @@ describe("PipelineDetailPage", () => {
     render(<PipelineDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to load pipeline")).toBeInTheDocument();
+      expect(screen.getByText("Falha ao carregar o pipeline")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /de novo/i })).toBeInTheDocument();
   });
 
   it("disables editor when pipeline is running", async () => {
@@ -247,7 +247,7 @@ describe("PipelineDetailPage", () => {
       expect(screen.getByTestId("flow-editor")).toBeInTheDocument();
     });
 
-    const monitorBtn = screen.getByRole("button", { name: /view pipeline monitor/i });
+    const monitorBtn = screen.getByRole("button", { name: /ver monitor do pipeline/i });
     monitorBtn.click();
     expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1/run");
   });
@@ -259,17 +259,17 @@ describe("PipelineDetailPage", () => {
       mockPut.mockImplementation(async (_path: string, body: { entryNodeId: string }) => body);
     });
 
-    it("mostra 'Graph is valid' para grafo valido e habilita Executar", async () => {
+    it("mostra 'Grafo válido' para grafo valido e habilita Executar", async () => {
       mockGet.mockResolvedValue(mockPipeline);
       mockList.mockResolvedValue({ items: mockAgents, total: 1, page: 1, limit: 100 });
 
       render(<PipelineDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Graph is valid")).toBeInTheDocument();
+        expect(screen.getByText("Grafo válido")).toBeInTheDocument();
       }, { timeout: 3000 });
 
-      expect(screen.getByRole("button", { name: /execute pipeline/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /executar pipeline/i })).toBeEnabled();
     });
 
     it("bloqueia Executar e destaca no com erro quando o grafo fica invalido", async () => {
@@ -279,17 +279,17 @@ describe("PipelineDetailPage", () => {
       render(<PipelineDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Graph is valid")).toBeInTheDocument();
+        expect(screen.getByText("Grafo válido")).toBeInTheDocument();
       }, { timeout: 3000 });
 
       // Simula adicao de um no orfao pelo canvas
       screen.getByTestId("mock-add-orphan").click();
 
       await waitFor(() => {
-        expect(screen.getByText(/validation error/)).toBeInTheDocument();
+        expect(screen.getByText(/erro de validação/)).toBeInTheDocument();
       }, { timeout: 3000 });
 
-      const execBtn = screen.getByRole("button", { name: /execute pipeline/i });
+      const execBtn = screen.getByRole("button", { name: /executar pipeline/i });
       expect(execBtn).toBeDisabled();
 
       // O no com erro e destacado no canvas (errorIdSets.nodeIds)
@@ -304,10 +304,10 @@ describe("PipelineDetailPage", () => {
       render(<PipelineDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Graph is valid")).toBeInTheDocument();
+        expect(screen.getByText("Grafo válido")).toBeInTheDocument();
       }, { timeout: 3000 });
 
-      await userEvent.click(screen.getByRole("button", { name: /execute pipeline/i }));
+      await userEvent.click(screen.getByRole("button", { name: /executar pipeline/i }));
 
       await waitFor(() => {
         expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/execute", { inputs: {} });
@@ -328,13 +328,13 @@ describe("PipelineDetailPage", () => {
       render(<PipelineDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Graph is valid")).toBeInTheDocument();
+        expect(screen.getByText("Grafo válido")).toBeInTheDocument();
       }, { timeout: 3000 });
 
-      await userEvent.click(screen.getByRole("button", { name: /execute pipeline/i }));
+      await userEvent.click(screen.getByRole("button", { name: /executar pipeline/i }));
 
       await waitFor(() => {
-        expect(mockAddToast).toHaveBeenCalledWith("error", expect.stringMatching(/already running/i));
+        expect(mockAddToast).toHaveBeenCalledWith("error", expect.stringMatching(/já está em execução/i));
       });
       expect(mockPush).not.toHaveBeenCalledWith("/pipelines/pipe-1/run");
     });
@@ -349,7 +349,7 @@ describe("PipelineDetailPage", () => {
 
       // Grafo localmente valido => mesmo com o endpoint ausente, o status finaliza como valido
       await waitFor(() => {
-        expect(screen.getByText("Graph is valid")).toBeInTheDocument();
+        expect(screen.getByText("Grafo válido")).toBeInTheDocument();
       }, { timeout: 3000 });
     });
   });

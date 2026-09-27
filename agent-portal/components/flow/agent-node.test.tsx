@@ -76,12 +76,12 @@ describe("AgentNode", () => {
   it("shows entry badge when isEntry is true", () => {
     const entryData: AgentNodeData = { ...mockData, isEntry: true };
     renderNode(entryData);
-    expect(screen.getByText("Entry")).toBeInTheDocument();
+    expect(screen.getByText("Entrada")).toBeInTheDocument();
   });
 
   it("does not show entry badge when isEntry is false", () => {
     renderNode(mockData);
-    expect(screen.queryByText("Entry")).not.toBeInTheDocument();
+    expect(screen.queryByText("Entrada")).not.toBeInTheDocument();
   });
 
   it("shows actions when present", () => {

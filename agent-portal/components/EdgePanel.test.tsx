@@ -115,7 +115,7 @@ describe("EdgePanel", () => {
       />
     );
     expect(
-      screen.getAllByRole("alert").find((el) => /tipo incompativel/.test(el.textContent ?? ""))
+      screen.getAllByRole("alert").find((el) => /tipo incompatível/.test(el.textContent ?? ""))
     ).toBeTruthy();
   });
 
@@ -147,7 +147,7 @@ describe("EdgePanel", () => {
       />
     );
     expect(
-      screen.getAllByRole("alert").find((el) => /nao existe nos outputs/.test(el.textContent ?? ""))
+      screen.getAllByRole("alert").find((el) => /não existe nos outputs/.test(el.textContent ?? ""))
     ).toBeTruthy();
   });
 
@@ -172,7 +172,7 @@ describe("EdgePanel", () => {
       })
     );
 
-    const action = screen.getByLabelText("Acao") as HTMLSelectElement;
+    const action = screen.getByLabelText("Ação") as HTMLSelectElement;
     await userEvent.selectOptions(action, "return");
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -193,7 +193,7 @@ describe("EdgePanel", () => {
         onClose={vi.fn()}
       />
     );
-    const checkbox = screen.getByRole("checkbox", { name: "Definir condicao de acao" });
+    const checkbox = screen.getByRole("checkbox", { name: "Definir condição de ação" });
     expect(checkbox).toBeChecked();
     await userEvent.click(checkbox);
     expect(onChange).toHaveBeenLastCalledWith(
@@ -206,7 +206,7 @@ describe("EdgePanel", () => {
     rtlRender(
       <EdgePanel edge={makeEdge()} nodes={nodes} onChange={onChange2} onClose={vi.fn()} />
     );
-    const cb2 = screen.getByRole("checkbox", { name: "Definir condicao de acao" });
+    const cb2 = screen.getByRole("checkbox", { name: "Definir condição de ação" });
     expect(cb2).not.toBeChecked();
     await userEvent.click(cb2);
     expect(onChange2).toHaveBeenLastCalledWith(
@@ -222,7 +222,7 @@ describe("EdgePanel", () => {
       <EdgePanel edge={makeEdge()} nodes={nodes} onChange={onChange} onClose={vi.fn()} />
     );
 
-    const toggle = screen.getByRole("switch", { name: "Requer aprovacao" });
+    const toggle = screen.getByRole("switch", { name: "Requer aprovação" });
     expect(toggle).toHaveAttribute("aria-checked", "false");
     await userEvent.click(toggle);
     expect(onChange).toHaveBeenLastCalledWith(
@@ -246,7 +246,7 @@ describe("EdgePanel", () => {
         onClose={vi.fn()}
       />
     );
-    const channel = screen.getByLabelText("Canal de notificacao") as HTMLSelectElement;
+    const channel = screen.getByLabelText("Canal de notificação") as HTMLSelectElement;
     await userEvent.selectOptions(channel, "email");
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ approvalChannel: "email" })
@@ -286,6 +286,6 @@ describe("EdgePanel", () => {
         onClose={vi.fn()}
       />
     );
-    expect(screen.getByText(/Alvo de rejeicao/)).toBeInTheDocument();
+    expect(screen.getByText(/Alvo de rejeição/)).toBeInTheDocument();
   });
 });

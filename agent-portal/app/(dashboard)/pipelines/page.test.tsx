@@ -89,8 +89,8 @@ describe("PipelinesPage", () => {
     });
 
     // Check node/edge counts
-    expect(screen.getByText("2 nodes")).toBeInTheDocument();
-    expect(screen.getByText("1 edges")).toBeInTheDocument();
+    expect(screen.getByText("2 nós")).toBeInTheDocument();
+    expect(screen.getByText("1 aresta")).toBeInTheDocument();
   });
 
   it("shows empty state when no pipelines", async () => {
@@ -104,11 +104,11 @@ describe("PipelinesPage", () => {
     render(<PipelinesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("No pipelines yet")).toBeInTheDocument();
+      expect(screen.getByText("Nenhum pipeline ainda")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Create your first pipeline to orchestrate agents.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create first pipeline/i })).toBeInTheDocument();
+    expect(screen.getByText("Crie o primeiro pipeline para orquestrar agentes.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /criar primeiro pipeline/i })).toBeInTheDocument();
   });
 
   it("shows error state with retry on API failure", async () => {
@@ -118,10 +118,10 @@ describe("PipelinesPage", () => {
     render(<PipelinesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to load pipelines")).toBeInTheDocument();
+      expect(screen.getByText("Falha ao carregar pipelines")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /de novo/i })).toBeInTheDocument();
   });
 
   it("navigates to pipeline detail on card click", async () => {

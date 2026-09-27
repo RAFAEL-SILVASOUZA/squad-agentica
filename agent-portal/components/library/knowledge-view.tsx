@@ -38,19 +38,21 @@ import { api, ApiError } from "@/lib/api";
 interface KnowledgeBaseItem {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   scope: string;
+  source: string;
   documentCount: number;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface KnowledgeDocument {
   id: string;
   name: string;
   status: string;
-  size_bytes: number;
-  uploaded_at: string;
+  size: number;
+  chunkCount: number;
+  createdAt: string;
 }
 
 interface QueryResult {
@@ -65,11 +67,26 @@ const SCOPE_OPTIONS = [
   { value: "pipeline", label: "Pipeline" },
 ];
 
+// source é OBRIGATÓRIO no POST /api/knowledge (spec 9.3); upload é a fonte
+// padrão da V1 (E6: o form não enviava source e o backend respondia 422).
+const SOURCE_OPTIONS = [
+  { value: "upload", label: "Upload de arquivo" },
+  { value: "url", label: "URL" },
+  { value: "vector-db", label: "Vector DB" },
+];
+
 const DOC_STATUS_LABELS: Record<string, string> = {
   processing: "Processando",
   ready: "Pronto",
   failed: "Falhou",
 };
+
+
+// E15: grid fixo "240px 1fr" estourava a largura em telas estreitas (390px).
+// Sidebar de 240px ao lado do painel; abaixo de ~580px os dois empilham.
+const LAYOUT: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: "16px" };
+const SIDEBAR: React.CSSProperties = { flex: "1 1 240px", minWidth: 0 };
+const MAIN: React.CSSProperties = { flex: "999 1 320px", minWidth: 0 };
 
 export function KnowledgeView() {
   const { addToast } = useToast();
@@ -82,7 +99,7 @@ export function KnowledgeView() {
   const [docsLoading, setDocsLoading] = React.useState(false);
 
   const [createModalOpen, setCreateModalOpen] = React.useState(false);
-  const [createForm, setCreateForm] = React.useState({ name: "", description: "", scope: "global" });
+  const [createForm, setCreateForm] = React.useState({ name: "", description: "", scope: "global", source: "upload" });
   const [createFormError, setCreateFormError] = React.useState<string | null>(null);
   const [createBusy, setCreateBusy] = React.useState(false);
 
@@ -114,8 +131,14 @@ export function KnowledgeView() {
   const loadDocuments = React.useCallback(async (baseId: string) => {
     setDocsLoading(true);
     try {
-      const res = await api.get<KnowledgeDocument[]>(`/api/knowledge/${baseId}/documents`);
-      setDocuments(res);
+      // GET /api/knowledge/{id}/documents é PAGINADO (contrato §8): a lista
+      // vem em ``res.items``, não como array direto (E9: documents.map is not
+      // a function ao tratar a resposta como array).
+      const res = await api.list<KnowledgeDocument>(`/api/knowledge/${baseId}/documents`, {
+        page: 1,
+        limit: 100,
+      });
+      setDocuments(res.items);
     } catch (e) {
       addToast("error", e instanceof Error ? e.message : "Erro ao carregar documentos");
     } finally {
@@ -148,17 +171,18 @@ export function KnowledgeView() {
         name: createForm.name.trim(),
         description: createForm.description.trim(),
         scope: createForm.scope,
+        source: createForm.source,
       });
       addToast("success", "Base de conhecimento criada");
       setCreateModalOpen(false);
-      setCreateForm({ name: "", description: "", scope: "global" });
+      setCreateForm({ name: "", description: "", scope: "global", source: "upload" });
       await load();
     } catch (e) {
-      if (e instanceof ApiError && e.details?.errors) {
-        setCreateFormError(JSON.stringify(e.details.errors));
-      } else {
-        setCreateFormError(e instanceof Error ? e.message : "Erro ao criar base");
-      }
+      // E6: não expor o JSON cru do pydantic — mostra uma mensagem amigável.
+      const errors = e instanceof ApiError ? e.details?.errors : undefined;
+      setCreateFormError(Array.isArray(errors) && errors.every((item) => typeof item === "string")
+        ? errors.join("; ")
+        : e instanceof Error ? e.message : "Erro ao criar base");
     } finally {
       setCreateBusy(false);
     }
@@ -197,16 +221,18 @@ export function KnowledgeView() {
         setUploadProgress((p) => Math.min(p + 10, 90));
       }, 200);
 
-      await api.post(`/api/knowledge/${selectedBase.id}/upload`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      // E10: NUNCA fixar Content-Type manualmente em FormData — o browser
+      // precisa inserir o próprio boundary em ``multipart/form-data``. Fixar
+      // o header sem boundary gerava 400 no parse multipart do backend.
+      await api.post(`/api/knowledge/${selectedBase.id}/upload`, formData);
 
       clearInterval(interval);
       setUploadProgress(100);
       addToast("success", "Documento enviado para ingestão");
       await loadDocuments(selectedBase.id);
     } catch (e) {
-      addToast("error", e instanceof Error ? e.message : "Erro ao enviar documento");
+      const msg = e instanceof Error ? e.message : "Erro ao enviar documento";
+      addToast("error", msg || "Erro ao enviar documento");
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -220,11 +246,11 @@ export function KnowledgeView() {
     setQueryResults([]);
 
     try {
-      const res = await api.post<QueryResult[]>("/api/knowledge/query", {
-        baseId: selectedBase.id,
+      const res = await api.post<{ chunks: QueryResult[] }>("/api/knowledge/query", {
+        knowledgeBaseIds: [selectedBase.id],
         query: query.trim(),
       });
-      setQueryResults(res);
+      setQueryResults(res.chunks);
     } catch (e) {
       setQueryError(e instanceof Error ? e.message : "Erro na consulta");
     } finally {
@@ -237,15 +263,15 @@ export function KnowledgeView() {
 
   if (loading) {
     content = (
-      <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: "16px" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={LAYOUT}>
+        <div style={{ ...SIDEBAR, display: "flex", flexDirection: "column", gap: "8px" }}>
           {[0, 1, 2].map((i) => (
             <Card key={i}>
               <Skeleton width="80%" height={14} />
             </Card>
           ))}
         </div>
-        <div>
+        <div style={MAIN}>
           <Skeleton width="100%" height={200} />
         </div>
       </div>
@@ -275,9 +301,9 @@ export function KnowledgeView() {
     );
   } else {
     content = (
-      <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: "16px" }}>
+      <div style={LAYOUT}>
         {/* Sidebar de bases */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div style={{ ...SIDEBAR, display: "flex", flexDirection: "column", gap: "8px" }}>
           <Button variant="primary" size="sm" onClick={() => setCreateModalOpen(true)}>
             <Plus size={14} aria-hidden="true" />
             Nova base
@@ -322,7 +348,7 @@ export function KnowledgeView() {
         </div>
 
         {/* Painel principal */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ ...MAIN, display: "flex", flexDirection: "column", gap: "16px" }}>
           {!selectedBase ? (
             <EmptyState
               icon={FileText}
@@ -550,6 +576,14 @@ export function KnowledgeView() {
             value={createForm.scope}
             options={SCOPE_OPTIONS}
             onChange={(e) => setCreateForm((f) => ({ ...f, scope: e.target.value }))}
+            disabled={createBusy}
+          />
+          <Select
+            id="kb-source"
+            label="Fonte"
+            value={createForm.source}
+            options={SOURCE_OPTIONS}
+            onChange={(e) => setCreateForm((f) => ({ ...f, source: e.target.value }))}
             disabled={createBusy}
           />
           {createFormError && (

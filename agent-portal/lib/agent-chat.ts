@@ -18,6 +18,7 @@
  * UI desabilitar o envio por N segundos.
  */
 
+import { errorMessageFromBody } from "./api";
 import type { Agent } from "./types";
 
 export type ChatEventType =
@@ -126,13 +127,13 @@ export async function sendAgentChat(
   }
 
   if (!res.ok) {
-    let errorBody: { error?: string } = {};
+    let errorBody: unknown = {};
     try {
-      errorBody = (await res.json()) as { error?: string };
+      errorBody = await res.json();
     } catch {
       // ignora
     }
-    const err = new Error(errorBody.error || `chat request failed (${res.status})`);
+    const err = new Error(errorMessageFromBody(res.status, errorBody));
     callbacks.onError?.(err);
     return { rateLimited: false };
   }
@@ -198,13 +199,14 @@ export async function confirmAgentDraft(draftId: string): Promise<Agent> {
   });
 
   if (!res.ok) {
-    let errorBody: { error?: string; code?: string } = {};
+    let errorBody: unknown = {};
     try {
-      errorBody = (await res.json()) as { error?: string; code?: string };
+      errorBody = await res.json();
     } catch {
       // ignora
     }
-    throw new Error(errorBody.error || `confirm failed (${res.status})`);
+    // E1: mensagem pt-BR do envelope (ex.: agent_name_exists), não o "conflict" cru.
+    throw new Error(errorMessageFromBody(res.status, errorBody));
   }
 
   return (await res.json()) as Agent;
