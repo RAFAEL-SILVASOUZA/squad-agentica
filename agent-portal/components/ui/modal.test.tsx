@@ -1,4 +1,6 @@
+import * as React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { Modal } from "./modal";
 
@@ -61,5 +63,23 @@ describe("Modal", () => {
       </Modal>
     );
     expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("keeps focus in the field while the parent re-renders on each keystroke", async () => {
+    function Form() {
+      const [value, setValue] = React.useState("");
+      return (
+        <Modal open onClose={() => {}} title="Form">
+          <label htmlFor="f">Nome</label>
+          <input id="f" value={value} onChange={(e) => setValue(e.target.value)} />
+        </Modal>
+      );
+    }
+    render(<Form />);
+    const input = screen.getByLabelText("Nome");
+    await userEvent.click(input);
+    await userEvent.keyboard("revisar-especificacao");
+    expect(input).toHaveValue("revisar-especificacao");
+    expect(input).toHaveFocus();
   });
 });

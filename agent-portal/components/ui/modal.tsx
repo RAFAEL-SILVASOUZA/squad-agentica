@@ -19,18 +19,24 @@ export interface ModalProps {
 export function Modal({ open, onClose, title, children, footer }: ModalProps) {
   const panelRef = React.useRef<HTMLDivElement>(null);
 
+  // `onClose` costuma ser uma arrow nova a cada render do pai. Com ele nas
+  // dependências, o efeito rodava a cada tecla e `panel.focus()` tirava o foco
+  // do campo em edição (só o 1º caractere ficava). Foco só ao abrir.
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
   React.useEffect(() => {
     if (!open) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
 
     document.addEventListener("keydown", handleKeyDown);
     panelRef.current?.focus();
 
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
