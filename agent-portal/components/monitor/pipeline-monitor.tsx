@@ -229,7 +229,24 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
         const sortedRuns = [...runsRes.items].sort(
           (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
         );
-        setActiveRun(sortedRuns[0] ?? null);
+        const latest = sortedRuns[0] ?? null;
+        setActiveRun(latest);
+
+        // Os eventos WS de nós que terminaram antes de o monitor abrir (ex.:
+        // o 1º nó, logo após "Executar") não chegam de novo; os checkpoints
+        // do run atual recompõem esse estado.
+        if (latest) {
+          const since = new Date(latest.startedAt).getTime();
+          const fromCheckpoints: Record<string, NodeStatus> = {};
+          for (const cp of checkpointsRes.items) {
+            if (new Date(cp.timestamp).getTime() < since) continue;
+            if (cp.status === "completed") fromCheckpoints[cp.nodeId] = "completed";
+            else if (cp.status === "failed") fromCheckpoints[cp.nodeId] = "failed";
+          }
+          if (Object.keys(fromCheckpoints).length > 0) {
+            setNodeStatuses((prev) => ({ ...prev, ...fromCheckpoints }));
+          }
+        }
       } catch {
         // Runs/checkpoints fetch failed: non-critical, monitor still works.
       }

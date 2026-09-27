@@ -137,6 +137,18 @@ const edgeTypes: EdgeTypes = {
 
 // ─── Inner editor (needs ReactFlowProvider context) ──────────────────────────
 
+
+/**
+ * Posição para um nó adicionado pela paleta (clique): à direita do nó mais à
+ * direita, alinhado a ele. A posição aleatória antiga sobrepunha nós.
+ */
+function nextFreePosition(nodes: Node[]): { x: number; y: number } {
+  if (nodes.length === 0) return { x: 250, y: 200 };
+  const rightmost = nodes.reduce((a, b) => (b.position.x > a.position.x ? b : a));
+  const width = rightmost.measured?.width ?? rightmost.width ?? 320;
+  return { x: rightmost.position.x + width + 80, y: rightmost.position.y };
+}
+
 function FlowEditorInner({
   pipeline,
   agents,
@@ -271,7 +283,7 @@ function FlowEditorInner({
       const newNode: Node<AgentNodeData> = {
         id: nodeId,
         type: "agent",
-        position: { x: 250 + Math.random() * 100, y: 200 + Math.random() * 100 },
+        position: nextFreePosition(nodes),
         data: {
           label: agent.name,
           agentSnapshot: {
@@ -303,8 +315,10 @@ function FlowEditorInner({
       setNodes(newNodes);
       pushHistory(newNodes, edges);
       setShowPalette(false);
+      // O nó entra à direita dos demais; enquadra para ele ficar visível.
+      setTimeout(() => void fitView({ padding: 0.2, duration: 200 }), 0);
     },
-    [nodes, edges, setNodes, pushHistory]
+    [nodes, edges, setNodes, pushHistory, fitView]
   );
 
   // Graph change -> notify page (fe-flow-edges revalidation, debounced)
