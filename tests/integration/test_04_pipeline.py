@@ -64,6 +64,35 @@ def test_pipeline_validate_invalid_graph_structured_errors(user):
     assert errors and all(isinstance(e["rule"], int) and e["message"] for e in errors), errors
 
 
+def test_pipeline_graph_update_preserves_ids_and_approval_channel(user):
+    a1, a2 = create_agent(user, "qa-save1"), create_agent(user, "qa-save2")
+    graph = graph_payload(a1, a2)
+    created = user.post("/api/pipelines", json=graph)
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+    graph["edges"][0].update(requiresApproval=True, approvalChannel="in-app", approvalMessage="Revisar")
+    for _ in range(2):
+        saved = user.put(f"/api/pipelines/{pid}", json=graph)
+        assert saved.status_code == 200, saved.text
+    stored = user.get(f"/api/pipelines/{pid}").json()
+    assert {n["id"] for n in stored["nodes"]} == {n["id"] for n in graph["nodes"]}
+    assert len(stored["edges"]) == 2
+    approval = next(e for e in stored["edges"] if e["type"] == "flow")
+    assert approval["requiresApproval"] is True
+    assert approval["approvalChannel"] == "in-app"
+
+
+def test_empty_pipeline_accepts_first_graph(user):
+    created = user.post("/api/pipelines", json={"name": "qa-empty", "nodes": [], "edges": []})
+    assert created.status_code == 201, created.text
+    empty = created.json()
+    graph = graph_payload(create_agent(user, "qa-first1"), create_agent(user, "qa-first2"))
+    graph["entryNodeId"] = empty["entryNodeId"]
+    saved = user.put(f"/api/pipelines/{empty['id']}", json=graph)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["entryNodeId"] == graph["nodes"][0]["id"]
+
+
 def test_pipeline_validate_valid_graph_ok(user):
     a1, a2 = create_agent(user, "qa-v3"), create_agent(user, "qa-v4")
     r = user.post("/api/pipelines/validate", json=graph_payload(a1, a2))
