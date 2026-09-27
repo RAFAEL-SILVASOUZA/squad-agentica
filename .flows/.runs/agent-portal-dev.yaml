@@ -1,7 +1,7 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-26T21:38:21.040Z
+finishedAt: 2026-09-27T00:50:32.942Z
 outcome: paused
 nodes:
   - id: arch
@@ -640,8 +640,28 @@ nodes:
     artifacts: []
   - id: qa-e2e
     name: QA E2E
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - docs/superpowers/handoffs/qa-e2e.md
+      - e2e/.gitignore
+      - e2e/README.md
+      - e2e/fixtures.ts
+      - e2e/helpers/index.ts
+      - e2e/helpers/pipeline-mock.ts
+      - e2e/package-lock.json
+      - e2e/package.json
+      - e2e/playwright.config.ts
+      - e2e/tests/01-auth.spec.ts
+      - e2e/tests/02-first-use.spec.ts
+      - e2e/tests/03-create-agent.spec.ts
+      - e2e/tests/04-library.spec.ts
+      - e2e/tests/05-pipeline-editor.spec.ts
+      - e2e/tests/06-run-monitor.spec.ts
+      - e2e/tests/07-approvals.spec.ts
+      - e2e/tests/08-loop.spec.ts
+      - e2e/tests/09-cross-cutting.spec.ts
+      - e2e/tools/db.py
+      - e2e/tsconfig.json
   - id: qa-fix
     name: QA Fix
     status: pending
