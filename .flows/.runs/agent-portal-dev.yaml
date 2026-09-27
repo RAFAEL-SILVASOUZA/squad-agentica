@@ -1,8 +1,8 @@
 version: 1
 flow: Agent Portal Dev
 startedAt: 2026-09-24T11:17:59.683Z
-finishedAt: 2026-09-27T00:50:32.942Z
-outcome: paused
+finishedAt: 2026-09-27T20:52:32.000Z
+outcome: completed
 nodes:
   - id: arch
     name: Arquiteto de Sistema
@@ -664,13 +664,105 @@ nodes:
       - e2e/tsconfig.json
   - id: qa-fix
     name: QA Fix
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-orchestrator/app/api/agent_chat.py
+      - agent-orchestrator/app/api/approvals.py
+      - agent-orchestrator/app/api/artifacts.py
+      - agent-orchestrator/app/api/integrations.py
+      - agent-orchestrator/app/api/mcp_servers.py
+      - agent-orchestrator/app/api/pipeline_runs.py
+      - agent-orchestrator/app/api/pipelines.py
+      - agent-orchestrator/app/approvals/service.py
+      - agent-orchestrator/app/compiler/graph_builder.py
+      - agent-orchestrator/app/core/errors.py
+      - agent-orchestrator/app/db/models.py
+      - agent-orchestrator/app/runtime/executor.py
+      - agent-orchestrator/app/runtime/worker_client.py
+      - agent-orchestrator/tests/test_agent_chat.py
+      - agent-orchestrator/tests/test_rt_executor.py
+      - agent-portal/app/(dashboard)/agents/new/page.tsx
+      - agent-portal/components/layout/app-sidebar.tsx
+      - agent-portal/components/library/knowledge-view.test.tsx
+      - agent-portal/components/library/tools-editor.tsx
+      - agent-portal/components/ui/modal.tsx
+      - agent-worker/app/minio_client.py
+      - docker-compose.override.yml
+      - docs/superpowers/handoffs/qa-fix.md
+      - e2e/tests/06-run-monitor.spec.ts
+      - garage/Dockerfile.init
+      - garage/init.sh
+      - tests/integration/test_04_pipeline.py
+      - tests/integration/test_05_hitl.py
+      - tests/integration/test_07_security.py
   - id: qa-fix-rest
     name: QA Fix Médias e Baixas
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - .env.example
+      - agent-orchestrator/app/api/auth.py
+      - agent-orchestrator/app/api/knowledge.py
+      - agent-orchestrator/app/api/pipelines.py
+      - agent-orchestrator/app/core/config.py
+      - agent-orchestrator/app/core/embeddings.py
+      - agent-orchestrator/app/core/llm.py
+      - agent-orchestrator/app/core/log_redaction.py
+      - agent-orchestrator/app/integrations/github.py
+      - agent-orchestrator/app/knowledge/extract.py
+      - agent-orchestrator/app/main.py
+      - agent-orchestrator/pyproject.toml
+      - agent-orchestrator/tests/test_auth.py
+      - agent-orchestrator/tests/test_core_providers.py
+      - agent-orchestrator/tests/test_integrations_github_mock.py
+      - agent-orchestrator/tests/test_knowledge_extract.py
+      - agent-orchestrator/tests/test_log_redaction.py
+      - agent-portal/app/(dashboard)/pipelines/[id]/page.test.tsx
+      - agent-portal/app/(dashboard)/pipelines/[id]/page.tsx
+      - agent-portal/app/(dashboard)/pipelines/page.test.tsx
+      - agent-portal/app/(dashboard)/pipelines/page.tsx
+      - agent-portal/components/EdgePanel.test.tsx
+      - agent-portal/components/EdgePanel.tsx
+      - agent-portal/components/FlowEditor.tsx
+      - agent-portal/components/agents/agent-detail.test.tsx
+      - agent-portal/components/agents/agent-detail.tsx
+      - agent-portal/components/flow/agent-node.test.tsx
+      - agent-portal/components/flow/agent-node.tsx
+      - agent-portal/components/flow/agent-palette.tsx
+      - agent-portal/components/flow/validation.test.ts
+      - agent-portal/components/flow/validation.ts
+      - agent-portal/components/library/knowledge-view.tsx
+      - agent-portal/components/library/tools-editor.test.tsx
+      - agent-portal/lib/agent-chat.ts
+      - agent-portal/lib/api.test.ts
+      - agent-portal/lib/api.ts
+      - agent-portal/lib/auth-client.ts
+      - agent-worker/app/core/llm.py
+      - agent-worker/app/worker.py
+      - agent-worker/tests/test_llm_provider.py
+      - agent-worker/tests/test_output_ports.py
+      - docker-compose.yml
+      - e2e/helpers/pipeline-mock.ts
+      - e2e/tests/02-first-use.spec.ts
+      - e2e/tests/05-pipeline-editor.spec.ts
+      - e2e/tools/db.py
+      - nginx/nginx.conf
+      - tests/integration/test_02_agent_lifecycle.py
+      - tests/integration/test_04_pipeline.py
   - id: qa-final
     name: QA Final Approval
-    status: pending
-    artifacts: []
+    status: done
+    artifacts:
+      - agent-portal/app/(dashboard)/page.test.tsx
+      - agent-portal/app/(dashboard)/page.tsx
+      - agent-portal/app/(dashboard)/pipelines/page.test.tsx
+      - agent-portal/app/(dashboard)/pipelines/page.tsx
+      - agent-portal/components/FlowEditor.tsx
+      - agent-portal/components/library/knowledge-view.test.tsx
+      - agent-portal/components/library/knowledge-view.tsx
+      - agent-portal/components/monitor/pipeline-monitor.tsx
+      - agent-portal/components/ui/button.tsx
+      - agent-portal/components/ui/modal.test.tsx
+      - agent-portal/components/ui/modal.tsx
+      - docs/superpowers/handoffs/qa-fix-rest.md
+      - docs/superpowers/validacoes/PENDENCIAS.md
+      - docs/superpowers/validacoes/qa-final.md
