@@ -23,7 +23,14 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-GITHUB_API_BASE = "https://api.github.com"
+DEFAULT_GITHUB_API_BASE = "https://api.github.com"
+
+
+def _api_base() -> str:
+    """Base da API (``GITHUB_API_BASE``): GitHub Enterprise ou servidor de teste."""
+    from app.core.config import settings
+
+    return (settings.github_api_base or DEFAULT_GITHUB_API_BASE).rstrip("/")
 
 # Marcadores de dados externos (spec 14.1)
 EXTERNAL_DATA_START = "<<<EXTERNAL_DATA>>>"
@@ -131,7 +138,7 @@ async def list_repos(owner: str) -> list[dict[str, Any]]:
     token = _get_token()
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
-            f"{GITHUB_API_BASE}/users/{owner}/repos",
+            f"{_api_base()}/users/{owner}/repos",
             headers=_headers(token),
             params={"per_page": 100},
         )
@@ -168,7 +175,7 @@ async def list_pulls(
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
-            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls",
+            f"{_api_base()}/repos/{owner}/{repo}/pulls",
             headers=_headers(token),
             params=params,
         )
@@ -212,7 +219,7 @@ async def list_issues(
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
-            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues",
+            f"{_api_base()}/repos/{owner}/{repo}/issues",
             headers=_headers(token),
             params=params,
         )
@@ -246,7 +253,7 @@ async def get_pr_diff(owner: str, repo: str, number: int) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=30.0) as client:
         # Obter o diff
         response = await client.get(
-            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{number}",
+            f"{_api_base()}/repos/{owner}/{repo}/pulls/{number}",
             headers={**_headers(token), "Accept": "application/vnd.github.diff"},
         )
     _raise_for_github_error(response)
@@ -255,7 +262,7 @@ async def get_pr_diff(owner: str, repo: str, number: int) -> dict[str, Any]:
     # Obter os arquivos da PR
     async with httpx.AsyncClient(timeout=30.0) as client:
         response_files = await client.get(
-            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{number}/files",
+            f"{_api_base()}/repos/{owner}/{repo}/pulls/{number}/files",
             headers=_headers(token),
             params={"per_page": 100},
         )

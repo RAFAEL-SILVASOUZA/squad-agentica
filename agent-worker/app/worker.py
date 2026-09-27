@@ -982,7 +982,17 @@ def _tools_to_openai_format(tools: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def _parse_output(response_text: str, snapshot: AgentSnapshot) -> dict[str, Any]:
-    """Tenta parsear a resposta do LLM como JSON estruturado."""
+    """Parseia a resposta do LLM e a entrega nas portas declaradas do agente."""
+    parsed = _parse_json_object(response_text)
+    if parsed is None:
+        parsed = {"output": response_text}
+    result = _map_to_declared_outputs(parsed, snapshot)
+    if "_action" not in result:
+        result["_action"] = snapshot.actions[0] if snapshot.actions else "follow"
+    return result
+
+
+def _parse_json_object(response_text: str) -> dict[str, Any] | None:
     try:
         result = json.loads(response_text)
         if isinstance(result, dict):
@@ -999,16 +1009,21 @@ def _parse_output(response_text: str, snapshot: AgentSnapshot) -> dict[str, Any]
                 return result
         except (json.JSONDecodeError, ValueError):
             pass
+    return None
 
-    # Fallback: texto bruto na primeira output.
-    fallback: dict[str, Any] = {}
-    if snapshot.outputs:
-        first_output_name = snapshot.outputs[0].get("name", "output")
-        fallback[first_output_name] = response_text
-    else:
-        fallback["output"] = response_text
 
-    if "_action" not in fallback:
-        fallback["_action"] = snapshot.actions[0] if snapshot.actions else "follow"
+def _map_to_declared_outputs(parsed: dict[str, Any], snapshot: AgentSnapshot) -> dict[str, Any]:
+    """F18: a saída sai pela porta declarada (contrato de ports), não por ``output``.
 
-    return fallback
+    Se a resposta não traz nenhuma porta declarada, o conteúdo genérico
+    (``output``, ou o objeto inteiro sem ``_action``) vai para a primeira porta.
+    """
+    declared = [o.get("name") for o in snapshot.outputs if o.get("name")]
+    if not declared or any(name in parsed for name in declared):
+        return parsed
+    content = {k: v for k, v in parsed.items() if k != "_action"}
+    value = content.pop("output") if "output" in content else (content or "")
+    result: dict[str, Any] = {declared[0]: value}
+    if "_action" in parsed:
+        result["_action"] = parsed["_action"]
+    return result

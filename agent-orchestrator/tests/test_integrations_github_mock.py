@@ -113,6 +113,24 @@ class TestListRepos:
         assert repos[1]["private"] is True
 
     @pytest.mark.asyncio
+    async def test_api_base_configurable(self) -> None:
+        """F17: GITHUB_API_BASE aponta para GitHub Enterprise ou servidor fake."""
+        mock_client = _make_mock_client([_response(200, json_data=[])])
+        urls: list[str] = []
+        original_get = mock_client.get
+
+        async def _spy_get(url: str, *args, **kwargs) -> httpx.Response:
+            urls.append(url)
+            return await original_get(url, *args, **kwargs)
+
+        mock_client.get = _spy_get
+        with patch("app.core.config.settings.github_token", "fake-token"):
+            with patch("app.core.config.settings.github_api_base", "http://fake-gh:8080/api/v3/"):
+                with patch("httpx.AsyncClient", return_value=mock_client):
+                    await list_repos("myorg")
+        assert urls == ["http://fake-gh:8080/api/v3/users/myorg/repos"]
+
+    @pytest.mark.asyncio
     async def test_list_repos_token_not_configured(self) -> None:
         with patch("app.core.config.settings.github_token", ""):
             with pytest.raises(AppError) as exc_info:

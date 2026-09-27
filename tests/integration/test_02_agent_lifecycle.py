@@ -268,9 +268,10 @@ def test_github_endpoints_structured_errors(user):
 def test_github_with_mocked_api():
     """Integracao GitHub com API mockada (cenario 2).
 
-    Nao executavel contra o stack: ``app/integrations/github.py`` fixa
-    ``GITHUB_API_BASE = "https://api.github.com"`` sem override por ambiente,
-    entao nao ha como apontar o orchestrator para um GitHub fake. Registrado no
-    relatorio (qa-integration.md, F-GH).
+    F17 corrigido: ``GITHUB_API_BASE`` (settings) permite apontar o orchestrator
+    para um GitHub fake; a URL repassada e coberta em
+    ``agent-orchestrator/tests/test_integrations_github_mock.py``. Contra o stack
+    compartilhado continua pulado: exigiria subir o orchestrator com
+    ``GITHUB_API_BASE`` de um servidor fake alcancavel pela rede do compose.
     """
-    pytest.skip("GITHUB_API_BASE hard-coded em app/integrations/github.py: sem ponto de mock externo")
+    pytest.skip("requer stack com GITHUB_API_BASE apontando para um GitHub fake (coberto no unit test)")

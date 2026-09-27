@@ -36,6 +36,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.knowledge.embedder import get_embedder
+from app.knowledge.extract import UnreadableDocumentError, extract_text
 from app.knowledge.rag import RagService
 from app.knowledge.storage import KnowledgeStorage, get_knowledge_storage
 
@@ -398,6 +399,12 @@ async def upload_document(
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise AppError(400, "validation error", "file_too_large")
+    try:
+        content = extract_text(data, ext)
+    except UnreadableDocumentError:
+        raise AppError(
+            400, "validation error", "invalid_file_type", {"errors": ["PDF ilegível"]}
+        ) from None
 
     storage = _get_storage()
     rag = _get_rag_service()
@@ -425,9 +432,7 @@ async def upload_document(
 
     # Indexa: chunk -> embed -> insert vector.
     try:
-        await rag.ingest_document(
-            db, kb, doc, content=data.decode("utf-8", errors="replace")
-        )
+        await rag.ingest_document(db, kb, doc, content=content)
     except Exception as e:
         await db.rollback()
         raise AppError(500, "internal error", "ingest_error") from e
