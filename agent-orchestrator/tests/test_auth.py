@@ -227,6 +227,21 @@ class TestLogin:
         assert "retryAfter" in data["details"]
 
 
+    async def test_login_rate_limit_is_per_account(
+        self, client: AsyncClient, registered_user: User
+    ):
+        """Logins chegam todos do IP do portal: o limite de uma conta não bloqueia outra."""
+        for _ in range(6):
+            await client.post(
+                "/api/auth/login",
+                json={"email": "attacker-target@example.com", "password": "wrongpass"},
+            )
+        resp = await client.post(
+            "/api/auth/login",
+            json={"email": "test@example.com", "password": "testpass123"},
+        )
+        assert resp.status_code == 200
+
 # ---------------------------------------------------------------------------
 # Refresh tests
 # ---------------------------------------------------------------------------

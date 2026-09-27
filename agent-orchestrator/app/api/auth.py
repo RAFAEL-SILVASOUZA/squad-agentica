@@ -84,12 +84,16 @@ async def login(
 ) -> TokenResponse:
     """Login with email/password. Returns access + refresh tokens.
 
-    Rate limited: 5 requests/min per IP. Generic error message (does not
-    reveal if the email exists).
+    Rate limited: 5 requests/min per (IP, email). Generic error message (does
+    not reveal if the email exists).
     """
-    # Rate limiting by client IP.
+    # O login real chega pelo authorize() do NextAuth, no servidor do portal:
+    # o IP é sempre o do container do portal. Só por IP, todos os usuários
+    # dividiam 5 logins/min (o 6º login do minuto falhava para qualquer um).
+    # A chave inclui o e-mail: segue limitando força bruta numa conta.
     client_ip = request.client.host if request.client else "unknown"
-    allowed, retry_after = login_rate_limiter.is_allowed(client_ip)
+    rate_key = f"{client_ip}:{body.email.strip().lower()}"
+    allowed, retry_after = login_rate_limiter.is_allowed(rate_key)
     if not allowed:
         raise AppError(
             429,
