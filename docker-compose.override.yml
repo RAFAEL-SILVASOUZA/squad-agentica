@@ -8,11 +8,16 @@ services:
     build:
       context: ./agent-orchestrator
       dockerfile: Dockerfile
-    # Dev: sobrepõe o entrypoint de produção (alembic + seed + uvicorn) para rodar
-    # uvicorn com --reload direto. Sem isso o command seria anexado ao entrypoint.
-    entrypoint: ["uvicorn"]
-    command: >
-      app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Dev: sobrepõe o entrypoint de produção para rodar uvicorn com --reload,
+    # mas mantém `alembic upgrade head` antes (idempotente): sem isso, num
+    # banco novo (docker compose down -v) as tabelas não existem e todo o
+    # stack quebra em runtime (register/execute dão UndefinedTableError).
+    # O seed (admin) segue tolerante: `|| true` como na produção.
+    entrypoint: ["bash", "-c"]
+    # Lista (não `>`): o compose junta o comando num único argumento, e o
+    # `>` colapsaria a linha em um arg só, quebrando o `bash -c`.
+    command:
+      - alembic upgrade head || true; python -m app.db.seed || true; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./agent-orchestrator:/app
     # --reload exige watchfiles; instalado no pyproject do orchestrator.

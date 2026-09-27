@@ -40,6 +40,7 @@ ACCESS_KEY="${MINIO_ROOT_USER:?MINIO_ROOT_USER é obrigatório}"
 SECRET_KEY="${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD é obrigatório}"
 BUCKET_AGENTS="${MINIO_BUCKET_AGENTS:-agents}"
 BUCKET_SKILLS="${MINIO_BUCKET_SKILLS:-skills}"
+BUCKET_KNOWLEDGE="${MINIO_BUCKET_KNOWLEDGE:-knowledge}"
 RPC_SECRET="${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET é obrigatório}"
 ADMIN_TOKEN="${GARAGE_ADMIN_TOKEN:?GARAGE_ADMIN_TOKEN é obrigatório}"
 WAIT_MAX="${GARAGE_WAIT_MAX:-120}"
@@ -105,21 +106,24 @@ echo "[garage-init] usuário S3 importado (ou já existia)."
 # --- (d) Criar buckets ---
 # `garage bucket create` falha com 409 se o bucket já existe; usamos `|| true`
 # para idempotência. Os buckets são privados por padrão (sem política pública).
-echo "[garage-init] criando bucket ${BUCKET_AGENTS}..."
-garage bucket create "$BUCKET_AGENTS" 2>/dev/null || true
-echo "[garage-init] criando bucket ${BUCKET_SKILLS}..."
-garage bucket create "$BUCKET_SKILLS" 2>/dev/null || true
+# O bucket `knowledge` é obrigatório (F5: upload de documentos de knowledge
+# falhava com AccessDenied porque o bucket não existia nem estava autorizado).
+for BUCKET in "$BUCKET_AGENTS" "$BUCKET_SKILLS" "$BUCKET_KNOWLEDGE"; do
+  echo "[garage-init] criando bucket ${BUCKET}..."
+  garage bucket create "$BUCKET" 2>/dev/null || true
+done
 
 # --- (e) Conceder permissões ao usuário S3 nos buckets ---
-# O usuário precisa de read/write/owner nos dois buckets.
+# O usuário precisa de read/write/owner em todos os buckets.
 # `garage bucket allow` é idempotente: se a permissão já existe, não falha.
 echo "[garage-init] concedendo permissões ao usuário S3..."
-garage bucket allow --read --write --owner "$BUCKET_AGENTS" --key "$ACCESS_KEY" 2>/dev/null || true
-garage bucket allow --read --write --owner "$BUCKET_SKILLS" --key "$ACCESS_KEY" 2>/dev/null || true
+for BUCKET in "$BUCKET_AGENTS" "$BUCKET_SKILLS" "$BUCKET_KNOWLEDGE"; do
+  garage bucket allow --read --write --owner "$BUCKET" --key "$ACCESS_KEY" 2>/dev/null || true
+done
 
 # --- (f) Verificação final ---
 echo "[garage-init] verificando buckets..."
 garage bucket list 2>/dev/null || true
-echo "[garage-init] buckets prontos: ${BUCKET_AGENTS}, ${BUCKET_SKILLS}"
+echo "[garage-init] buckets prontos: ${BUCKET_AGENTS}, ${BUCKET_SKILLS}, ${BUCKET_KNOWLEDGE}"
 echo "[garage-init] bootstrap concluído com sucesso."
 exit 0

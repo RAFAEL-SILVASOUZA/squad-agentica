@@ -96,6 +96,29 @@ class AgentArtifactClient(Protocol):
 # ---------------------------------------------------------------------------
 
 
+def _normalize_endpoint(endpoint: str) -> tuple[str, bool]:
+    """Normaliza o endpoint para o client ``minio`` (F3).
+
+    O client Python ``minio`` aceita APENAS ``host:port`` como endpoint
+    (schema ``http://``/``https://`` -> ``ValueError: path in endpoint is not
+    allowed``). A variavel ``MINIO_ENDPOINT`` do ``.env`` vem com schema
+    (``http://garage:3900``); o orchestrator normaliza via
+    ``settings.minio_endpoint_host`` — o worker fazia a mesma normalizacao
+    aqui (F3: todo /execute falhava com ``ValueError: path in endpoint is
+    not allowed``).
+
+    Returns:
+        Tupla ``(host, secure)``: host sem schema e bool de https.
+    """
+    value = endpoint.strip()
+    secure = value.startswith("https://")
+    for prefix in ("https://", "http://"):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+            break
+    return value, secure
+
+
 class GarageClient:
     """Cliente S3 (Garage) para download de artefatos do worker."""
 
@@ -108,11 +131,12 @@ class GarageClient:
         bucket_skills: str = MINIO_BUCKET_SKILLS,
         cache: LocalCache | None = None,
     ) -> None:
+        host, secure = _normalize_endpoint(endpoint)
         self._client = Minio(
-            endpoint,
+            host,
             access_key=access_key,
             secret_key=secret_key,
-            secure=False,
+            secure=secure,
         )
         self._bucket_agents = bucket_agents
         self._bucket_skills = bucket_skills

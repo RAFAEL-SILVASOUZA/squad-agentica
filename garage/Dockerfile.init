@@ -1,0 +1,26 @@
+# Imagem one-shot do bootstrap do Garage (F5).
+#
+# O binário `garage` é **bundled/static** (features: bundled-libs, lmdb), então
+# roda numa base slim com shell. A imagem `dxflrs/garage:v2.4.1` (distroless,
+# sem shell) não consegue executar o `garage/init.sh` que importa a access key
+# S3 (`garage key import`) — passo que o `init.py` (S3 API puro) não faz.
+#
+# F5: num volume novo, sem `garage key import` a access key S3 não existe, e
+# NENHUM bucket (nem `agents`/`skills`) pode ser criado via S3 (AccessDenied).
+# Este bootstrap roda o `garage/init.sh` (CLI) que:
+#   1. importa a access key S3 (MINIO_ROOT_USER/MINIO_ROOT_PASSWORD)
+#   2. cria os buckets (agents, skills, knowledge)
+#   3. concede permissões read/write/owner ao usuário S3
+
+FROM dxflrs/garage:v2.4.1 AS garage-binary
+
+FROM python:3.11-slim
+
+# Mantém o caminho /garage: o init.sh chama o binário por caminho absoluto.
+COPY --from=garage-binary /garage /garage
+COPY init.sh /init.sh
+COPY garage.toml /etc/garage.toml
+RUN chmod +x /init.sh
+
+# O script espera o Garage responder (loop de health com timeout) e é idempotente.
+ENTRYPOINT ["/bin/sh", "/init.sh"]
