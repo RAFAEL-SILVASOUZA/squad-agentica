@@ -595,7 +595,7 @@ class TestApprovalInterrupt:
             node_id: str,
             interrupt_payload: Any,
             thread_id: str,
-        ) -> None:
+        ) -> str:
             hook_calls.append(
                 {
                     "run_id": run_id,
@@ -605,6 +605,24 @@ class TestApprovalInterrupt:
                     "thread_id": thread_id,
                 }
             )
+            # O hook REAL (build_approval_hook) persiste a ApprovalRequest e
+            # emite approval:new (testado em test_hitl_approval.py). O mock
+            # espelha esse comportamento para o contrato §7.
+            from app.runtime.executor import ws_publish
+
+            await ws_publish(
+                "owner-1",
+                "approval:new",
+                {
+                    "approvalId": "appr-1",
+                    "pipelineId": pipeline_id,
+                    "runId": run_id,
+                    "nodeId": node_id,
+                    "message": (interrupt_payload or {}).get("message", ""),
+                    "at": "t",
+                },
+            )
+            return "appr-1"
 
         register_approval_hook(mock_hook)
 

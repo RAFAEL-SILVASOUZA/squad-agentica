@@ -26,13 +26,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.core.config import settings
 from app.core.errors import AppError
 from app.db.models import ApprovalRequest, PipelineRun, User
 from app.db.session import get_db
@@ -118,7 +117,7 @@ async def list_approvals(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     status: str | None = None,
-    pipeline_id: str | None = None,
+    pipeline_id: Annotated[str | None, Query(alias="pipelineId")] = None,
     page: int = 1,
     limit: int = 20,
 ) -> dict[str, Any]:
@@ -301,25 +300,7 @@ async def _trigger_resume(
     resume_value: dict[str, Any],
     db: AsyncSession,
 ) -> None:
-    """Chama compile_and_resume do nó hitl-resume (FASE 7, em paralelo).
-
-    Importado pela assinatura do contrato. Se o nó hitl-resume ainda não
-    existe (import falha), loga um warning e adia o resume (a ApprovalRequest
-    já está marcada; o resume pode ser feito manualmente via
-    POST /api/pipelines/{id}/resume).
-
-    O resume é feito em background (não bloqueia a resposta da API).
-    """
-    try:
-        from app.approvals.resume import compile_and_resume  # noqa: PLC0415
-    except ImportError:
-        logger.warning(
-            "compile_and_resume not available (hitl-resume not implemented yet); "
-            "resume deferred",
-            extra={"approval_id": str(approval.id)},
-        )
-        return
-
+    """Retoma pelo executor compartilhado, preservando eventos e checkpoints."""
     if approval.run_id is None:
         logger.warning(
             "approval has no run_id; cannot resume",
@@ -327,24 +308,25 @@ async def _trigger_resume(
         )
         return
 
-    # O resume precisa do checkpointer e da pipeline. Carrega a pipeline.
-    # (O nó hitl-resume fornece compile_and_resume; aqui só orquestramos.)
+    # Reuse the runtime executor: async checkpoints, node events, persistence
+    # and subsequent approval hooks must follow the same path as execute.
     try:
-        from app.runtime.checkpoint import create_checkpointer  # noqa: PLC0415
+        from langgraph.types import Command
 
-        checkpointer = await create_checkpointer(settings.database_url)
-        thread_id = f"{approval.pipeline_id}:{approval.run_id}"
+        from app.api.pipeline_runs import get_executor
+        from app.approvals.resume import _load_pipeline_from_db
+        from app.runtime.executor import get_active_run
 
-        # compile_and_resume recompila o grafo do JSON (ADR-004) e chama
-        # ainvoke(Command(resume=...)). A sessão é passada para que a
-        # pipeline seja carregada do DB.
-        await compile_and_resume(
-            pipeline_id=str(approval.pipeline_id),
+        pipeline = await _load_pipeline_from_db(db, approval.pipeline_id)
+        executor = await get_executor()
+        active = get_active_run(str(approval.pipeline_id))
+        if active and active.task:
+            await active.task
+        await executor.resume(
+            pipeline,
+            owner_id=str(approval.owner_id),
             run_id=str(approval.run_id),
-            checkpointer=checkpointer,
-            thread_id=thread_id,
-            resume_value=resume_value,
-            session=db,
+            resume_input=Command(resume=resume_value),
         )
     except Exception:
         logger.exception(

@@ -82,6 +82,11 @@ async def _shutdown_executor() -> None:
     _checkpointer = None
 
 
+# Nomes públicos usados no lifespan do app (main.py).
+get_executor = _get_executor
+shutdown_executor = _shutdown_executor
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -133,10 +138,17 @@ def _pipeline_to_dict(
 
 
 async def _load_pipeline(
-    db: AsyncSession, pipeline_id: uuid.UUID
+    db: AsyncSession, pipeline_id: uuid.UUID, owner_id: uuid.UUID | None = None
 ) -> tuple[Pipeline, list[PipelineNode], list[PipelineEdge]]:
-    """Load pipeline with nodes and edges from DB."""
-    result = await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
+    """Load pipeline with nodes and edges from DB.
+
+    Se ``owner_id`` for fornecido, pipelines de outro owner viram 404
+    (F4: isolamento do runtime de pipeline).
+    """
+    stmt = select(Pipeline).where(Pipeline.id == pipeline_id)
+    if owner_id is not None:
+        stmt = stmt.where(Pipeline.owner_id == owner_id)
+    result = await db.execute(stmt)
     pipeline = result.scalar_one_or_none()
     if pipeline is None:
         raise AppError(404, "not_found", "pipeline_not_found")
@@ -203,8 +215,22 @@ async def execute_pipeline(
     Creates a new PipelineRun and starts execution.
     409 if already running. 429 if rate limited.
     """
-    # Load pipeline.
-    db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id)
+    # Load pipeline (só do owner; F4).
+    db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id, user.owner_id)
+
+    # 409 se já existe run running/paused no banco (fonte durável; o in-memory
+    # do executor é a segunda camada).
+    existing = await db.execute(
+        select(PipelineRun).where(
+            PipelineRun.pipeline_id == pipeline_id,
+            PipelineRun.status == "running",
+        )
+    )
+    running_run = existing.scalars().first()
+    if running_run is not None:
+        raise AppError(
+            409, "conflict", "pipeline_already_running", {"runId": str(running_run.id)}
+        )
 
     # Build Pipeline object for the compiler.
     pipeline_dict = _pipeline_to_dict(db_pipeline, nodes, edges)
@@ -213,7 +239,7 @@ async def execute_pipeline(
     # Get executor.
     executor = await _get_executor()
 
-    # Create PipelineRun in DB.
+    # Create PipelineRun in DB (runId único; F7: o executor usa ESTE id).
     run_id = str(uuid.uuid4())
     thread_id = f"{pipeline_id}:{run_id}"
     run = PipelineRun(
@@ -230,13 +256,13 @@ async def execute_pipeline(
     db_pipeline.status = "running"
     db_pipeline.started_at = datetime.now(UTC)
 
-    await db.commit()
-
-    # Start execution (may raise 409/429).
+    # Start execution (pode lançar 409/429). Em erro, o run NÃO vira órfão
+    # (F8): removemos antes de re-levantar o envelope.
     try:
-        await executor.execute(pipeline, owner_id=str(user.owner_id))
+        await executor.execute(
+            pipeline, owner_id=str(user.owner_id), run_id=run_id
+        )
     except PipelineAlreadyRunningError as e:
-        # Rollback the run creation.
         await db.rollback()
         raise AppError(
             409, "conflict", "pipeline_already_running", {"runId": e.run_id}
@@ -246,6 +272,8 @@ async def execute_pipeline(
         raise AppError(
             429, "rate_limited", "rate_limited", {"retryAfter": e.retry_after}
         ) from e
+
+    await db.commit()
 
     return {
         "runId": run_id,
@@ -264,6 +292,14 @@ async def pause_pipeline(
 
     Pauses the active execution. The checkpoint is preserved.
     """
+    # Dono da pipeline (F4).
+    owner_result = await db.execute(
+        select(Pipeline.owner_id).where(Pipeline.id == pipeline_id)
+    )
+    owner_id = owner_result.scalar_one_or_none()
+    if owner_id is None or owner_id != user.owner_id:
+        raise AppError(404, "not_found", "pipeline_not_found")
+
     executor = await _get_executor()
 
     try:
@@ -304,8 +340,8 @@ async def resume_pipeline(
     Resumes a paused execution from the last checkpoint.
     Recompiles the graph (ADR-004) and continues via thread_id.
     """
-    # Load pipeline.
-    db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id)
+    # Load pipeline (só do owner; F4).
+    db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id, user.owner_id)
 
     # Find the paused run.
     result = await db.execute(
@@ -356,6 +392,14 @@ async def stop_pipeline(
 
     Cancels the active run and all pending approvals.
     """
+    # Dono da pipeline (F4).
+    owner_result = await db.execute(
+        select(Pipeline.owner_id).where(Pipeline.id == pipeline_id)
+    )
+    owner_id = owner_result.scalar_one_or_none()
+    if owner_id is None or owner_id != user.owner_id:
+        raise AppError(404, "not_found", "pipeline_not_found")
+
     executor = await _get_executor()
 
     try:
@@ -425,16 +469,21 @@ async def list_runs(
 ) -> dict[str, Any]:
     """GET /api/pipelines/:id/runs
 
-    Lists runs of a pipeline (paginated, spec §8).
+    Lists runs of a pipeline (paginated, spec §8). F4: só do owner.
     """
-    # Verify pipeline exists.
-    result = await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
+    result = await db.execute(
+        select(Pipeline).where(
+            Pipeline.id == pipeline_id, Pipeline.owner_id == user.owner_id
+        )
+    )
     if result.scalar_one_or_none() is None:
         raise AppError(404, "not_found", "pipeline_not_found")
 
-    # Count total.
+    # Count total (ordenado por started_at desc para paginação estável).
     count_result = await db.execute(
-        select(PipelineRun).where(PipelineRun.pipeline_id == pipeline_id)
+        select(PipelineRun)
+        .where(PipelineRun.pipeline_id == pipeline_id)
+        .order_by(PipelineRun.started_at.desc())
     )
     all_runs = list(count_result.scalars().all())
     total = len(all_runs)
@@ -461,10 +510,14 @@ async def list_checkpoints(
 ) -> dict[str, Any]:
     """GET /api/pipelines/:id/checkpoints
 
-    Lists checkpoints of a pipeline (paginated).
+    Lists checkpoints of a pipeline (paginated). F4: só do owner.
     """
-    # Verify pipeline exists.
-    result = await db.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
+    # Verify pipeline exists (só do owner; F4).
+    result = await db.execute(
+        select(Pipeline).where(
+            Pipeline.id == pipeline_id, Pipeline.owner_id == user.owner_id
+        )
+    )
     if result.scalar_one_or_none() is None:
         raise AppError(404, "not_found", "pipeline_not_found")
 
@@ -499,9 +552,10 @@ async def resume_from_checkpoint(
 
     Resumes execution from a specific checkpoint (time travel).
     This creates a new run that starts from the checkpoint's state.
+    F4: só do owner.
     """
-    # Load pipeline.
-    db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id)
+    # Load pipeline (só do owner; F4).
+    db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id, user.owner_id)
 
     # Find the checkpoint.
     result = await db.execute(
@@ -519,6 +573,8 @@ async def resume_from_checkpoint(
     pipeline = pipeline_from_dict(pipeline_dict)
 
     # Create a new run (time travel creates a new run from the checkpoint).
+    # O runId é este e o executor usa o MESMO id (F7). Em 409/429 o run
+    # é removido (F8: sem órfão).
     run_id = str(uuid.uuid4())
     thread_id = f"{pipeline_id}:{run_id}"
 
@@ -532,7 +588,6 @@ async def resume_from_checkpoint(
     )
     db.add(run)
     db_pipeline.status = "running"
-    await db.commit()
 
     # Get executor and resume from checkpoint state.
     executor = await _get_executor()
@@ -543,18 +598,25 @@ async def resume_from_checkpoint(
         await executor.execute(
             pipeline,
             owner_id=str(user.owner_id),
+            run_id=run_id,
             initial_inputs=checkpoint.state,
         )
     except PipelineAlreadyRunningError as e:
-        await db.rollback()
+        await db.delete(run)
+        db_pipeline.status = "draft"
+        await db.commit()
         raise AppError(
             409, "conflict", "pipeline_already_running", {"runId": e.run_id}
         ) from e
     except RateLimitError as e:
-        await db.rollback()
+        await db.delete(run)
+        db_pipeline.status = "draft"
+        await db.commit()
         raise AppError(
             429, "rate_limited", "rate_limited", {"retryAfter": e.retry_after}
         ) from e
+
+    await db.commit()
 
     return {
         "runId": run_id,

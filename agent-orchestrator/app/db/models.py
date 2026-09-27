@@ -213,6 +213,7 @@ ApprovalStatus = Enum(
     "approved",
     "rejected",
     "revised",
+    "cancelled",
     native_enum=False,
     length=16,
 )

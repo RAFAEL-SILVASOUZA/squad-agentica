@@ -45,6 +45,29 @@ class WorkerResponse:
     iterations: int = 1
     logs: list[str] = field(default_factory=list)
     error: str | None = None
+    # True quando TODAS as tentativas falharam por indisponibilidade do
+    # worker (timeout/conexão/5xx) — diferente de "failed" por erro de
+    # execução do agente (F14: worker fora do ar -> nó pausa, run retomável;
+    # falha do agente -> run failed). ADR-001.
+    worker_down: bool = False
+
+
+class WorkerUnavailableError(Exception):
+    """O worker ficou indisponível (F14/ADR-001).
+
+    Levantada pela node function quando TODAS as tentativas do worker_client
+    falharam por indisponibilidade (timeout/conexão/5xx). Diferente de uma
+    falha de execução do agente (``WorkerResponse(status="failed")``), a
+    indisponibilidade NÃO deve encerrar o grafo: o erro propaga para o
+    executor, que pausa o run (``pipeline:status = paused``) mantendo o
+    checkpoint do nó pendente — a retomada reexecuta o nó (ADR-001: nó falho
+    não aborta o grafo; retomada possível).
+    """
+
+    def __init__(self, node_id: str, detail: str) -> None:
+        super().__init__(f"worker unavailable for node {node_id}: {detail}")
+        self.node_id = node_id
+        self.detail = detail
 
 
 @runtime_checkable
@@ -317,7 +340,13 @@ def _make_agent_node(
             if src_output_name in src_data:
                 inputs[input_name] = src_data[src_output_name]
 
-        # 2. ADR-001: worker nunca levanta exceção.
+        # 2. ADR-001/F14: worker indisponível NÃO encerra o grafo.
+        #    O worker_client NUNCA levanta exceção (devolve failed); mas a
+        #    flag ``worker_down`` (todas as tentativas esgotadas por timeout/
+        #    conexão/5xx) vira WorkerUnavailableError para PAUSAR o run no
+        #    executor (retomável), em vez de marcar failed e enviar para END.
+        #    Falha de execução do agente (status="failed" sem worker_down)
+        #    continua encerrando a pipeline (comportamento antigo).
         try:
             resp = await worker_client.execute(
                 agent_id=agent.agent_id,
@@ -325,18 +354,17 @@ def _make_agent_node(
                 inputs=inputs,
                 timeout=timeout,
             )
-        except Exception as exc:  # noqa: BLE001 — ADR-001: nunca propaga
+        except Exception as exc:  # noqa: BLE001 — rede de segurança
             logger.exception(
                 "worker_client.execute raised unexpectedly for node %s", node_id
             )
-            resp = WorkerResponse(
-                status="failed",
-                outputs={},
-                action="follow",
-                iterations=0,
-                logs=[f"[{node_id}] unexpected error: {exc}"],
-                error=f"unexpected worker error: {exc}",
+            raise WorkerUnavailableError(node_id, f"unexpected: {exc}") from exc
+
+        if getattr(resp, "worker_down", False):
+            logger.warning(
+                "worker unavailable; pausing run at node %s", node_id
             )
+            raise WorkerUnavailableError(node_id, resp.error or "unavailable")
 
         # 3. Escrever outputs namespaceados por nodeId (ADR-003).
         new_data = {node_id: resp.outputs}

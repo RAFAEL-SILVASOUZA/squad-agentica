@@ -98,6 +98,11 @@ class HttpWorkerClient:
         }
 
         last_error: str = "unknown error"
+        # F14: ``worker_down`` = falhas por indisponibilidade (timeout, erro
+        # de conexão, 5xx do pool/replica caída). 4xx do worker (ex.: token
+        # inválido) indica worker ALCANÇÁVEL com erro de configuração: não é
+        # "worker fora" e o run falha (comportamento antigo).
+        worker_down = True
 
         for attempt in range(self._max_retries):
             try:
@@ -125,6 +130,8 @@ class HttpWorkerClient:
                 )
             except httpx.HTTPStatusError as e:
                 # 4xx/5xx that httpx raises with raise_for_status
+                if e.response.status_code < 500:
+                    worker_down = False  # worker alcançável; erro de configuração
                 last_error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
                 logger.warning(
                     "Worker HTTP error (attempt %d/%d) agent=%s node=%s: %s",
@@ -147,6 +154,7 @@ class HttpWorkerClient:
                     exc_info=True,
                 )
                 # Non-retryable: break immediately for unexpected errors.
+                worker_down = False
                 break
 
             # Backoff before next attempt (not after last).
@@ -177,6 +185,7 @@ class HttpWorkerClient:
             iterations=0,
             logs=[f"worker execution failed: {last_error}"],
             error=last_error,
+            worker_down=worker_down,
         )
 
     async def _post(

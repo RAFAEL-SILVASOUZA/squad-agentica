@@ -207,12 +207,15 @@ def build_approval_hook(session_factory: Any) -> Any:
        opcional ``__interruptId__`` no payload, injetado pelo executor.
     2. Upsert da ApprovalRequest (idempotente por chave).
     3. Se criada agora (``created=True``), dispara a notificação in-app.
+    4. Devolve o id da ApprovalRequest (o executor usa como ``approvalId`` do
+       evento ``approval:new``; F6: approvalId == id da API).
 
     Args:
         session_factory: async_sessionmaker (abre sessões para o hook).
 
     Returns:
-        O callback async com a assinatura do hook do executor.
+        O callback async com a assinatura do hook do executor; o callback
+        devolve o ``str(approval.id)`` persistido (ou None se não persistiu).
     """
 
     async def approval_hook(
@@ -221,7 +224,7 @@ def build_approval_hook(session_factory: Any) -> Any:
         node_id: str,
         interrupt_payload: Any,
         thread_id: str,
-    ) -> None:
+    ) -> str | None:
         # O executor injeta o task id real (PregelTask.id) no payload sob a key
         # ``__interruptId__`` (ver executor._handle_interrupt_from_tasks). Se não
         # estiver presente, derivamos uma chave estável a partir dos campos
@@ -261,7 +264,7 @@ def build_approval_hook(session_factory: Any) -> Any:
                     "approval hook: pipeline not found",
                     extra={"pipeline_id": pipeline_id},
                 )
-                return
+                return None
             owner_id = pipeline.owner_id
 
             approval, created = await upsert_approval_request(
@@ -294,5 +297,7 @@ def build_approval_hook(session_factory: Any) -> Any:
                         "node_id": node_id,
                     },
                 )
+
+            return str(approval.id)
 
     return approval_hook
