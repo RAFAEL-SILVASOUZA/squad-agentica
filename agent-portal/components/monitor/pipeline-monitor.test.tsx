@@ -1,6 +1,7 @@
 import * as React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act } from "react";
 import { PipelineMonitor } from "./pipeline-monitor";
 import { ToastProvider } from "@/components/ui/toast";
 import type { Pipeline, PipelineRun, Checkpoint } from "@/lib/types";
@@ -485,6 +486,31 @@ describe("PipelineMonitor", () => {
     expect(channels).toContain("agent:output");
     expect(channels).toContain("approval:new");
     expect(channels).toContain("approval:resolved");
+  });
+
+  it("shows the failure reason when the aggregated run status arrives as failed", async () => {
+    const pipeline = makePipeline();
+    mockGet.mockResolvedValue(pipeline);
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun()], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      // refetch após o status agregado: o run volta com o erro gravado.
+      .mockResolvedValueOnce({
+        items: [makeRun({ status: "failed", error: "Missing tool call type" })],
+        total: 1,
+        page: 1,
+        limit: 50,
+      });
+
+    renderMonitor();
+    await waitFor(() => expect(mockWsClient.connect).toHaveBeenCalled());
+    const onStatus = mockWsClient.on.mock.calls.find((c) => c[0] === "pipeline:status")?.[1] as (
+      d: Record<string, unknown>
+    ) => void;
+    await act(async () => {
+      onStatus({ pipelineId: "pipe-1", runId: "run-1", nodeId: "", status: "failed", at: "" });
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Missing tool call type");
   });
 
   it("filters logs by node", async () => {

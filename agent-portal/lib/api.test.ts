@@ -233,6 +233,16 @@ describe("errorMessageFromBody (E1)", () => {
     ).toBe("Dados inválidos. outputs.0.type: invalid port type");
   });
 
+  it("appends the validation detail to a specific code message", () => {
+    expect(
+      errorMessageFromBody(422, {
+        error: "validation failed",
+        code: "tool_validation_failed",
+        details: { errors: ["Script must define a function named 'execute'"] },
+      })
+    ).toBe("O código da tool não passou na validação. Script must define a function named 'execute'");
+  });
+
   it("keeps FastAPI detail outside the envelope", () => {
     expect(errorMessageFromBody(404, { detail: "Not Found" })).toBe("Not Found");
   });

@@ -51,9 +51,11 @@ def _validate_script(script: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "execute":
             has_execute = True
-            # Verifica se tem pelo menos um argumento (além de self se for method).
-            args = [a.arg for a in node.args.args]
-            if not args:
+            # O sandbox chama ``execute(**args)``: aceita parâmetros nomeados,
+            # keyword-only, ``*args`` ou ``**kwargs`` (o placeholder da UI é
+            # ``def execute(**kwargs)``, antes rejeitado no deploy).
+            a = node.args
+            if not (a.args or a.kwonlyargs or a.vararg or a.kwarg):
                 errors.append("Function 'execute' must have at least one parameter")
             break
 

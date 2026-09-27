@@ -404,6 +404,9 @@ export function ToolsEditor() {
               <div
                 style={{
                   display: "flex",
+                  // 4 ações não cabem no card de 280px: quebra de linha em
+                  // vez de cortar o "Excluir".
+                  flexWrap: "wrap",
                   gap: "8px",
                   marginTop: "12px",
                   paddingTop: "10px",

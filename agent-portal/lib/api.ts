@@ -67,7 +67,11 @@ function extractErrorMessage(
   body: { error?: unknown; detail?: unknown; code?: string; details?: unknown }
 ): { message: string; code: string } {
   const code = body.code ?? "";
-  if (CODE_MESSAGES[code]) return { message: CODE_MESSAGES[code], code };
+  if (CODE_MESSAGES[code]) {
+    // O detalhe (ex.: erro de validação do script) diz ao usuário o que corrigir.
+    const summary = validationSummary(body.details);
+    return { message: summary ? `${CODE_MESSAGES[code]} ${summary}` : CODE_MESSAGES[code], code };
+  }
   if (typeof body.error === "string" && ERROR_MESSAGES[body.error.trim()]) {
     const base = ERROR_MESSAGES[body.error.trim()];
     const summary = validationSummary(body.details);

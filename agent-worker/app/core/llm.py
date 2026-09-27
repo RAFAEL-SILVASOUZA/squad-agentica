@@ -65,6 +65,7 @@ class MockLLMClient:
             tool_name = tools[0]["function"]["name"]
             tool_call = {
                 "id": "call_mock_1",
+                "type": "function",
                 "function": {
                     "name": tool_name,
                     "arguments": json.dumps({"command": "echo hello"}),
@@ -126,6 +127,10 @@ class OpenAILLMClient:
             tool_calls = [
                 {
                     "id": tc.id,
+                    # "type" é obrigatório quando a mensagem volta ao modelo
+                    # no histórico; servidores locais (llama.cpp) rejeitam
+                    # com 500 "Missing tool call type" sem ele.
+                    "type": "function",
                     "function": {
                         "name": tc.function.name,
                         "arguments": tc.function.arguments,

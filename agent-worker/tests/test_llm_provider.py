@@ -45,3 +45,20 @@ async def test_configured_model_overrides_snapshot_model():
         result = await client.chat([{"role": "user", "content": "hi"}], model="gpt-4o")
     assert result == {"content": "ok", "tool_calls": None}
     assert create.await_args.kwargs["model"] == "local-model"
+
+
+@pytest.mark.asyncio
+async def test_tool_calls_carry_type_function():
+    """Sem "type", o llama.cpp rejeita o histórico com 500 "Missing tool call type"."""
+    fn = SimpleNamespace(name="list_directory", arguments='{"path": "."}')
+    message = SimpleNamespace(content="", tool_calls=[SimpleNamespace(id="c1", function=fn)])
+    with patch("openai.AsyncOpenAI") as sdk:
+        sdk.return_value.chat.completions.create = AsyncMock(
+            return_value=SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        )
+        client = llm_mod.OpenAILLMClient("", "http://x/v1", "m")
+        result = await client.chat(
+            [{"role": "user", "content": "hi"}], tools=[{"type": "function"}]
+        )
+    expected_fn = {"name": "list_directory", "arguments": '{"path": "."}'}
+    assert result["tool_calls"] == [{"id": "c1", "type": "function", "function": expected_fn}]

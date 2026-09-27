@@ -270,6 +270,26 @@ class TestWorkerDown:
             last_status = status_calls[-1][0][2]["status"]
             assert last_status == "failed"
 
+    async def test_failed_node_emits_logs_and_error(
+        self, executor: PipelineExecutor, worker: FakeWorker, saver: MemorySaver
+    ):
+        """pipeline:log (contrato §7) leva os logs do worker e o erro do nó; o run guarda o erro."""
+        pipeline = _simple_pipeline_a_b_c()
+        worker.set_fail(True)
+
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock) as mock_pub:
+            await executor.execute(pipeline, owner_id="owner-1")
+            active = get_active_run("p-test")
+            if active and active.task:
+                await asyncio.wait_for(active.task, timeout=10)
+
+            logs = [c[0][2] for c in mock_pub.call_args_list if c[0][1] == "pipeline:log"]
+            first = {"nodeId": "A", "level": "info", "message": "worker down"}
+            assert first.items() <= logs[0].items()
+            assert logs[-1]["level"] == "error"
+            assert logs[-1]["message"] == "connection refused"
+            assert active is not None and active.error == "connection refused"
+
     async def test_worker_down_resumable(
         self, executor: PipelineExecutor, worker: FakeWorker, saver: MemorySaver
     ):

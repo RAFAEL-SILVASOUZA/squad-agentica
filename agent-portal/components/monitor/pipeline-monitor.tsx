@@ -292,7 +292,18 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
 
         onStatus = (data: Record<string, unknown>) => {
           const event = data as unknown as PipelineStatusEvent;
-          if (!event.pipelineId || !event.nodeId) return;
+          if (!event.pipelineId) return;
+          if (!event.nodeId) {
+            // Status agregado do run: atualiza o cabeçalho sem recarregar e,
+            // no fim, busca o run de novo para trazer o motivo da falha.
+            setActiveRun((prev) =>
+              prev && (!event.runId || prev.id === event.runId)
+                ? { ...prev, status: event.status as PipelineRun["status"] }
+                : prev
+            );
+            if (event.status !== "running") void refreshRunsRef.current();
+            return;
+          }
           setNodeStatuses((prev) => ({
             ...prev,
             [event.nodeId]: event.status,
@@ -397,6 +408,21 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
       label: n.label ?? n.agentSnapshot.name,
     }));
   }, [pipeline]);
+
+  const refreshRuns = React.useCallback(async () => {
+    try {
+      const runsRes = await api.list<PipelineRun>(`/api/pipelines/${pipelineId}/runs`, { page: 1, limit: 50 });
+      setRuns(runsRes.items);
+      const sorted = [...runsRes.items].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      );
+      setActiveRun(sorted[0] ?? null);
+    } catch {
+      // Não crítico: o cabeçalho já foi atualizado pelo evento WS.
+    }
+  }, [pipelineId]);
+  const refreshRunsRef = React.useRef(refreshRuns);
+  refreshRunsRef.current = refreshRuns;
 
   // ── Action handlers ──
   const handleExecute = React.useCallback(async () => {
@@ -717,6 +743,29 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
           </Button>
         </div>
       </div>
+
+      {activeRun?.status === "failed" && activeRun.error && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-start",
+            padding: "10px 14px",
+            marginBottom: 12,
+            borderRadius: "var(--radius)",
+            border: "1px solid var(--error)",
+            background: "var(--error-bg)",
+            color: "var(--text)",
+            fontSize: 12,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          <strong style={{ color: "var(--error)", flexShrink: 0 }}>Falha na execução:</strong>
+          <span>{activeRun.error}</span>
+        </div>
+      )}
 
       {/* Main grid: graph + right panel */}
       <div

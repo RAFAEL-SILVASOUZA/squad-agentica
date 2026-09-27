@@ -119,12 +119,47 @@ export default function AgentDetailPage() {
     void loadOptions();
   }, [load, loadOptions]);
 
+  const handleSaveChat = React.useCallback(async () => {
+    if (!agent) return;
+    const merged = { ...agent, ...chatConfig } as Agent;
+    setSaving(true);
+    try {
+      const updated = await updateAgent(id, {
+        name: merged.name,
+        type: merged.type,
+        description: merged.description,
+        prompt: merged.prompt,
+        strategy: merged.strategy,
+        model: merged.model,
+        maxIterations: merged.maxIterations,
+        timeout: merged.timeout,
+        shellAccess: merged.shellAccess,
+        inputs: merged.inputs,
+        outputs: merged.outputs,
+        actions: merged.actions,
+        skills: merged.skills,
+        tools: merged.tools,
+        mcpServers: merged.mcpServers,
+        knowledge: merged.knowledge,
+        integrations: merged.integrations,
+      });
+      setAgent(updated);
+      setChatConfig({});
+      addToast("success", "Agente atualizado.");
+    } catch (e) {
+      addToast("error", e instanceof Error ? e.message : "Falha ao salvar o agente.");
+    } finally {
+      setSaving(false);
+    }
+  }, [agent, chatConfig, id, addToast]);
+
   const handleSave = React.useCallback(
     async (payload: Parameters<typeof updateAgent>[1]) => {
       setSaving(true);
       try {
         const updated = await updateAgent(id, payload);
         setAgent(updated);
+        setChatConfig({});
         addToast("success", "Agente atualizado.");
       } finally {
         setSaving(false);
@@ -300,6 +335,39 @@ export default function AgentDetailPage() {
             minWidth: 0,
           }}
         >
+          {/* O chat de edição só altera o formulário; sem este aviso o usuário
+              lia "Pronto! Adicionei…" e saía sem salvar (o botão fica no fim). */}
+          {Object.keys(chatConfig).length > 0 && !chatStreaming && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                padding: "10px 14px",
+                borderRadius: "var(--radius)",
+                border: "1px solid var(--warning)",
+                background: "var(--bg-card)",
+                fontSize: "13px",
+              }}
+            >
+              <span>Alterações do assistente ainda não salvas.</span>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <Button size="sm" onClick={() => setChatConfig({})} disabled={saving}>
+                  Descartar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={saving}
+                  onClick={() => void handleSaveChat()}
+                >
+                  Salvar alterações
+                </Button>
+              </div>
+            </div>
+          )}
           {/* Preview do draft atualizado pelo chat (spec §10.1). */}
           <AgentPreview
             config={

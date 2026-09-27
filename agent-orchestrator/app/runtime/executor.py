@@ -149,6 +149,8 @@ class _ActiveRun:
     cancelled: bool = False
     stopped: bool = False
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # Última falha de nó/execução; gravada em pipeline_runs.error.
+    error: str | None = None
 
 
 # pipeline_id -> _ActiveRun (at most one running run per pipeline)
@@ -587,14 +589,16 @@ class PipelineExecutor:
                 extra={"pipeline_id": active.pipeline_id, "run_id": active.run_id},
             )
             final_status = "failed"
+            active.error = active.error or "tempo limite global da pipeline excedido"
 
-        except Exception:
+        except Exception as exc:
             # Unexpected error: mark as failed.
             logger.exception(
                 "Pipeline execution error",
                 extra={"pipeline_id": active.pipeline_id, "run_id": active.run_id},
             )
             final_status = "failed"
+            active.error = active.error or f"erro interno: {type(exc).__name__}"
 
         # Persiste o status final no banco (F7: pipeline_runs.status não fica
         # preso em "running") e emite o status agregado no WS.
@@ -640,6 +644,14 @@ class PipelineExecutor:
                 "completed" if status == "completed" else "failed",
                 node_id=str(node_id),
             )
+
+            # pipeline:log (contrato §7): logs do worker e o erro do nó.
+            for line in (state_update.get("node_logs", {}) or {}).get(node_id, []) or []:
+                await self._emit_log(active, str(node_id), "info", str(line))
+            node_error = (state_update.get("node_errors", {}) or {}).get(node_id)
+            if node_error:
+                active.error = str(node_error)[:2000]
+                await self._emit_log(active, str(node_id), "error", active.error)
 
             # agent:output (contrato §7): outputs namespaced por nodeId.
             outputs = state_update.get("data", {}).get(node_id)
@@ -797,6 +809,8 @@ class PipelineExecutor:
                 run.status = status
                 if status in ("completed", "failed", "cancelled"):
                     run.completed_at = datetime.now(UTC)
+                if status == "failed" and active.error:
+                    run.error = active.error
                 await session.commit()
 
             pipe_result = await session.execute(
@@ -893,6 +907,23 @@ class PipelineExecutor:
                 "runId": active.run_id,
                 "nodeId": node_id,
                 "status": status,
+                "at": _now_iso(),
+            },
+        )
+
+    async def _emit_log(
+        self, active: _ActiveRun, node_id: str, level: str, message: str
+    ) -> None:
+        """Emit a pipeline:log WebSocket event (contrato §7)."""
+        await ws_publish(
+            active.owner_id,
+            "pipeline:log",
+            {
+                "pipelineId": active.pipeline_id,
+                "runId": active.run_id,
+                "nodeId": node_id,
+                "level": level,
+                "message": message,
                 "at": _now_iso(),
             },
         )

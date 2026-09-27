@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { renderInlineMarkdown } from "@/lib/inline-markdown";
 import { Send, Square, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -265,7 +266,7 @@ export function AgentChat({
                 msg.role === "assistant" ? "1px solid var(--border)" : "none",
             }}
           >
-            {msg.content}
+            {msg.role === "assistant" ? renderInlineMarkdown(msg.content) : msg.content}
           </div>
         ))}
         {streaming && (

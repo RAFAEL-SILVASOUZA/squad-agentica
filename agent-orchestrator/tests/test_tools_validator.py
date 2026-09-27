@@ -51,6 +51,14 @@ def execute(x: int) -> None:
         errors = validate_tool(script, {"inputs": [], "outputs": []})
         assert any("return" in e.lower() for e in errors)
 
+    def test_execute_with_kwargs_only_is_valid(self) -> None:
+        """Assinatura que o sandbox chama (execute(**args)) e que a UI sugere."""
+        script = """
+def execute(**kwargs):
+    return {"n": len(kwargs)}
+"""
+        assert validate_tool(script, {"inputs": [], "outputs": []}) == []
+
     def test_execute_without_params(self) -> None:
         script = """
 def execute() -> dict:

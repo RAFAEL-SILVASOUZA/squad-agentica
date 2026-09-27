@@ -379,13 +379,17 @@ def _make_agent_node(
         # 4. ADR-005: incrementa o contador (soma) a cada execução.
         new_iterations = {node_id: 1}
 
-        return {
+        update: dict[str, Any] = {
             "data": new_data,
             "status": new_status,
             "actions": new_actions,
             "iterations": new_iterations,
             "pipeline_status": pipeline_status,
+            "node_logs": {node_id: list(resp.logs or [])},
         }
+        if resp.status == "failed":
+            update["node_errors"] = {node_id: resp.error or "falha na execução do agente"}
+        return update
 
     agent_node.__name__ = f"agent_{node_id}"
     return agent_node
