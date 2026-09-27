@@ -237,13 +237,41 @@ export function ToolsEditor() {
     setTestResult(null);
     try {
       const input = JSON.parse(testInput || "{}");
-      const res = await api.post<TestResult>(`/api/tools/${testing.id}/test`, { input });
-      setTestResult(res);
-    } catch (e) {
-      if (e instanceof ApiError && e.details?.output) {
-        setTestResult({ success: false, error: e.details.output as string });
+      // E8: o backend espera { args } (POST /api/tools/{id}/test); com
+      // { input } o sandbox ignorava os argumentos (execute(**args)).
+      const started = performance.now();
+      const res = await api.post<{ result: Record<string, unknown> }>(
+        `/api/tools/${testing.id}/test`,
+        { args: input }
+      );
+      // O sandbox devolve { error, traceback } quando o script falha.
+      const r = res.result ?? {};
+      if (r.error !== undefined) {
+        setTestResult({
+          success: false,
+          error: `${r.error}${r.traceback ? `\n${r.traceback}` : ""}`,
+          duration_ms: Math.round(performance.now() - started),
+        });
       } else {
-        setTestResult({ success: false, error: e instanceof Error ? e.message : "Erro ao testar" });
+        setTestResult({
+          success: true,
+          output: JSON.stringify(r, null, 2),
+          duration_ms: Math.round(performance.now() - started),
+        });
+      }
+    } catch (e) {
+      // E7: erro do sandbox: o envelope traz a mensagem em details.output
+      // ou details.error; "Erro" genérico escondia o diagnóstico real.
+      const d = e instanceof ApiError ? e.details : undefined;
+      const detailMsg =
+        (d && (d.output ?? d.error ?? d.message)) as string | undefined;
+      if (detailMsg && typeof detailMsg === "string") {
+        setTestResult({ success: false, error: detailMsg });
+      } else {
+        setTestResult({
+          success: false,
+          error: e instanceof Error && e.message ? e.message : "Erro ao testar",
+        });
       }
     } finally {
       setTestBusy(false);
@@ -490,11 +518,14 @@ export function ToolsEditor() {
             value={form.script}
             onChange={(e) => setForm((f) => ({ ...f, script: e.target.value }))}
             rows={12}
-            placeholder={
-              form.language === "python"
-                ? "def main(inputs):\n    return {'result': ...}"
-                : "function main(inputs) {\n  return { result: ... };\n}"
-            }
+              // E7: o sandbox chama `execute(**args)` (app/tools/sandbox.py);
+              // o placeholder antigo (def main(inputs)) era a convenção errada
+              // e qualquer tool criada com ele falhava no teste.
+              placeholder={
+                form.language === "python"
+                  ? "def execute(**kwargs):\n    # kwargs = inputs da tool (nomes do JSON de inputs)\n    return {'result': ...}"
+                  : "function main(inputs) {\n  return { result: ... };\n}"
+              }
             disabled={saving}
             style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
           />

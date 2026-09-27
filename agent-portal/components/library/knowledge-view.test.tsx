@@ -136,6 +136,7 @@ describe("KnowledgeView", () => {
         name: "Base nova",
         description: "",
         scope: "global",
+        source: "upload",
       });
     });
   });
@@ -160,7 +161,10 @@ describe("KnowledgeView", () => {
 
   it("selects a base and loads documents", async () => {
     mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([makeDoc(), makeDoc({ id: "doc-2", name: "api.pdf" })]);
+    mockList.mockImplementation(async (path: string) => ({
+      items: path.endsWith("/documents") ? [makeDoc(), makeDoc({ id: "doc-2", name: "api.pdf" })] : [makeBase()],
+      total: path.endsWith("/documents") ? 2 : 1, page: 1, limit: 100,
+    }));
     renderView();
     await waitFor(() => {
       expect(screen.getByText("Base de documentação")).toBeInTheDocument();
@@ -168,7 +172,7 @@ describe("KnowledgeView", () => {
     fireEvent.click(screen.getByText("Base de documentação"));
 
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith("/api/knowledge/kb-1/documents");
+      expect(mockList).toHaveBeenCalledWith("/api/knowledge/kb-1/documents", { page: 1, limit: 100 });
     });
     await waitFor(() => {
       expect(screen.getByText("manual.pdf")).toBeInTheDocument();
@@ -196,8 +200,7 @@ describe("KnowledgeView", () => {
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
         "/api/knowledge/kb-1/upload",
-        expect.any(FormData),
-        expect.objectContaining({ headers: { "Content-Type": "multipart/form-data" } })
+        expect.any(FormData)
       );
     });
   });
@@ -205,9 +208,9 @@ describe("KnowledgeView", () => {
   it("runs a query and shows results", async () => {
     mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
     mockGet.mockResolvedValue([makeDoc()]);
-    mockPost.mockResolvedValue([
+    mockPost.mockResolvedValue({ chunks: [
       { content: "Resultado da busca", score: 0.95, source: "manual.pdf" },
-    ]);
+    ] });
     renderView();
     await waitFor(() => {
       expect(screen.getByText("Base de documentação")).toBeInTheDocument();
@@ -222,7 +225,7 @@ describe("KnowledgeView", () => {
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith("/api/knowledge/query", {
-        baseId: "kb-1",
+        knowledgeBaseIds: ["kb-1"],
         query: "Como funciona?",
       });
     });

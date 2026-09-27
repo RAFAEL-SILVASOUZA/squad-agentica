@@ -56,9 +56,15 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
       <div
         ref={panelRef}
         tabIndex={-1}
+        // E5: o painel precisa caber em qualquer viewport (1280x800):
+        // altura máxima + rolagem no corpo; sem isso, modais com muitos
+        // campos (ex.: criar skill) deixam o botão do footer fora da tela.
         style={{
           width: "100%",
           maxWidth: 480,
+          maxHeight: "min(85vh, 720px)",
+          display: "flex",
+          flexDirection: "column",
           background: "var(--bg-elevated)",
           border: "1px solid var(--border)",
           borderRadius: "var(--radius)",
@@ -104,7 +110,9 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
             <X size={16} aria-hidden="true" />
           </button>
         </div>
-        <div style={{ padding: "18px" }}>{children}</div>
+        <div style={{ padding: "18px", overflowY: "auto", flex: "1 1 auto" }}>
+          {children}
+        </div>
         {footer && (
           <div
             style={{

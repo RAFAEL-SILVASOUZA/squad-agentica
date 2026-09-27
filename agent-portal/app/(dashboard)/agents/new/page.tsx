@@ -83,6 +83,13 @@ export default function NewAgentPage() {
     setConfig((prev) => ({ ...prev, ...partial }));
   }, []);
 
+  // E2: rascunho utilizável = tem NOME (espelha a regra do backend em
+  // /api/agents/chat/confirm: 400 incomplete_draft sem nome). Sem isso, o
+  // confirm criava "Unnamed Agent" no banco.
+  const draftUsable = Boolean(
+    draftId && String(config.name ?? "").trim().length > 0
+  );
+
   const handleSave = React.useCallback(async () => {
     if (!draftId) {
       addToast("warning", "Converse com o assistente antes de salvar.");
@@ -148,7 +155,10 @@ export default function NewAgentPage() {
           variant="primary"
           onClick={() => void handleSave()}
           loading={saving}
-          disabled={!draftId}
+          // E2: sem draft utilizável (nome + prompt no config), salvar é
+          // inútil: o backend recusa (400 incomplete_draft). O botão só
+          // habilita quando o rascunho está utilizável.
+          disabled={!draftId || !draftUsable}
         >
           <CheckCircle2 size={14} aria-hidden="true" />
           Salvar agente
@@ -212,6 +222,12 @@ export default function NewAgentPage() {
             <EmptyState
               title="Ainda sem rascunho"
               description="Envie uma mensagem no chat para o assistente gerar o rascunho do agente. O botão Salvar habilita após o primeiro rascunho."
+            />
+          )}
+          {draftId && !draftUsable && (
+            <EmptyState
+              title="Rascunho incompleto"
+              description="O assistente ainda não definiu o nome do agente. Continue a conversa (ex.: 'o agente se chama X e deve fazer Y') para habilitar o botão Salvar."
             />
           )}
         </div>

@@ -12,6 +12,7 @@ import {
   Wrench,
   Server,
   FileText,
+  GitBranch,
 } from "lucide-react";
 
 /**
@@ -51,6 +52,13 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Pipelines",
     items: [
+      // E14: PLANO-FRONTEND pede o link para /pipelines; sem ele, a
+      // listagem só era alcançável digitando a URL.
+      {
+        href: "/pipelines",
+        label: "Pipelines",
+        icon: GitBranch,
+      },
       {
         href: "/approvals",
         label: "Aprovações",
