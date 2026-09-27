@@ -82,6 +82,27 @@ def test_pipeline_graph_update_preserves_ids_and_approval_channel(user):
     assert approval["approvalChannel"] == "in-app"
 
 
+def test_editor_local_node_ids_are_translated_in_edges(user):
+    """O editor cria nós com id local (node-<ts>-<rand>); as arestas que os citam
+    devem seguir o UUID atribuído, não virar 422."""
+    a1, a2 = create_agent(user, "qa-local1"), create_agent(user, "qa-local2")
+    graph = graph_payload(a1, a2)
+    created = user.post("/api/pipelines", json=graph)
+    assert created.status_code == 201, created.text
+    local_id = "node-1790000000000-abc123"
+    old_id = graph["nodes"][1]["id"]
+    graph["nodes"][1]["id"] = local_id
+    for e in graph["edges"]:
+        e["source"] = local_id if e["source"] == old_id else e["source"]
+        e["target"] = local_id if e["target"] == old_id else e["target"]
+    saved = user.put(f"/api/pipelines/{created.json()['id']}", json=graph)
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    new_id = next(n["id"] for n in body["nodes"] if n["id"] != graph["nodes"][0]["id"])
+    assert new_id != local_id
+    assert all(e["target"] == new_id for e in body["edges"])
+
+
 def test_empty_pipeline_accepts_first_graph(user):
     created = user.post("/api/pipelines", json={"name": "qa-empty", "nodes": [], "edges": []})
     assert created.status_code == 201, created.text

@@ -143,6 +143,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
                   borderRadius: "50%",
                   border: "2px solid var(--info)",
                   background: "var(--bg-elevated)",
+                  // Acima do conteúdo do card: sem isso o centro do handle
+                  // ficava coberto e o arraste movia o nó em vez de conectar.
+                  zIndex: 1,
                 }}
               />
               <span
@@ -189,6 +192,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
                   borderRadius: "50%",
                   border: "2px solid var(--success)",
                   background: "var(--bg-elevated)",
+                  // Acima do conteúdo do card: sem isso o centro do handle
+                  // ficava coberto e o arraste movia o nó em vez de conectar.
+                  zIndex: 1,
                 }}
               />
             </div>

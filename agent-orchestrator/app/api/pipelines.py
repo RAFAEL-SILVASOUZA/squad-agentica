@@ -133,15 +133,21 @@ def _build_pipeline_from_body(
 
     node_fields: list[dict[str, Any]] = []
     node_ids: set[str] = set()
+    # O editor cria nós com id local (``node-<ts>-<rand>``); o nó ganha um UUID
+    # e as arestas/entrada que citam o id local são traduzidas por este mapa.
+    id_map: dict[str, str] = {}
     for i, n in enumerate(raw_nodes):
         if not isinstance(n, dict):
             raise AppError(422, "unprocessable", "schema_validation", {
                 "errors": [f"node {i}: objeto inválido"]
             })
+        raw_node_id = str(n.get("id", ""))
         try:
-            node_id = uuid.UUID(str(n.get("id", "")))
+            node_id = uuid.UUID(raw_node_id)
         except (ValueError, TypeError):
             node_id = uuid.uuid4()
+        if raw_node_id:
+            id_map[raw_node_id] = str(node_id)
         try:
             agent_id = uuid.UUID(str(n.get("agentId", "")))
         except (ValueError, TypeError):
@@ -169,8 +175,8 @@ def _build_pipeline_from_body(
             edge_id = uuid.UUID(str(e.get("id", "")))
         except (ValueError, TypeError):
             edge_id = uuid.uuid4()
-        source = str(e.get("source", ""))
-        target = str(e.get("target", ""))
+        source = id_map.get(str(e.get("source", "")), str(e.get("source", "")))
+        target = id_map.get(str(e.get("target", "")), str(e.get("target", "")))
         etype = e.get("type", "flow")
         if etype not in ("flow", "data"):
             raise AppError(422, "unprocessable", "schema_validation", {
@@ -203,6 +209,7 @@ def _build_pipeline_from_body(
         )
 
     entry_raw = str(body.get("entryNodeId") or "")
+    entry_raw = id_map.get(entry_raw, entry_raw)
     # O UUID nulo é a entrada que a própria API devolve para pipeline sem
     # nós; ao salvar o primeiro grafo ele equivale a "não definido".
     if entry_raw == _NIL_ENTRY:
