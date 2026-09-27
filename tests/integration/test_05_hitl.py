@@ -60,7 +60,7 @@ def test_approve_resumes_and_double_response_409(user, hitl):
     assert_envelope(r2, 409, "already_responded")
 
     # Retomada: o no 2 roda e o run termina.
-    final = wait_until(lambda: [e for e in ws.of("pipeline:status", p.id) if e["status"] in ("completed", "failed")],
+    final = wait_until(lambda: [e for e in ws.of("pipeline:status", p.id) if not e.get("nodeId") and e["status"] in ("completed", "failed")],
                        timeout=T, desc="fim do run apos aprovar")
     assert final[-1]["status"] == "completed", final
 

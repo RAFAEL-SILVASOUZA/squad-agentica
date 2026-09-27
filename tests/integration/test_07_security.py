@@ -193,6 +193,7 @@ def test_rate_limit_execute_5_per_min(user):
         time.sleep(0.3)
     assert 429 in codes, codes
     assert codes.index(429) == 5, f"429 deveria vir na 6a chamada: {codes}"
+    assert db_query("SELECT count(*) FROM pipeline_runs WHERE pipeline_id = %s", (p.id,))[0][0] == 5
 
 
 def test_rate_limit_chat_30_per_min(user):

@@ -1,36 +1,34 @@
 /**
- * Jornada 6 — Executar e acompanhar no monitor: status por nó, logs em tempo
- * real, pause e resume.
- *
- * O monitor carrega via GET /api/pipelines/{id} (F9: 404 real). A suíte mocka
- * GET (mockPipelineApi) para o monitor abrir, e deixa as rotas de runtime reais
- * (execute, runs, checkpoints, pause/resume/stop) responderem do backend. O
- * WebSocket real publica os eventos (contrato §7); a suíte também conecta um
- * cliente WS para inspecionar o que o backend emite (nodeId, runId).
- *
- * Falhas conhecidas que afetam esta jornada: F1 (run sempre falha), F7 (dois
- * runIds), F10 (sem checkpoints), F11 (WS sem eventos por nó / agent:output),
- * F14 (sem worker o run falha). O teste documenta o estado real.
- *
- * Fontes: contrato §7 (WS), spec §9.1/§9.7, protótipo view-MONITOR.
+ * Jornada 6: execução real e monitor. Agentes são criados pela API para
+ * persistir também no Garage; pipeline semeada pertence ao usuário do teste.
+ * GET da pipeline, runtime e WebSocket usam o backend real, sem interceptação.
  */
 import { test, expect, loginViaUI } from "../fixtures";
 import {
   PASSWORD,
   db,
-  dbCreateAgent,
+  Api,
   dbSeedPipeline,
   dbDeletePipeline,
   connectWs,
   ofChannel,
   sleep,
 } from "../helpers";
-import { mockPipelineApi, twoNodeGraph } from "../helpers/pipeline-mock";
+async function createAgent(api: Api, name: string) {
+  const response = await api.post("/api/agents", {
+    name, type: "custom", prompt: "Responda no campo result.",
+    inputs: [{ name: "spec", type: "document", required: false }],
+    outputs: [{ name: "result", type: "document", required: true }],
+    actions: ["follow", "finalize"],
+  });
+  expect(response.status, response.text).toBe(201);
+  return response.body;
+}
 
 test.describe("Jornada 6: executar e monitor", () => {
-  test("executar: monitor abre, run inicia, status/logs refletem, pause+resume", async ({ page, user }) => {
-    const a1 = await dbCreateAgent(user.id, `E2E Run A ${Date.now().toString(36)}`);
-    const a2 = await dbCreateAgent(user.id, `E2E Run B ${Date.now().toString(36)}`);
+  test("executar: monitor abre, run inicia, status/logs refletem, pause+resume", async ({ page, user, api }) => {
+    const a1 = await createAgent(api, `E2E Run A ${Date.now().toString(36)}`);
+    const a2 = await createAgent(api, `E2E Run B ${Date.now().toString(36)}`);
     const seeded = await dbSeedPipeline({
       ownerId: user.id,
       agents: [
@@ -38,14 +36,6 @@ test.describe("Jornada 6: executar e monitor", () => {
         { id: a2.id, name: a2.name },
       ],
       name: `QA Run ${Date.now().toString(36)}`,
-    });
-    const graph = twoNodeGraph(seeded.id, { id: a1.id, name: a1.name }, { id: a2.id, name: a2.name });
-    const mock = await mockPipelineApi(page, {
-      id: seeded.id,
-      entryNodeId: graph.n1,
-      nodes: graph.nodes,
-      edges: graph.edges,
-      name: seeded.name,
     });
 
     // Cliente WS para inspecionar os eventos reais (contrato §7).
@@ -55,7 +45,7 @@ test.describe("Jornada 6: executar e monitor", () => {
       await loginViaUI(page, user.email, PASSWORD);
       await page.goto(`/pipelines/${seeded.id}/run`);
 
-      // Monitor abre (mock GET): título + 2 nós.
+      // Monitor abre pelo GET real: título + 2 nós.
       await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({ timeout: 30_000 });
       await expect(page.locator(".react-flow__node")).toHaveCount(2, { timeout: 30_000 });
 
@@ -80,7 +70,8 @@ test.describe("Jornada 6: executar e monitor", () => {
 
       // Aguarda eventos do WS (contrato §7). O backend real (F1/F11) pode não
       // emitir eventos por nó; o teste coleta e documenta.
-      await sleep(4000);
+      await expect.poll(() => ofChannel(ws.frames, "pipeline:status", seeded.id)
+        .filter((event: any) => !event.nodeId).at(-1)?.status, { timeout: 30_000 }).toBe("completed");
       const statusEvents = ofChannel(ws.frames, "pipeline:status", seeded.id);
       const logEvents = ofChannel(ws.frames, "pipeline:log", seeded.id);
       const outputEvents = ofChannel(ws.frames, "agent:output", seeded.id);
@@ -114,24 +105,24 @@ test.describe("Jornada 6: executar e monitor", () => {
       expect([200, 404]).toContain(pauseResp.status());
       expect([200, 404, 409]).toContain(resumeResp.status());
       // Documenta o estado real (não falha aqui; o relatório interpreta).
-      void hasNodeId;
+      expect(hasNodeId).toBe(true);
       await test.info().attach("runtime-observation", {body: JSON.stringify({runId, hasNodeId, finalStatus, dbStatus, logEvents, outputEvents}), contentType: "application/json"});
       expect(finalStatus, "F1: execução real deve completar").toBe("completed");
-      void dbStatus;
+      expect(dbStatus).toBe("completed");
       void logEvents;
       void outputEvents;
       void pauseOk;
       void resumeOk;
     } finally {
       await ws.close().catch(() => undefined);
-      await mock.dispose();
+
       await dbDeletePipeline(seeded.id).catch(() => undefined);
     }
   });
 
-  test("logs e nó selecionado: painel do nó mostra status", async ({ page, user }) => {
-    const a1 = await dbCreateAgent(user.id, `E2E Node A ${Date.now().toString(36)}`);
-    const a2 = await dbCreateAgent(user.id, `E2E Node B ${Date.now().toString(36)}`);
+  test("logs e nó selecionado: painel do nó mostra status", async ({ page, user, api }) => {
+    const a1 = await createAgent(api, `E2E Node A ${Date.now().toString(36)}`);
+    const a2 = await createAgent(api, `E2E Node B ${Date.now().toString(36)}`);
     const seeded = await dbSeedPipeline({
       ownerId: user.id,
       agents: [
@@ -139,14 +130,6 @@ test.describe("Jornada 6: executar e monitor", () => {
         { id: a2.id, name: a2.name },
       ],
       name: `QA Node ${Date.now().toString(36)}`,
-    });
-    const graph = twoNodeGraph(seeded.id, { id: a1.id, name: a1.name }, { id: a2.id, name: a2.name });
-    const mock = await mockPipelineApi(page, {
-      id: seeded.id,
-      entryNodeId: graph.n1,
-      nodes: graph.nodes,
-      edges: graph.edges,
-      name: seeded.name,
     });
 
     try {
@@ -166,7 +149,7 @@ test.describe("Jornada 6: executar e monitor", () => {
       await expect(page.getByLabel(/Filtrar por n.vel/i)).toBeVisible();
       await page.screenshot({ path: test.info().outputPath("monitor-node.png") });
     } finally {
-      await mock.dispose();
+
       await dbDeletePipeline(seeded.id).catch(() => undefined);
     }
   });
