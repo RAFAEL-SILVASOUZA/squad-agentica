@@ -189,7 +189,7 @@ export function twoNodeGraph(pipelineId: string, a1: { id: string; name: string 
   });
   const nodes: MockNode[] = [
     { id: n1, agentId: a1.id, position: { x: 0, y: 0 }, label: a1.name, agentSnapshot: snapshot(a1) },
-    { id: n2, agentId: a2.id, position: { x: 260, y: 0 }, label: a2.name, agentSnapshot: snapshot(a2) },
+    { id: n2, agentId: a2.id, position: { x: 420, y: 0 }, label: a2.name, agentSnapshot: snapshot(a2) },
   ];
   const edges: MockEdge[] = [
     {

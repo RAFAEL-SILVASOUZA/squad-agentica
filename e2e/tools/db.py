@@ -130,7 +130,7 @@ def cmd_seed_pipeline(spec: dict[str, Any]) -> None:
             conn.execute(
                 "INSERT INTO pipeline_nodes (id, pipeline_id, agent_id, position, label, agent_snapshot) "
                 "VALUES (%s,%s,%s,%s,%s,%s)",
-                (nid, pid, ag["id"], Jsonb({"x": 120 * i, "y": 0}), ag["name"], Jsonb(_snapshot(ag))),
+                (nid, pid, ag["id"], Jsonb({"x": 420 * i, "y": 0}), ag["name"], Jsonb(_snapshot(ag))),
             )
         for i in range(len(node_ids) - 1):
             src, tgt = node_ids[i], node_ids[i + 1]

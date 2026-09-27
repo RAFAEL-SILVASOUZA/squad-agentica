@@ -49,6 +49,9 @@ test.describe("Jornada 5: editor de pipeline", () => {
       const dragItem = palette.getByRole("button", { name: new RegExp(a2.name) });
       await expect(dragItem).toBeVisible();
 
+      const idsBefore = await page
+        .locator(".react-flow__node")
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-id")));
       const canvas = page.locator(".react-flow");
       const dragBox = await dragItem.boundingBox();
       const canvasBox = await canvas.boundingBox();
@@ -59,7 +62,9 @@ test.describe("Jornada 5: editor de pipeline", () => {
         // também adiciona o nó (handleAddAgent).
         try {
           await dragItem.dragTo(canvas, {
-            targetPosition: { x: canvasBox.width * 0.6, y: canvasBox.height * 0.6 },
+            // Área vazia (canto inferior esquerdo): no centro e à direita o nó novo caía sobre o nó B
+            // semeado e o handle de destino ficava coberto.
+            targetPosition: { x: canvasBox.width * 0.25, y: canvasBox.height * 0.8 },
             timeout: 8_000,
           });
         } catch {
@@ -75,11 +80,17 @@ test.describe("Jornada 5: editor de pipeline", () => {
       // Conectar: source (nó A, output "result") -> target (novo nó, input "spec").
       // O novo nó tem id aleatório; localiza o terceiro nó pelo nome.
       const nodes = page.locator(".react-flow__node");
-      const newHandle = nodes
-        .filter({ hasText: a2.name })
-        .last()
-        .locator('.react-flow__handle.target')
-        .first();
+      // O nó novo é o data-id que não existia antes do drop (o B semeado tem o
+      // mesmo nome e já recebe result -> spec; o addEdge do React Flow descarta
+      // conexão duplicada).
+      const idsAfter = await nodes.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")));
+      const newId = idsAfter.find((id) => !idsBefore.includes(id));
+      expect(newId, "nó novo no canvas").toBeTruthy();
+      // Dependendo do fitView, o nó novo fica parcialmente sob o B; selecioná-lo
+      // o eleva (elevateNodesOnSelect) e expõe o handle de destino.
+      const newNode = page.locator(`.react-flow__node[data-id="${newId}"]`);
+      await newNode.dispatchEvent("click");
+      const newHandle = newNode.locator('.react-flow__handle.target').first();
       const srcHandle = nodes
         .filter({ hasText: a1.name })
         .first()
@@ -89,9 +100,11 @@ test.describe("Jornada 5: editor de pipeline", () => {
       const s = await srcHandle.boundingBox();
       const t = await newHandle.boundingBox();
       if (s && t) {
-        await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
+        // hover() mede o handle no momento da ação: o canvas ainda se ajusta
+        // alguns pixels depois do drop e a boundingBox anterior fica velha.
+        await srcHandle.hover();
         await page.mouse.down();
-        await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 12 });
+        await newHandle.hover({ force: true });
         await page.mouse.up();
         // Uma nova aresta (flow) surge.
         await expect(page.locator(".react-flow__edge")).toHaveCount(3, { timeout: 15_000 });
