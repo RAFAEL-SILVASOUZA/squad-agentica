@@ -2,7 +2,7 @@
 
 Dono: rt-worker (FASE 6). O worker usa o mesmo contrato de LLM do
 orchestrator: provider ``mock`` = respostas deterministicas; provider real
-so entra se ``LLM_PROVIDER=openai`` E ``OPENAI_API_KEY`` presente.
+so entra se ``LLM_PROVIDER=openai`` E (``OPENAI_API_KEY`` ou ``OPENAI_BASE_URL``).
 
 Interface: ``LLMClient.chat(messages, **kwargs) -> str``.
 Suporta tool calling via ``tools`` kwarg (formato OpenAI function calling).
@@ -83,13 +83,25 @@ class MockLLMClient:
         return {"content": content, "tool_calls": None}
 
 
-class OpenAILLMClient:
-    """Provider real (OpenAI). So instanciado com chave presente."""
+# Servidores locais compativeis com OpenAI aceitam qualquer chave; o SDK exige
+# uma nao vazia.
+LOCAL_API_KEY_PLACEHOLDER = "local"
 
-    def __init__(self, api_key: str) -> None:
+
+class OpenAILLMClient:
+    """Provider real: OpenAI ou servidor compativel (``OPENAI_BASE_URL``).
+
+    ``model`` fixo (``LLM_MODEL``) tem precedencia sobre o modelo do snapshot:
+    um servidor local so serve os modelos que carregou.
+    """
+
+    def __init__(self, api_key: str, base_url: str = "", model: str = "") -> None:
         from openai import AsyncOpenAI
 
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(
+            api_key=api_key or LOCAL_API_KEY_PLACEHOLDER, base_url=base_url or None
+        )
+        self._model = model
 
     async def chat(
         self,
@@ -100,7 +112,7 @@ class OpenAILLMClient:
         **kwargs: Any,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "model": model,
+            "model": self._model or model,
             "messages": messages,
         }
         if tools:
@@ -129,9 +141,10 @@ class OpenAILLMClient:
 
 
 def get_llm_client() -> LLMClient:
-    """Fabrica: escolhe o provider conforme LLM_PROVIDER e OPENAI_API_KEY."""
+    """Fabrica: provider real com LLM_PROVIDER=openai e chave ou URL configurada."""
     provider = os.environ.get("LLM_PROVIDER", "mock")
     api_key = os.environ.get("OPENAI_API_KEY", "")
-    if provider == "openai" and api_key:
-        return OpenAILLMClient(api_key)
+    base_url = os.environ.get("OPENAI_BASE_URL", "")
+    if provider == "openai" and (api_key or base_url):
+        return OpenAILLMClient(api_key, base_url, os.environ.get("LLM_MODEL", ""))
     return MockLLMClient()

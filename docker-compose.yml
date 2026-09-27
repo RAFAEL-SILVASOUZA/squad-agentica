@@ -45,20 +45,33 @@ services:
       start_period: 10s
 
   garage-init:
-    image: python:3.11-slim
+    # F5: o init original (python + minio via API S3) NÃO conseguia importar
+    # a access key S3 (`garage key import` é CLI-only). Em volume novo a key
+    # não existia e NENHUM bucket podia ser criado (AccessDenied em agents,
+    # skills e knowledge -> todo upload de KB dava 500 storage_error). O novo
+    # bootstrap roda o binário `garage` (CLI) via garage/init.sh: key import,
+    # bucket create e bucket allow, incluindo o bucket `knowledge`.
+    build:
+      context: ./garage
+      dockerfile: Dockerfile.init
     container_name: agent-portal-garage-init
     depends_on:
       garage:
         condition: service_healthy
-    entrypoint: ["sh", "-c", "pip install --no-cache-dir minio==7.2.13 && python /init/init.py"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://garage:3900}
       MINIO_BUCKET_AGENTS: ${MINIO_BUCKET_AGENTS:-agents}
       MINIO_BUCKET_SKILLS: ${MINIO_BUCKET_SKILLS:-skills}
+      MINIO_BUCKET_KNOWLEDGE: ${MINIO_BUCKET_KNOWLEDGE:-knowledge}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
     volumes:
-      - ./garage/init.py:/init/init.py:ro
+      # O CLI precisa do node key do nó em execução para autenticar no RPC
+      # (``garage health``/``key import``/``bucket allow`` lê
+      # /var/lib/garage/meta); o acesso é só-leitura.
+      - garage-data:/var/lib/garage:ro
     restart: "no"
 
   orchestrator:
@@ -82,6 +95,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-in-prod}
       ADMIN_NAME: ${ADMIN_NAME:-Administrador}
@@ -107,9 +124,10 @@ services:
     restart: unless-stopped
     deploy:
       replicas: 2
-    env_file:
-      - .env
+    # F20 (privilégio mínimo): sem env_file; o worker recebe só o que usa
+    # (nada de GARAGE_RPC_SECRET/GARAGE_ADMIN_TOKEN, JWT ou banco).
     environment:
+      WORKER_TOKEN: ${WORKER_TOKEN:-change-me-in-prod}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-adminkey01}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-in-prod}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://garage:3900}
@@ -119,6 +137,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     volumes:
       - ./agent-worker:/app:ro
     depends_on:

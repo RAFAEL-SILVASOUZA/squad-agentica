@@ -1,7 +1,8 @@
 """LLM client interface + factory with mock and OpenAI providers.
 
 Dono: infra-docker. Contrato §4: provider `mock` = respostas determinísticas;
-provider real só entra se LLM_PROVIDER=openai E OPENAI_API_KEY presente.
+provider real só entra se LLM_PROVIDER=openai E (OPENAI_API_KEY ou OPENAI_BASE_URL
+presente); OPENAI_BASE_URL aponta para servidor compatível (chave vazia aceita).
 """
 
 from __future__ import annotations
@@ -31,22 +32,37 @@ class MockLLMClient:
         return f"MOCK_LLM: echo of: {last_user}"
 
 
-class OpenAILLMClient:
-    """Provider real (OpenAI). Só instanciado com chave presente."""
+# Servidores locais compatíveis com OpenAI aceitam qualquer chave; o SDK exige
+# uma não vazia.
+LOCAL_API_KEY_PLACEHOLDER = "local"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
-    def __init__(self, api_key: str) -> None:
+
+class OpenAILLMClient:
+    """Provider real: OpenAI ou servidor compatível (``OPENAI_BASE_URL``).
+
+    ``model`` fixo (``LLM_MODEL``) tem precedência sobre o modelo pedido pela
+    chamada: um servidor local só serve os modelos que carregou.
+    """
+
+    def __init__(self, api_key: str, base_url: str = "", model: str = "") -> None:
         from openai import AsyncOpenAI
 
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(
+            api_key=api_key or LOCAL_API_KEY_PLACEHOLDER, base_url=base_url or None
+        )
+        self._model = model
 
     async def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
-        model = kwargs.get("model", "gpt-4o-mini") if isinstance(kwargs, dict) else "gpt-4o-mini"
+        model = self._model or str(kwargs.get("model") or DEFAULT_OPENAI_MODEL)
         response = await self._client.chat.completions.create(model=model, messages=messages)
         return response.choices[0].message.content or ""
 
 
 def get_llm_client() -> LLMClient:
-    """Fábrica: escolhe o provider conforme LLM_PROVIDER e OPENAI_API_KEY."""
-    if settings.llm_provider == "openai" and settings.openai_api_key:
-        return OpenAILLMClient(settings.openai_api_key)
+    """Fábrica: provider real com LLM_PROVIDER=openai e chave ou URL configurada."""
+    if settings.llm_provider == "openai" and (settings.openai_api_key or settings.openai_base_url):
+        return OpenAILLMClient(
+            settings.openai_api_key, settings.openai_base_url, settings.llm_model
+        )
     return MockLLMClient()

@@ -11,6 +11,7 @@ import math
 from typing import Protocol
 
 from app.core.config import settings
+from app.core.llm import LOCAL_API_KEY_PLACEHOLDER
 
 
 class Embedder(Protocol):
@@ -57,25 +58,39 @@ class MockEmbedder:
 
 
 class OpenAIEmbedder:
-    """Provider real (OpenAI). Só instanciado com chave presente."""
+    """Provider real: OpenAI ou servidor compatível (``EMBEDDING_BASE_URL``).
 
-    def __init__(self, api_key: str, dim: int) -> None:
+    A coluna é ``vector(EMBEDDING_DIM)`` fixa: vetor menor é completado com zeros
+    (preserva cosseno e produto interno); maior é erro de configuração.
+    """
+
+    def __init__(self, api_key: str, dim: int, base_url: str = "", model: str = "") -> None:
         from openai import OpenAI
 
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(
+            api_key=api_key or LOCAL_API_KEY_PLACEHOLDER, base_url=base_url or None
+        )
         self._dim = dim
+        self._model = model or "text-embedding-3-small"
 
     @property
     def dim(self) -> int:
         return self._dim
 
     def embed(self, text: str) -> list[float]:
-        response = self._client.embeddings.create(model="text-embedding-3-small", input=text)
-        return _normalize(list(response.data[0].embedding))
+        return self.embed_batch([text])[0]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        response = self._client.embeddings.create(model="text-embedding-3-small", input=texts)
-        return [_normalize(list(d.embedding)) for d in response.data]
+        response = self._client.embeddings.create(model=self._model, input=texts)
+        return [_normalize(_fit_dim(list(d.embedding), self._dim)) for d in response.data]
+
+
+def _fit_dim(vec: list[float], dim: int) -> list[float]:
+    if len(vec) > dim:
+        raise ValueError(
+            f"Embedding model returned {len(vec)} dimensions, above EMBEDDING_DIM={dim}"
+        )
+    return vec + [0.0] * (dim - len(vec))
 
 
 def _normalize(vec: list[float]) -> list[float]:
@@ -86,7 +101,10 @@ def _normalize(vec: list[float]) -> list[float]:
 
 
 def get_embedder() -> Embedder:
-    """Fábrica: escolhe o provider conforme EMBEDDING_PROVIDER e OPENAI_API_KEY."""
-    if settings.embedding_provider == "openai" and settings.openai_api_key:
-        return OpenAIEmbedder(settings.openai_api_key, settings.embedding_dim)
+    """Fábrica: provider real com EMBEDDING_PROVIDER=openai e chave ou URL configurada."""
+    base_url = settings.embedding_base_url or settings.openai_base_url
+    if settings.embedding_provider == "openai" and (settings.openai_api_key or base_url):
+        return OpenAIEmbedder(
+            settings.openai_api_key, settings.embedding_dim, base_url, settings.embedding_model
+        )
     return MockEmbedder(settings.embedding_dim)

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # --- GitHub (integração, PAT com escopo repo:read) ---
     github_token: str = ""
+    github_api_base: str = "https://api.github.com"
 
     # --- Admin (seed) ---
     admin_email: str = ""
@@ -49,10 +50,16 @@ class Settings(BaseSettings):
     # --- LLM ---
     llm_provider: str = "mock"  # mock | openai
     openai_api_key: str = ""
+    # Servidor compatível com OpenAI (vazio = api.openai.com). LLM_MODEL, se
+    # definido, vale para o chat de construção e a execução de agentes.
+    openai_base_url: str = ""
+    llm_model: str = ""
 
     # --- Embeddings ---
     embedding_provider: str = "mock"  # mock | openai
     embedding_dim: int = 1536
+    embedding_base_url: str = ""  # vazio = OPENAI_BASE_URL
+    embedding_model: str = "text-embedding-3-small"
 
     # --- CORS ---
     cors_origins: str = "http://localhost,http://localhost:80"
