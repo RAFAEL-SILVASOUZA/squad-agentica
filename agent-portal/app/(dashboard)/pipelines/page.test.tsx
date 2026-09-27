@@ -154,7 +154,7 @@ describe("PipelinesPage", () => {
     render(<PipelinesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("running")).toBeInTheDocument();
+      expect(screen.getByText("Executando")).toBeInTheDocument();
     });
   });
 });

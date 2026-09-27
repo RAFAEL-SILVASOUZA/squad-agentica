@@ -52,7 +52,9 @@ export function Button({
     variant === "primary"
       ? {
           background: "var(--accent)",
-          borderColor: "var(--accent)",
+          // `border` completo (não `borderColor`): misturar shorthand e
+          // longhand gera aviso do React quando a variante muda no rerender.
+          border: "1px solid var(--accent)",
           color: "#fff",
         }
       : {};

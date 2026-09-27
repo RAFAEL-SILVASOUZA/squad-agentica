@@ -18,6 +18,17 @@ const PAGE_SIZE = 20;
  * Shows all pipelines with status, node/edge counts, and a CTA to create.
  * Portal starts empty (contract §0): empty state with "Criar primeiro pipeline" CTA.
  */
+
+// E11: status da pipeline em pt-BR (o valor do contrato fica em inglês).
+const PIPELINE_STATUS_LABEL: Record<string, string> = {
+  draft: "Rascunho",
+  running: "Executando",
+  paused: "Pausado",
+  completed: "Concluído",
+  failed: "Falhou",
+  cancelled: "Cancelado",
+};
+
 export default function PipelinesPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -247,7 +258,7 @@ export default function PipelinesPage() {
                             ? "paused"
                             : "neutral"
                     }
-                    label={pipeline.status}
+                    label={PIPELINE_STATUS_LABEL[pipeline.status] ?? pipeline.status}
                   />
                 </div>
 

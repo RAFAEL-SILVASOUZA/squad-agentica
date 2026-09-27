@@ -20,6 +20,7 @@ import { filterAgentsBySearchAndType } from "@/lib/agent-filter";
 import type {
   Agent,
   ApprovalRequest,
+  Pipeline,
   PipelineRun,
   PipelineStatusEvent,
 } from "@/lib/types";
@@ -65,10 +66,17 @@ async function fetchDashboardData(
   const agents = agentsRes.items;
   const pendingApprovals = approvalsRes.items;
 
-  // Runs recentes: para cada pipeline, busca os runs e filtra por 24h.
-  // O backend não expõe listagem global de pipelines (contrato §9), então
-  // derivamos pipelines dos agentes e das aprovações pendentes.
-  const pipelineIds = new Set<string>();
+  // Runs recentes: para cada pipeline do usuário, busca os runs e filtra por
+  // 24h. (Antes do CRUD de pipelines existir, só as pipelines com aprovação
+  // pendente eram consideradas e runs concluídos nunca apareciam.)
+  const pipelineNames = new Map<string, string>();
+  try {
+    const pipelinesRes = await api.list<Pipeline>("/api/pipelines", { page: 1, limit: 50 });
+    for (const p of pipelinesRes.items) pipelineNames.set(p.id, p.name);
+  } catch {
+    // Listagem indisponível: cai nas pipelines das aprovações pendentes.
+  }
+  const pipelineIds = new Set<string>(pipelineNames.keys());
   for (const approval of pendingApprovals) {
     pipelineIds.add(approval.pipelineId);
   }
@@ -86,10 +94,10 @@ async function fetchDashboardData(
       for (const run of runsRes.items) {
         const started = run.startedAt ? new Date(run.startedAt).getTime() : 0;
         if (started >= cutoff) {
-          recentRuns.push({ run, pipelineName: undefined });
+          recentRuns.push({ run, pipelineName: pipelineNames.get(pipelineId) });
         }
         if (run.status === "running") {
-          runningPipelines.push({ id: pipelineId, name: pipelineId });
+          runningPipelines.push({ id: pipelineId, name: pipelineNames.get(pipelineId) ?? pipelineId });
         }
       }
     } catch {

@@ -196,6 +196,7 @@ describe("DashboardPage", () => {
         page: 1,
         limit: 20,
       })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // pipelines
       .mockResolvedValueOnce({
         items: [run],
         total: 1,
@@ -236,6 +237,7 @@ describe("DashboardPage", () => {
         page: 1,
         limit: 20,
       })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // pipelines
       .mockResolvedValueOnce({
         items: [run],
         total: 1,
@@ -261,6 +263,7 @@ describe("DashboardPage", () => {
         page: 1,
         limit: 20,
       })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // pipelines
       .mockResolvedValueOnce({
         items: [run],
         total: 1,
@@ -317,7 +320,8 @@ describe("DashboardPage", () => {
     onReconnect();
 
     await waitFor(() => {
-      expect(api.list).toHaveBeenCalledTimes(4);
+      // agents + approvals + pipelines, na carga e na reconexão.
+      expect(api.list).toHaveBeenCalledTimes(6);
     });
   });
 
