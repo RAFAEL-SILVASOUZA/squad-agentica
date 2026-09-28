@@ -8,11 +8,14 @@ teste (fixture ``session``) e grava ``publish_status``/``pr_url``/
 
 from __future__ import annotations
 
+import asyncio
+import subprocess
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Checkpoint, Integration, Pipeline, PipelineNode, PipelineRun, User
 from app.integrations.git_providers import GitProviderError, PullRequest
@@ -185,3 +188,117 @@ async def test_publish_run_unexpected_error_is_recorded(session, test_user, tmp_
                                 provider_factory=boom)
     assert out["publishStatus"] == "failed"
     assert "tok-secreto" not in (out["publishError"] or "")
+
+
+# ---------------------------------------------------------------------------
+# Spec §5.9: nova tentativa depois de falha parcial
+# ---------------------------------------------------------------------------
+
+
+def _remote_branches(remote) -> list[str]:
+    out = subprocess.run(
+        ["git", "--git-dir", remote, "branch", "--format=%(refname:short)"],
+        capture_output=True, text=True,
+    ).stdout
+    return sorted(b for b in out.split() if b)
+
+
+class FlakyPRProvider(FakeProvider):
+    """create_pull_request falha na 1ª chamada (depois do push)."""
+
+    def __init__(self, remote):
+        super().__init__(remote)
+        self.fail_next = True
+
+    async def create_pull_request(self, repo, head, base, title, body):
+        if self.fail_next:
+            self.fail_next = False
+            raise GitProviderError("criar PR: erro 422 do provedor")
+        return await super().create_pull_request(repo, head, base, title, body)
+
+
+async def test_retry_after_pr_failure_publishes_on_same_branch(
+    session, test_user, tmp_path, remote
+):
+    run = await _seed(session, test_user, with_repo=True)
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone(str(run.id), remote, "main")
+    (p / "spec.md").write_text("# Spec\n")
+    prov = FlakyPRProvider(remote)
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        first = await publish_run(str(run.id), db=session, manager=ws,
+                                  provider_factory=lambda integ: prov)
+        assert first["publishStatus"] == "failed"
+        assert first["publishError"] == "criar PR: erro 422 do provedor"
+        again = await publish_run(str(run.id), db=session, manager=ws,
+                                  provider_factory=lambda integ: prov)
+    assert again["publishStatus"] == "published" and again["prNumber"] == 1
+    branch = prov.created[0][0]
+    assert not branch.endswith("-2")
+    assert _remote_branches(remote) == sorted(["main", branch])
+
+
+class SwitchRemoteProvider(FakeProvider):
+    """1ª tentativa aponta para um remoto inalcançável (push falha)."""
+
+    def __init__(self, remote):
+        super().__init__(remote)
+        self.urls = ["https://127.0.0.1:9/o/r.git", remote]
+
+    def clone_url(self, repo):
+        return self.urls.pop(0) if len(self.urls) > 1 else self.urls[0]
+
+
+async def test_retry_after_push_failure_publishes(session, test_user, tmp_path, remote):
+    run = await _seed(session, test_user, with_repo=True)
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone(str(run.id), remote, "main")
+    (p / "spec.md").write_text("# Spec\n")
+    prov = SwitchRemoteProvider(remote)
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        first = await publish_run(str(run.id), db=session, manager=ws,
+                                  provider_factory=lambda integ: prov)
+        assert first["publishStatus"] == "failed"
+        again = await publish_run(str(run.id), db=session, manager=ws,
+                                  provider_factory=lambda integ: prov)
+    assert again["publishStatus"] == "published" and len(prov.created) == 1
+
+
+class SlowProvider(FakeProvider):
+    async def find_open_pull_request(self, repo, head):
+        await asyncio.sleep(0.05)
+        return await super().find_open_pull_request(repo, head)
+
+
+async def test_concurrent_publish_creates_one_pr(session, test_engine, test_user, tmp_path, remote):
+    run = await _seed(session, test_user, with_repo=True)
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone(str(run.id), remote, "main")
+    (p / "spec.md").write_text("# Spec\n")
+    prov = SlowProvider(remote)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        async with factory() as other:
+            a, b = await asyncio.gather(
+                publish_run(str(run.id), db=session, manager=ws,
+                            provider_factory=lambda integ: prov),
+                publish_run(str(run.id), db=other, manager=ws,
+                            provider_factory=lambda integ: prov),
+            )
+    assert len(prov.created) == 1
+    assert a["publishStatus"] == b["publishStatus"] == "published"
+    assert a["prNumber"] == b["prNumber"] == 1
+
+
+async def test_missing_integration_with_repository_fails(session, test_user, tmp_path):
+    run = await _seed(session, test_user, with_repo=True)
+    run_id = str(run.id)
+    pipe = await session.get(Pipeline, run.pipeline_id)
+    integ = await session.get(Integration, pipe.git_integration_id)
+    await session.delete(integ)
+    await session.commit()
+    session.expire_all()
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        out = await publish_run(run_id, db=session, manager=WorkspaceManager(tmp_path))
+    assert out["publishStatus"] == "failed"
+    assert out["publishError"] == "conexão Git da pipeline não encontrada"

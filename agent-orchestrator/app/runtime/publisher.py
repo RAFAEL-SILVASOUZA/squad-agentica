@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,6 +21,26 @@ from app.runtime.websocket import publish as ws_publish
 from app.runtime.workspace import WorkspaceError, WorkspaceManager, slugify_branch
 
 logger = logging.getLogger(__name__)
+
+# Um lock por run: publicação automática (fim do run) e manual (POST
+# /runs/:id/publish) serializam, senão as duas podiam abrir PRs duplicados.
+# Contagem de usuários para remover a entrada quando ninguém mais espera.
+_run_locks: dict[str, tuple[asyncio.Lock, int]] = {}
+
+
+@asynccontextmanager
+async def _run_lock(run_id: str) -> AsyncIterator[None]:
+    lock, users = _run_locks.get(run_id, (asyncio.Lock(), 0))
+    _run_locks[run_id] = (lock, users + 1)
+    try:
+        async with lock:
+            yield
+    finally:
+        lock, users = _run_locks[run_id]
+        if users <= 1:
+            _run_locks.pop(run_id, None)
+        else:
+            _run_locks[run_id] = (lock, users - 1)
 
 # Limites do corpo do PR: cada valor é truncado e o corpo inteiro fica abaixo
 # do limite do GitHub (65536 caracteres).
@@ -115,15 +137,16 @@ async def _publish(
                 Integration.owner_id == run.owner_id,
             )
         )).scalar_one_or_none()
-    if (
-        pipeline is None or integration is None
-        or not pipeline.git_repository or not pipeline.git_base_branch
-    ):
+    if pipeline is None or not pipeline.git_repository or not pipeline.git_base_branch:
         run.publish_status = "none"
         await db.commit()
         return _run_to_dict(run)
 
     try:
+        if integration is None:
+            # Repositório configurado, mas a conexão foi removida (FK SET NULL)
+            # ou não é do dono: mesma mensagem do caminho de clone.
+            raise GitProviderError("conexão Git da pipeline não encontrada")
         inputs, outputs = await _run_inputs_and_outputs(db, run)
         run_url = f"{settings.portal_base_url.rstrip('/')}/pipelines/{pipeline.id}/run"
         result = await publish_workspace(
@@ -179,7 +202,8 @@ async def publish_run(
     ``pr_number`` e ``publish_error``; nunca muda o ``status`` do run. Devolve
     o JSON do run (``{}`` se o run não existe).
     """
-    if db is not None:
-        return await _publish(db, run_id, manager, provider_factory)
-    async with async_session_factory() as session:
-        return await _publish(session, run_id, manager, provider_factory)
+    async with _run_lock(str(run_id)):
+        if db is not None:
+            return await _publish(db, run_id, manager, provider_factory)
+        async with async_session_factory() as session:
+            return await _publish(session, run_id, manager, provider_factory)

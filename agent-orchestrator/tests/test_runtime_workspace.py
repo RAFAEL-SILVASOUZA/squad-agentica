@@ -258,3 +258,43 @@ async def test_git_env_passes_through_proxy_and_ssl_vars(tmp_path, monkeypatch):
     assert env["HTTPS_PROXY"] == "http://proxy:3128"
     assert env["NO_PROXY"] == "localhost"
     assert env["SSL_CERT_FILE"] == "/etc/ssl/certs/ca.pem"
+
+
+def _remote_branches(remote) -> list[str]:
+    out = subprocess.run(
+        ["git", "--git-dir", remote, "branch", "--format=%(refname:short)"],
+        capture_output=True, text=True,
+    ).stdout
+    return sorted(b for b in out.split() if b)
+
+
+async def test_retry_after_push_failure_publishes_committed_changes(tmp_path, remote):
+    """Spec §5.9: a 1ª tentativa commitou e falhou no push; a nova tentativa
+    (árvore limpa, HEAD à frente da base) ainda publica."""
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "f.txt").write_text("x")
+    with pytest.raises(WorkspaceError):
+        await ws.commit_and_push("run1", "https://127.0.0.1:9/o/r.git", "agent-portal/x", "m")
+    assert await ws.changed_files("run1") == []
+    assert await ws.commit_and_push("run1", remote, "agent-portal/x", "m") == "agent-portal/x"
+    assert "agent-portal/x" in _remote_branches(remote)
+
+
+async def test_retry_after_successful_push_reuses_branch(tmp_path, remote):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "f.txt").write_text("x")
+    assert await ws.commit_and_push("run1", remote, "agent-portal/x", "m") == "agent-portal/x"
+    assert await ws.commit_and_push("run1", remote, "agent-portal/x", "m") == "agent-portal/x"
+    assert _remote_branches(remote) == ["agent-portal/x", "main"]
+
+
+async def test_new_changes_after_push_go_to_suffixed_branch(tmp_path, remote):
+    """Branch remota com outro SHA (novas alterações): sufixo, sem sobrescrever."""
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "f.txt").write_text("x")
+    await ws.commit_and_push("run1", remote, "agent-portal/x", "m")
+    (p / "g.txt").write_text("y")
+    assert await ws.commit_and_push("run1", remote, "agent-portal/x", "m2") == "agent-portal/x-2"

@@ -45,6 +45,11 @@ _PASSTHROUGH_ENV = (
 )
 
 
+# Arquivo (dentro de .git, fora do alcance do worker via tree/zip) com o SHA
+# da base clonada: "há o que publicar" = árvore suja OU HEAD à frente da base.
+_BASE_FILE = "agent-portal-base"
+
+
 def _scrub(text: str) -> str:
     return _CRED.sub(r"\1***@", text)
 
@@ -137,7 +142,17 @@ class WorkspaceManager:
             raise WorkspaceError(f"falha ao clonar o repositório: {out.strip()[-300:]}")
         # Credencial fora do remote: o worker (e os agentes) nunca veem o token.
         await _git(dest, "remote", "set-url", "origin", _CRED.sub(r"\1", clone_url))
+        _, base_sha = await _git(dest, "rev-parse", "HEAD")
+        (dest / ".git" / _BASE_FILE).write_text(base_sha.strip() + "\n")
         return dest
+
+    async def _base_sha(self, p: Path) -> str | None:
+        """SHA da base clonada (gravado no clone; fallback: upstream do branch)."""
+        marker = p / ".git" / _BASE_FILE
+        if marker.is_file():
+            return marker.read_text().strip() or None
+        code, out = await _git(p, "rev-parse", "--verify", "-q", "@{upstream}", check=False)
+        return out.strip() if code == 0 and out.strip() else None
 
     async def changed_files(self, run_id: str) -> list[dict]:
         p = self.path(run_id)
@@ -258,20 +273,40 @@ class WorkspaceManager:
             # git subiria procurando um repositório em diretórios pai (ex.:
             # o volume compartilhado de workspaces), o que é sempre errado.
             return None
-        if not await self.changed_files(run_id):
+        # Spec §5.9: uma tentativa anterior pode ter commitado e falhado no
+        # push/PR — a árvore fica limpa, mas o HEAD está à frente da base e
+        # ainda há o que publicar. Commit só se a árvore está suja; publica
+        # se HEAD != base.
+        dirty = bool(await self.changed_files(run_id))
+        base_sha = await self._base_sha(p)
+        if dirty:
+            author = ["-c", f"user.name={settings.git_author_name}",
+                      "-c", f"user.email={settings.git_author_email}"]
+            await _git(p, "add", "-A")
+            await _git(p, *author, "commit", "-m", message)
+        _, head_out = await _git(p, "rev-parse", "HEAD")
+        head = head_out.strip()
+        if not dirty and (base_sha is None or head == base_sha):
             return None
-        author = ["-c", f"user.name={settings.git_author_name}",
-                  "-c", f"user.email={settings.git_author_email}"]
-        await _git(p, "add", "-A")
-        await _git(p, *author, "commit", "-m", message)
         candidate, n = branch, 1
         while True:
-            code, _ = await _git(
+            code, out = await _git(
                 p, "ls-remote", "--exit-code", "--heads", "--", clone_url, candidate,
                 check=False,
             )
             if code == 0:
-                # Branch já existe no remoto: tenta o próximo sufixo.
+                remote_sha = next(
+                    (
+                        line.split("\t", 1)[0]
+                        for line in out.splitlines()
+                        if line.endswith(f"\trefs/heads/{candidate}")
+                    ),
+                    None,
+                )
+                if remote_sha == head:
+                    # Já publicado por uma tentativa anterior: reaproveita.
+                    return candidate
+                # Branch existe com outro conteúdo: tenta o próximo sufixo.
                 n += 1
                 candidate = f"{branch}-{n}"
                 continue
