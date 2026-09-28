@@ -64,7 +64,15 @@ class OpenAIEmbedder:
     (preserva cosseno e produto interno); maior é erro de configuração.
     """
 
-    def __init__(self, api_key: str, dim: int, base_url: str = "", model: str = "") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        dim: int,
+        base_url: str = "",
+        model: str = "",
+        query_prefix: str = "",
+        document_prefix: str = "",
+    ) -> None:
         from openai import OpenAI
 
         self._client = OpenAI(
@@ -72,15 +80,22 @@ class OpenAIEmbedder:
         )
         self._dim = dim
         self._model = model or "text-embedding-3-small"
+        self._query_prefix = query_prefix
+        self._document_prefix = document_prefix
 
     @property
     def dim(self) -> int:
         return self._dim
 
     def embed(self, text: str) -> list[float]:
-        return self.embed_batch([text])[0]
+        """Embedding de uma consulta (RAG: ``RagService.query``)."""
+        return self._create([self._query_prefix + text])[0]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embeddings de trechos de documento (RAG: ingestão)."""
+        return self._create([self._document_prefix + t for t in texts])
+
+    def _create(self, texts: list[str]) -> list[list[float]]:
         response = self._client.embeddings.create(model=self._model, input=texts)
         return [_normalize(_fit_dim(list(d.embedding), self._dim)) for d in response.data]
 
@@ -105,6 +120,11 @@ def get_embedder() -> Embedder:
     base_url = settings.embedding_base_url or settings.openai_base_url
     if settings.embedding_provider == "openai" and (settings.openai_api_key or base_url):
         return OpenAIEmbedder(
-            settings.openai_api_key, settings.embedding_dim, base_url, settings.embedding_model
+            settings.openai_api_key,
+            settings.embedding_dim,
+            base_url,
+            settings.embedding_model,
+            settings.embedding_query_prefix,
+            settings.embedding_document_prefix,
         )
     return MockEmbedder(settings.embedding_dim)

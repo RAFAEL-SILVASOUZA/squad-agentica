@@ -107,3 +107,20 @@ class TestOpenAIEmbedder:
             embedder = emb_mod.get_embedder()
         assert isinstance(embedder, emb_mod.OpenAIEmbedder)
         sdk.assert_called_once_with(api_key=llm_mod.LOCAL_API_KEY_PLACEHOLDER, base_url="http://emb/v1")
+
+
+def test_embedder_applies_query_and_document_prefixes():
+    """nomic-embed-text exige prefixos de tarefa; sem eles o score cai abaixo do limiar."""
+    sdk = MagicMock()
+    sdk.return_value.embeddings.create.return_value = SimpleNamespace(
+        data=[SimpleNamespace(embedding=[1.0, 0.0])]
+    )
+    with patch("openai.OpenAI", sdk):
+        embedder = emb_mod.OpenAIEmbedder(
+            "", 4, "http://e/v1", "nomic", "search_query: ", "search_document: "
+        )
+    create = sdk.return_value.embeddings.create
+    embedder.embed("qual o prazo?")
+    assert create.call_args.kwargs["input"] == ["search_query: qual o prazo?"]
+    embedder.embed_batch(["trecho"])
+    assert create.call_args.kwargs["input"] == ["search_document: trecho"]

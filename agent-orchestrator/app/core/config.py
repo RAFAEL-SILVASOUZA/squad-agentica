@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     embedding_dim: int = 1536
     embedding_base_url: str = ""  # vazio = OPENAI_BASE_URL
     embedding_model: str = "text-embedding-3-small"
+    # Prefixos de tarefa exigidos por alguns modelos (ex.: nomic-embed-text:
+    # "search_query: " / "search_document: "). Vazio = texto puro.
+    embedding_query_prefix: str = ""
+    embedding_document_prefix: str = ""
 
     # --- CORS ---
     cors_origins: str = "http://localhost,http://localhost:80"

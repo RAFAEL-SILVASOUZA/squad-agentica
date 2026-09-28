@@ -137,6 +137,8 @@ describe("KnowledgeView", () => {
         description: "",
         scope: "global",
         source: "upload",
+        similarityThreshold: 0.7,
+        topK: 5,
       });
     });
   });

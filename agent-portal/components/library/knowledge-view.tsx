@@ -88,6 +88,16 @@ const LAYOUT: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: "1
 const SIDEBAR: React.CSSProperties = { flex: "1 1 240px", minWidth: 0 };
 const MAIN: React.CSSProperties = { flex: "999 1 320px", minWidth: 0 };
 
+
+const EMPTY_CREATE_FORM = {
+  name: "",
+  description: "",
+  scope: "global",
+  source: "upload",
+  similarityThreshold: "0.7",
+  topK: "5",
+};
+
 export function KnowledgeView() {
   const { addToast } = useToast();
   const [bases, setBases] = React.useState<KnowledgeBaseItem[]>([]);
@@ -99,7 +109,7 @@ export function KnowledgeView() {
   const [docsLoading, setDocsLoading] = React.useState(false);
 
   const [createModalOpen, setCreateModalOpen] = React.useState(false);
-  const [createForm, setCreateForm] = React.useState({ name: "", description: "", scope: "global", source: "upload" });
+  const [createForm, setCreateForm] = React.useState(EMPTY_CREATE_FORM);
   const [createFormError, setCreateFormError] = React.useState<string | null>(null);
   const [createBusy, setCreateBusy] = React.useState(false);
 
@@ -169,15 +179,24 @@ export function KnowledgeView() {
 
     setCreateBusy(true);
     try {
+      const threshold = Number(createForm.similarityThreshold.replace(",", "."));
+      const topK = Number(createForm.topK);
+      if (!(threshold >= 0 && threshold <= 1) || !Number.isInteger(topK) || topK < 1) {
+        setCreateFormError("Limiar deve estar entre 0 e 1 e Top K ser um inteiro maior que 0.");
+        setCreateBusy(false);
+        return;
+      }
       await api.post("/api/knowledge", {
         name: createForm.name.trim(),
         description: createForm.description.trim(),
         scope: createForm.scope,
         source: createForm.source,
+        similarityThreshold: threshold,
+        topK,
       });
       addToast("success", "Base de conhecimento criada");
       setCreateModalOpen(false);
-      setCreateForm({ name: "", description: "", scope: "global", source: "upload" });
+      setCreateForm(EMPTY_CREATE_FORM);
       await load();
     } catch (e) {
       // E6: não expor o JSON cru do pydantic — mostra uma mensagem amigável.
@@ -605,6 +624,27 @@ export function KnowledgeView() {
             onChange={(e) => setCreateForm((f) => ({ ...f, source: e.target.value }))}
             disabled={createBusy}
           />
+          {/* Spec §7: topK e similarityThreshold são configuráveis por base. O
+              limiar certo depende do modelo de embeddings (0,7 corta trechos
+              relevantes com modelos locais). */}
+          <div style={{ display: "flex", gap: "12px" }}>
+            <Input
+              id="kb-threshold"
+              label="Limiar de similaridade (0–1)"
+              inputMode="decimal"
+              value={createForm.similarityThreshold}
+              onChange={(e) => setCreateForm((f) => ({ ...f, similarityThreshold: e.target.value }))}
+              disabled={createBusy}
+            />
+            <Input
+              id="kb-topk"
+              label="Top K"
+              inputMode="numeric"
+              value={createForm.topK}
+              onChange={(e) => setCreateForm((f) => ({ ...f, topK: e.target.value }))}
+              disabled={createBusy}
+            />
+          </div>
           {createFormError && (
             <p
               role="alert"
