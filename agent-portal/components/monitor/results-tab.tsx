@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/ui/markdown";
 import { NODE_STATUS_BADGE, NODE_STATUS_LABEL, type NodeStatus } from "./status";
@@ -153,9 +153,26 @@ function StepOutput({ output }: { output: unknown }) {
 export function ResultsTab({ steps, focusNodeId, focusKey }: ResultsTabProps) {
   const baseId = React.useId();
   const sectionRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  // Seções recolhidas (padrão: todas abertas).
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
+
+  const toggle = (nodeId: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
 
   React.useEffect(() => {
     if (!focusNodeId) return;
+    // Focar pela faixa de etapas (ou pelo grafo) reabre a seção recolhida.
+    setCollapsed((prev) => {
+      if (!prev.has(focusNodeId)) return prev;
+      const next = new Set(prev);
+      next.delete(focusNodeId);
+      return next;
+    });
     const el = sectionRefs.current[focusNodeId];
     if (el && typeof el.scrollIntoView === "function") {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -170,7 +187,9 @@ export function ResultsTab({ steps, focusNodeId, focusKey }: ResultsTabProps) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {steps.map((step, i) => {
         const headingId = `${baseId}-step-${i}`;
+        const bodyId = `${baseId}-body-${i}`;
         const focused = step.nodeId === focusNodeId;
+        const open = !collapsed.has(step.nodeId);
         return (
           <section
             key={step.nodeId}
@@ -190,12 +209,30 @@ export function ResultsTab({ steps, focusNodeId, focusKey }: ResultsTabProps) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginBottom: 12,
+                gap: 8,
+                marginBottom: open ? 12 : 0,
               }}
             >
-              <h2 id={headingId} style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+              <button
+                type="button"
+                onClick={() => toggle(step.nodeId)}
+                aria-expanded={open}
+                aria-controls={bodyId}
+                aria-label={`${open ? "Recolher" : "Expandir"} ${step.name}`}
+                title={open ? "Recolher" : "Expandir"}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: 2,
+                  color: "var(--text-muted)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+              </button>
+              <h2 id={headingId} style={{ margin: 0, flex: 1, fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
                 {step.name}
               </h2>
               <Badge
@@ -204,11 +241,14 @@ export function ResultsTab({ steps, focusNodeId, focusKey }: ResultsTabProps) {
                 pulse={step.status === "running"}
               />
             </div>
-            {step.output === undefined ? (
-              <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>{PENDING_TEXT[step.status]}</p>
-            ) : (
-              <StepOutput output={step.output} />
-            )}
+            <div id={bodyId} hidden={!open}>
+              {open &&
+                (step.output === undefined ? (
+                  <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>{PENDING_TEXT[step.status]}</p>
+                ) : (
+                  <StepOutput output={step.output} />
+                ))}
+            </div>
           </section>
         );
       })}

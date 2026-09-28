@@ -46,6 +46,32 @@ describe("ResultsTab", () => {
     expect(within(c).getByText(/Aguardando/)).toBeInTheDocument();
   });
 
+  it("collapses and expands a result section; focusing expands a collapsed one", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const steps = [
+      { nodeId: "a", name: "Redator", status: "completed" as const, output: "texto do redator" },
+      { nodeId: "b", name: "Revisor", status: "completed" as const, output: "texto do revisor" },
+    ];
+    const { rerender } = render(<ResultsTab steps={steps} />);
+    const toggle = screen.getByRole("button", { name: "Recolher Redator" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById(toggle.getAttribute("aria-controls")!)).toHaveTextContent("texto do redator");
+
+    fireEvent.click(toggle);
+    expect(screen.queryByText("texto do redator")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expandir Redator" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("texto do revisor")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expandir Redator" }));
+    expect(screen.getByText("texto do redator")).toBeInTheDocument();
+
+    // Recolhe de novo e foca pela faixa de etapas: a seção volta a abrir.
+    fireEvent.click(screen.getByRole("button", { name: "Recolher Redator" }));
+    rerender(<ResultsTab steps={steps} focusNodeId="a" focusKey={1} />);
+    expect(screen.getByText("texto do redator")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recolher Redator" })).toBeInTheDocument();
+  });
+
   it("scrolls the focused agent into view", () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;

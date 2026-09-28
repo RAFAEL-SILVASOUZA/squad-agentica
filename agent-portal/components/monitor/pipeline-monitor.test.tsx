@@ -614,9 +614,69 @@ describe("PipelineMonitor", () => {
     renderMonitor();
     await screen.findByText("Test Pipeline");
     expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+    // O painel é rotulado pela aba ativa.
+    expect(screen.getByRole("tabpanel", { name: "Logs" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Arquivos do projeto" })).not.toBeInTheDocument();
     openTab("Histórico");
     expect(window.location.search).toBe("?tab=historico");
+  });
+
+  it("clears the previous run logs and outputs when starting a new run", async () => {
+    const noInputs = makePipeline();
+    noInputs.nodes[0].agentSnapshot.inputs = [];
+    mockGet.mockResolvedValue(noInputs);
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun({ status: "completed" })], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [makeRun({ id: "run-2" })], total: 1, page: 1, limit: 50 });
+    mockPost.mockResolvedValue({ runId: "run-2" });
+
+    renderMonitor();
+    await waitFor(() => expect(mockWsClient.connect).toHaveBeenCalled());
+    await act(async () => {
+      wsHandler("pipeline:log")({ pipelineId: "pipe-1", nodeId: "node-1", level: "info", message: "log antigo", at: "" });
+    });
+    openTab("Logs");
+    expect(screen.getByText("log antigo")).toBeInTheDocument();
+
+    // O agente de entrada aqui não tem inputs: Iniciar executa direto.
+    fireEvent.click(screen.getByRole("button", { name: /iniciar/i }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/execute", { inputs: {} }));
+    openTab("Logs");
+    expect(screen.queryByText("log antigo")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the project files when a node completes, keeping the open file", async () => {
+    window.history.replaceState(null, "", "/pipelines/pipe-1/run?tab=arquivos");
+    let items = [{ path: "a.txt", size: 1, binary: false, status: "added" }];
+    mockGet.mockImplementation(async (p: string) =>
+      p.endsWith("/files")
+        ? { items }
+        : p.includes("/files/content")
+          ? { path: "a.txt", content: "conteudo A", binary: false, tooLarge: false, size: 1 }
+          : makePipeline()
+    );
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun()], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      .mockResolvedValue({ items: [makeRun({ status: "completed" })], total: 1, page: 1, limit: 50 });
+
+    renderMonitor();
+    fireEvent.click(await screen.findByRole("button", { name: /a\.txt/ }));
+    expect(await screen.findByText("conteudo A")).toBeInTheDocument();
+
+    items = [...items, { path: "b.txt", size: 1, binary: false, status: "added" }];
+    await act(async () => {
+      wsHandler()({ pipelineId: "pipe-1", runId: "run-1", nodeId: "node-1", status: "completed", at: "" });
+    });
+    expect(await screen.findByRole("button", { name: /b\.txt/ })).toBeInTheDocument();
+
+    // Fim do run (status agregado): o arquivo aberto continua aberto.
+    await act(async () => {
+      wsHandler()({ pipelineId: "pipe-1", runId: "run-1", nodeId: "", status: "completed", at: "" });
+    });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(3));
+    expect(screen.getByText("conteudo A")).toBeInTheDocument();
   });
 
   it("shows the Arquivos tab when there is a run", async () => {

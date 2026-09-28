@@ -89,6 +89,8 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
   const [publishing, setPublishing] = React.useState(false);
   const [runInputsOpen, setRunInputsOpen] = React.useState(false);
+  // Recarrega a lista de arquivos do run (nó concluído / status do run).
+  const [filesVersion, setFilesVersion] = React.useState(0);
 
   const wsClientRef = React.useRef<ReturnType<typeof getWebSocketClient> | null>(null);
 
@@ -209,9 +211,12 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
                 : prev
             );
             void refreshRunsRef.current();
+            setFilesVersion((v) => v + 1);
             return;
           }
           setNodeStatuses((prev) => ({ ...prev, [event.nodeId]: event.status }));
+          // Um agente terminou: pode ter escrito no workspace.
+          if (event.status === "completed") setFilesVersion((v) => v + 1);
         };
 
         onLog = (data: Record<string, unknown>) => {
@@ -319,6 +324,7 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
           return next;
         });
         setAgentOutputs({});
+        setLogs([]);
         changeTab("resultado");
         const runsRes = await api.list<PipelineRun>(`/api/pipelines/${pipelineId}/runs`, { page: 1, limit: 50 });
         setRuns(runsRes.items);
@@ -540,14 +546,19 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
         <StageStrip steps={stages} onSelect={focusResult} />
       </div>
 
-      <Tabs tabs={tabs} activeTab={shownTab} onTabChange={(id) => changeTab(id as MonitorTab)} />
+      <Tabs
+        tabs={tabs}
+        activeTab={shownTab}
+        onTabChange={(id) => changeTab(id as MonitorTab)}
+        idPrefix="monitor"
+      />
 
-      <div role="tabpanel" style={{ paddingTop: 16 }}>
+      <div role="tabpanel" id="monitor-panel" aria-labelledby={`monitor-tab-${shownTab}`} style={{ paddingTop: 16 }}>
         {shownTab === "resultado" && (
           <ResultsTab steps={resultSteps} focusNodeId={focus?.nodeId} focusKey={focus?.key} />
         )}
         {shownTab === "arquivos" && activeRun && (
-          <FilesTab key={`${activeRun.id}:${activeRun.status}:${activeRun.publishStatus ?? ""}`} runId={activeRun.id} />
+          <FilesTab runId={activeRun.id} refreshKey={filesVersion} />
         )}
         {shownTab === "logs" && <LogsTab logs={logs} agents={agents} />}
         {shownTab === "historico" && (

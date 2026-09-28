@@ -47,6 +47,78 @@ describe("FilesTab", () => {
     expect(screen.getByRole("button", { name: /Baixar \.zip/ })).toBeInTheDocument();
   });
 
+  it("renders a tree: folders first, collapsible, with changed counts; filter shows nested matches", async () => {
+    mockGet.mockResolvedValue({
+      items: [
+        { path: "README.md", size: 1, binary: false, status: null },
+        { path: "src/app/main.py", size: 1, binary: false, status: "modified" },
+        { path: "src/app/util.py", size: 1, binary: false, status: "added" },
+        { path: "src/lib/x.py", size: 1, binary: false, status: null },
+        { path: "docs/guia.md", size: 1, binary: false, status: null },
+      ],
+    });
+    render(<FilesTab runId="r1" />);
+    const src = await screen.findByRole("button", { name: /^src( |$)/ });
+    // Pasta com alterações vem aberta e mostra a contagem.
+    expect(src).toHaveAttribute("aria-expanded", "true");
+    expect(src).toHaveAccessibleName(/2 alterado/);
+    // Pastas antes de arquivos, em ordem alfabética.
+    const tree = screen.getByRole("list", { name: "Arquivos do projeto" });
+    const top = Array.from(tree.children).map((li) => li.querySelector("button")?.textContent ?? "");
+    expect(top[0]).toMatch(/^docs( |$)/);
+    expect(top[1]).toMatch(/^src( |$)/);
+    expect(top[2]).toMatch(/README\.md/);
+    // Status nos arquivos.
+    expect(screen.getByRole("button", { name: /src\/app\/main\.py.*alterado/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /src\/app\/util\.py.*novo/ })).toBeInTheDocument();
+    // Pasta sem alterações vem fechada.
+    expect(screen.getByRole("button", { name: /^docs( |$)/ })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /docs\/guia\.md/ })).not.toBeInTheDocument();
+
+    // Recolher a pasta esconde os filhos.
+    fireEvent.click(src);
+    expect(src).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /src\/app\/main\.py/ })).not.toBeInTheDocument();
+
+    // Filtro mostra o arquivo aninhado com o caminho aberto.
+    fireEvent.change(screen.getByLabelText("Filtrar arquivos"), { target: { value: "guia" } });
+    expect(screen.getByRole("button", { name: /docs\/guia\.md/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /README/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^src( |$)/ })).not.toBeInTheDocument();
+  });
+
+  it("refreshes the list (button or refreshKey) without closing the open file", async () => {
+    let items = [{ path: "a.txt", size: 1, binary: false, status: "added" }];
+    mockGet.mockImplementation(async (p: string) =>
+      p.endsWith("/files") ? { items } : { path: "a.txt", content: "conteudo A", binary: false, tooLarge: false, size: 1 }
+    );
+    const { rerender } = render(<FilesTab runId="r1" refreshKey={0} />);
+    fireEvent.click(await screen.findByRole("button", { name: /a\.txt/ }));
+    expect(await screen.findByText("conteudo A")).toBeInTheDocument();
+
+    items = [...items, { path: "b.txt", size: 1, binary: false, status: "added" }];
+    rerender(<FilesTab runId="r1" refreshKey={1} />);
+    expect(await screen.findByRole("button", { name: /b\.txt/ })).toBeInTheDocument();
+    expect(screen.getByText("conteudo A")).toBeInTheDocument();
+
+    items = [...items, { path: "c.txt", size: 1, binary: false, status: "added" }];
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar arquivos" }));
+    expect(await screen.findByRole("button", { name: /c\.txt/ })).toBeInTheDocument();
+    expect(screen.getByText("conteudo A")).toBeInTheDocument();
+  });
+
+  it("says content unavailable when the server sends no content but it is not too large", async () => {
+    mockGet.mockImplementation(async (p: string) =>
+      p.endsWith("/files")
+        ? { items: [{ path: "x.txt", size: 10, binary: false, status: "added" }] }
+        : { path: "x.txt", content: null, binary: false, tooLarge: false, size: 10 }
+    );
+    render(<FilesTab runId="r1" />);
+    fireEvent.click(await screen.findByRole("button", { name: /x\.txt/ }));
+    expect(await screen.findByText("Conteúdo indisponível")).toBeInTheDocument();
+    expect(screen.queryByText(/Arquivo grande/)).not.toBeInTheDocument();
+  });
+
   it("shows the size of a file too large to preview", async () => {
     mockGet.mockImplementation(async (p: string) =>
       p.endsWith("/files")

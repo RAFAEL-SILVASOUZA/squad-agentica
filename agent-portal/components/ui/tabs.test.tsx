@@ -9,6 +9,13 @@ const tabs = [
 ];
 
 describe("Tabs", () => {
+  it("links tabs to the panel when idPrefix is given", () => {
+    render(<Tabs tabs={tabs} activeTab="tab2" onTabChange={() => {}} idPrefix="mon" />);
+    const tab = screen.getByRole("tab", { name: "Tab 2" });
+    expect(tab).toHaveAttribute("id", "mon-tab-tab2");
+    expect(tab).toHaveAttribute("aria-controls", "mon-panel");
+  });
+
   it("renders all tabs", () => {
     render(<Tabs tabs={tabs} activeTab="tab1" onTabChange={() => {}} />);
     expect(screen.getByRole("tab", { name: "Tab 1" })).toBeInTheDocument();

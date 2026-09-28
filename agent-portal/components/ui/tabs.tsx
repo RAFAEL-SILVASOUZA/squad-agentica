@@ -15,9 +15,15 @@ export interface TabsProps {
   tabs: TabItem[];
   activeTab: string;
   onTabChange: (id: string) => void;
+  /**
+   * Liga abas e painel (a11y): aba = `<prefix>-tab-<id>`, com
+   * aria-controls = `<prefix>-panel` (o painel usa esse id e
+   * aria-labelledby apontando para a aba ativa).
+   */
+  idPrefix?: string;
 }
 
-export function Tabs({ tabs, activeTab, onTabChange }: TabsProps) {
+export function Tabs({ tabs, activeTab, onTabChange, idPrefix }: TabsProps) {
   return (
     <div
       role="tablist"
@@ -33,6 +39,8 @@ export function Tabs({ tabs, activeTab, onTabChange }: TabsProps) {
           <button
             key={tab.id}
             role="tab"
+            id={idPrefix ? `${idPrefix}-tab-${tab.id}` : undefined}
+            aria-controls={idPrefix ? `${idPrefix}-panel` : undefined}
             aria-selected={isActive}
             onClick={() => onTabChange(tab.id)}
             style={{

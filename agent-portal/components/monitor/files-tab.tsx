@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, FileText, FileDiff, Folder } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FileText, FileDiff, Folder, FolderOpen, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, ApiError } from "@/lib/api";
@@ -23,11 +23,13 @@ interface FileContent {
 
 export interface FilesTabProps {
   runId: string;
+  /** Muda quando a lista deve ser recarregada (ex.: um nó terminou). */
+  refreshKey?: number;
 }
 
 const STATUS_LABEL: Record<NonNullable<RunFile["status"]>, string> = {
-  added: "adicionado",
-  modified: "modificado",
+  added: "novo",
+  modified: "alterado",
   deleted: "removido",
 };
 
@@ -56,6 +58,163 @@ function saveBlob(blob: Blob, filename: string) {
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+interface DirNode {
+  name: string;
+  path: string;
+  dirs: DirNode[];
+  files: RunFile[];
+  /** Arquivos alterados na subárvore. */
+  changed: number;
+}
+
+/** Agrupa os caminhos em pastas: pastas antes, depois arquivos, em ordem alfabética. */
+function buildTree(files: RunFile[]): DirNode {
+  const root: DirNode = { name: "", path: "", dirs: [], files: [], changed: 0 };
+  const index = new Map<string, DirNode>([["", root]]);
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let dir = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const path = parts.slice(0, i + 1).join("/");
+      let child = index.get(path);
+      if (!child) {
+        child = { name: parts[i], path, dirs: [], files: [], changed: 0 };
+        index.set(path, child);
+        dir.dirs.push(child);
+      }
+      if (f.status) dir.changed += 1;
+      dir = child;
+    }
+    if (f.status) dir.changed += 1;
+    dir.files.push(f);
+  }
+  const sort = (d: DirNode) => {
+    d.dirs.sort((a, b) => a.name.localeCompare(b.name));
+    d.files.sort((a, b) => a.path.localeCompare(b.path));
+    d.dirs.forEach(sort);
+  };
+  sort(root);
+  return root;
+}
+
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+interface FileTreeProps {
+  dir: DirNode;
+  depth: number;
+  isOpen: (dir: DirNode) => boolean;
+  onToggle: (dir: DirNode) => void;
+  selectedPath: string | null;
+  onOpenFile: (file: RunFile) => void;
+}
+
+const rowButton: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  width: "100%",
+  padding: "4px 8px",
+  fontSize: 12,
+  fontFamily: "var(--font-mono)",
+  textAlign: "left",
+  background: "none",
+  border: "none",
+  borderRadius: "var(--radius-sm)",
+  cursor: "pointer",
+};
+
+function FileTreeItems({ dir, depth, isOpen, onToggle, selectedPath, onOpenFile }: FileTreeProps) {
+  const indent = 8 + depth * 14;
+  return (
+    <>
+      {dir.dirs.map((d) => {
+        const open = isOpen(d);
+        return (
+          <li key={`d:${d.path}`}>
+            <button
+              type="button"
+              onClick={() => onToggle(d)}
+              aria-expanded={open}
+              title={d.path}
+              style={{ ...rowButton, paddingLeft: indent, color: "var(--text)" }}
+            >
+              {open ? (
+                <ChevronDown size={12} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
+              ) : (
+                <ChevronRight size={12} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
+              )}
+              {open ? (
+                <FolderOpen size={12} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
+              ) : (
+                <Folder size={12} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
+              )}
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {d.name}
+              </span>
+              {d.changed > 0 && (
+                <span style={{ flexShrink: 0, fontSize: 10, fontFamily: "var(--font)", color: "var(--warning)" }}>
+                  {" "}
+                  {d.changed} alterado(s)
+                </span>
+              )}
+            </button>
+            {open && (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                <FileTreeItems
+                  dir={d}
+                  depth={depth + 1}
+                  isOpen={isOpen}
+                  onToggle={onToggle}
+                  selectedPath={selectedPath}
+                  onOpenFile={onOpenFile}
+                />
+              </ul>
+            )}
+          </li>
+        );
+      })}
+      {dir.files.map((f) => (
+        <li key={`f:${f.path}`}>
+          <button
+            type="button"
+            onClick={() => onOpenFile(f)}
+            aria-current={selectedPath === f.path ? "true" : undefined}
+            aria-label={f.status ? `${f.path} — ${STATUS_LABEL[f.status]}` : f.path}
+            title={f.path}
+            style={{
+              ...rowButton,
+              paddingLeft: indent + 18,
+              color: f.status === "deleted" ? "var(--text-muted)" : "var(--text)",
+              background: selectedPath === f.path ? "var(--bg-hover)" : "none",
+            }}
+          >
+            <FileText size={12} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
+            <span
+              style={{
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                textDecoration: f.status === "deleted" ? "line-through" : undefined,
+              }}
+            >
+              {baseName(f.path)}
+            </span>
+            {f.status && (
+              <span style={{ flexShrink: 0, fontSize: 10, fontFamily: "var(--font)", color: STATUS_COLOR[f.status] }}>
+                {STATUS_LABEL[f.status]}
+              </span>
+            )}
+          </button>
+        </li>
+      ))}
+    </>
+  );
 }
 
 type Viewer =
@@ -92,33 +251,53 @@ const codeBlock: React.CSSProperties = {
  * arquivo (adicionado/modificado/removido), visualização de texto, diff e
  * download do .zip. Binários e arquivos grandes não são exibidos.
  */
-export function FilesTab({ runId }: FilesTabProps) {
+export function FilesTab({ runId, refreshKey }: FilesTabProps) {
   const [files, setFiles] = React.useState<RunFile[] | null>(null);
   const [listError, setListError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState("");
   const [viewer, setViewer] = React.useState<Viewer>({ kind: "none" });
   const [downloading, setDownloading] = React.useState(false);
   const [downloadError, setDownloadError] = React.useState<string | null>(null);
+  const [refreshing, setRefreshing] = React.useState(false);
+  // Pastas abertas/fechadas pelo usuário; sem escolha, abre as que têm alterações.
+  const [folderOpen, setFolderOpen] = React.useState<Record<string, boolean>>({});
   // Descarta respostas de um arquivo que já não está selecionado.
   const selectionRef = React.useRef(0);
+  // Descarta listagens antigas (troca de run ou recarga sobreposta).
+  const listRef = React.useRef(0);
 
+  const loadList = React.useCallback(async () => {
+    const token = ++listRef.current;
+    setRefreshing(true);
+    try {
+      const res = await api.get<{ items: RunFile[] }>(`/api/runs/${runId}/files`);
+      if (token === listRef.current) {
+        setFiles(res.items);
+        setListError(null);
+      }
+    } catch (err) {
+      if (token === listRef.current) setListError(errorText(err, "Falha ao listar os arquivos."));
+    } finally {
+      if (token === listRef.current) setRefreshing(false);
+    }
+  }, [runId]);
+
+  // Run novo: estado do zero.
   React.useEffect(() => {
-    let cancelled = false;
     setFiles(null);
     setListError(null);
     setViewer({ kind: "none" });
-    api
-      .get<{ items: RunFile[] }>(`/api/runs/${runId}/files`)
-      .then((res) => {
-        if (!cancelled) setFiles([...res.items].sort((a, b) => a.path.localeCompare(b.path)));
-      })
-      .catch((err) => {
-        if (!cancelled) setListError(errorText(err, "Falha ao listar os arquivos."));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [runId]);
+    setFolderOpen({});
+    void loadList();
+  }, [loadList]);
+
+  // Recarga pedida pelo monitor: mantém o arquivo aberto e as pastas.
+  const lastRefreshKey = React.useRef(refreshKey);
+  React.useEffect(() => {
+    if (lastRefreshKey.current === refreshKey) return;
+    lastRefreshKey.current = refreshKey;
+    void loadList();
+  }, [refreshKey, loadList]);
 
   const openFile = async (file: RunFile) => {
     const token = ++selectionRef.current;
@@ -168,10 +347,18 @@ export function FilesTab({ runId }: FilesTabProps) {
     }
   };
 
-  const visible = React.useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return (files ?? []).filter((f) => !q || f.path.toLowerCase().includes(q));
-  }, [files, filter]);
+  const query = filter.trim().toLowerCase();
+  const visible = React.useMemo(
+    () => (files ?? []).filter((f) => !query || f.path.toLowerCase().includes(query)),
+    [files, query]
+  );
+  const tree = React.useMemo(() => buildTree(visible), [visible]);
+  // Filtrando, o caminho até cada resultado fica aberto.
+  const isOpen = (d: DirNode) => (query ? true : folderOpen[d.path] ?? d.changed > 0);
+  const toggleFolder = (d: DirNode) => {
+    if (query) return;
+    setFolderOpen((prev) => ({ ...prev, [d.path]: !(prev[d.path] ?? d.changed > 0) }));
+  };
   const changedCount = (files ?? []).filter((f) => f.status).length;
 
   const selectedPath = viewer.kind === "file" ? viewer.file.path : null;
@@ -184,6 +371,10 @@ export function FilesTab({ runId }: FilesTabProps) {
             ? `${files.length} arquivo(s) no projeto · ${changedCount} alterado(s) nesta execução`
             : "Carregando arquivos…"}
         </span>
+        <Button size="sm" onClick={() => void loadList()} loading={refreshing} aria-label="Atualizar arquivos">
+          <RefreshCw size={13} aria-hidden="true" />
+          Atualizar
+        </Button>
         <Button size="sm" onClick={() => void openDiff()} aria-pressed={viewer.kind === "diff"}>
           <FileDiff size={13} aria-hidden="true" />
           Ver diff
@@ -241,49 +432,14 @@ export function FilesTab({ runId }: FilesTabProps) {
                 {files.length === 0 ? "Nenhum arquivo nesta execução." : "Nenhum arquivo corresponde ao filtro."}
               </li>
             )}
-            {visible.map((f) => (
-              <li key={f.path}>
-                <button
-                  type="button"
-                  onClick={() => void openFile(f)}
-                  aria-current={selectedPath === f.path ? "true" : undefined}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    width: "100%",
-                    padding: "5px 8px",
-                    fontSize: 12,
-                    fontFamily: "var(--font-mono)",
-                    textAlign: "left",
-                    color: f.status === "deleted" ? "var(--text-muted)" : "var(--text)",
-                    textDecoration: f.status === "deleted" ? "line-through" : undefined,
-                    background: selectedPath === f.path ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: "var(--radius-sm)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <FileText size={12} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {f.path}
-                  </span>
-                  {f.status && (
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        fontSize: 10,
-                        fontFamily: "var(--font)",
-                        color: STATUS_COLOR[f.status],
-                        textDecoration: "none",
-                      }}
-                    >
-                      {STATUS_LABEL[f.status]}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
+            <FileTreeItems
+              dir={tree}
+              depth={0}
+              isOpen={isOpen}
+              onToggle={toggleFolder}
+              selectedPath={selectedPath}
+              onOpenFile={(f) => void openFile(f)}
+            />
           </ul>
         </div>
 
@@ -313,8 +469,10 @@ export function FilesTab({ runId }: FilesTabProps) {
                 </div>
               ) : viewer.content?.binary ? (
                 <div style={notice}>Arquivo binário — baixe o .zip</div>
-              ) : viewer.content?.tooLarge || viewer.content?.content == null ? (
-                <div style={notice}>Arquivo grande ({formatMb(viewer.content?.size ?? viewer.file.size)} MB) — baixe o .zip</div>
+              ) : viewer.content?.tooLarge ? (
+                <div style={notice}>Arquivo grande ({formatMb(viewer.content.size ?? viewer.file.size)} MB) — baixe o .zip</div>
+              ) : viewer.content?.content == null ? (
+                <div style={notice}>Conteúdo indisponível</div>
               ) : (
                 <pre style={codeBlock}>{viewer.content.content}</pre>
               )}
