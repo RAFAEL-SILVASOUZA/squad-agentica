@@ -1706,3 +1706,152 @@ No worker, com `LLM_PROVIDER=mock` e workspace definido, o agente mock grava `re
   - eu vinculo o repositório a um pipeline "Analista → Desenvolvedor → Revisor", executo com o Qwen, aprovo e confiro no navegador: aba Resultado legível, arquivos na aba Arquivos e o PR aberto no provedor com os arquivos.
   - Registrar prints e resultado em `qa-projeto-git.md`; pendências em `PENDENCIAS.md`.
 - [ ] **Step 6: Commit** — `git commit -m "test(git): projeto ponta a ponta com repositorio local; validacao real registrada"`
+
+---
+
+## Adendo (2026-09-28): pedidos do usuário durante a execução
+
+Decisões do usuário:
+- **MCP:** instalar o Node.js e fazer os agentes executarem as ferramentas MCP de verdade.
+- **Chat de teste do Knowledge:**
+  - o LLM responde com base nos trechos e mostra as fontes;
+  - as conversas ficam salvas por base e podem ser retomadas;
+  - a pergunta seguinte usa o contexto das anteriores.
+- **Arquivo duplicado:** detectar pelo conteúdo (sha256) e perguntar se substitui ou cancela. Nunca indexar duas vezes.
+- **Knowledge:** remover documentos na tela e editar o nome e a descrição da base.
+
+Ordem de execução: 10 → 11 → 12 → 14 → 15 → 16 → 13. A Task 13 (E2E e validação real) fica por último para cobrir tudo.
+
+### Task 14: MCP executável pelos agentes (stdio com Node.js)
+
+**Files:**
+- Modify: `agent-orchestrator/Dockerfile`.
+  - Instalar o Node.js LTS com npm/npx.
+  - Conferir `npx --version` no container.
+- Create: `agent-orchestrator/app/api/internal_mcp.py`.
+  - Router `/internal/mcp`, autenticado por `X-Worker-Token` == `settings.worker_token`.
+  - O nginx público não pode encaminhar `/internal/`: conferir `10-public.conf` e bloquear se preciso.
+- Modify: `agent-orchestrator/app/main.py` (incluir o router).
+- Modify: `agent-orchestrator/app/mcp/client.py` (`shlex.split` no comando; timeout de chamada).
+- Modify: `agent-worker/app/worker.py`.
+  - Em `execute_tool`, um nome de tool MCP vira POST ao orchestrator.
+  - A config ganha `ORCHESTRATOR_INTERNAL_URL`, padrão `http://orchestrator:8000`, que já é a rede do compose.
+- Modify: `docker-compose.yml` (o worker recebe `ORCHESTRATOR_INTERNAL_URL`).
+- Test: `agent-orchestrator/tests/test_internal_mcp.py`, `agent-worker/tests/test_mcp_tools.py`, `agent-orchestrator/tests/fixtures/echo_mcp_server.py`.
+  - O último é um servidor MCP stdio mínimo em Python, sem rede: responde `initialize`, `tools/list` (com a tool `echo`) e `tools/call`.
+
+**Interfaces:**
+- `POST /internal/mcp/{server_id}/call`:
+  - body: `{"ownerId": str, "tool": str, "arguments": dict}`;
+  - sucesso: `200 {"content": [...], "isError": bool}`;
+  - 401 sem token válido;
+  - 404 se o servidor não é do `ownerId`;
+  - 502 `mcp_call_failed`, com mensagem pt-BR sem segredos (valores de `env` nunca aparecem).
+- Worker:
+  - O snapshot do agente guarda `mcpServers[]` como `{serverId, tools:[{name, description, inputSchema}]}`.
+  - `_resolve_mcp` monta o mapa `tool name → serverId`. Numa colisão de nomes, a tool nativa vence e o worker registra um warning.
+  - `execute_tool` precisa do `owner_id` do run. Se o `/execute` ainda não o manda, o orchestrator passa a enviar `ownerId` no corpo.
+  - A chamada é `POST {ORCHESTRATOR_INTERNAL_URL}/internal/mcp/{serverId}/call` com `X-Worker-Token`.
+  - O resultado volta ao LLM como texto: concatena os itens `type == "text"`; os outros tipos viram `[<type>]`.
+- Fora do escopo: tools customizadas que não são MCP mantêm a mensagem atual.
+
+- [ ] **Step 1: testes que falham.**
+  - orchestrator, com o servidor `echo` cadastrado para o dono (comando `python tests/fixtures/echo_mcp_server.py`):
+    - com token, `/internal/mcp/{id}/call` devolve o eco;
+    - sem token, 401;
+    - de outro dono, 404;
+    - com comando inexistente, 502 "não encontrado";
+    - `POST /api/mcp-servers/{id}/test` devolve `connected` com a tool `echo`.
+  - worker, com `mcpServers` no snapshot e o httpx mockado: `execute_tool("echo", {...})` faz o POST certo com o header e devolve o texto.
+- [ ] **Step 2: rodar e ver falhar.**
+- [ ] **Step 3: implementar** (Dockerfile com Node; rebuild; router interno; `shlex.split`; worker).
+- [ ] **Step 4: validar.**
+  - Rodar as suítes do orchestrator e do worker.
+  - Validação manual: no container, `npx -y @negokaz/excel-mcp-server` sobe, e o "Testar conexão" do servidor "Excel" do usuário mostra as tools. Registrar no report.
+- [ ] **Step 5: commit** — `feat(mcp): agentes executam ferramentas MCP via orchestrator; Node.js no orchestrator`
+
+### Task 15: Knowledge — backend (duplicados, editar/excluir, chat com conversas salvas)
+
+**Files:**
+- Modify: `agent-orchestrator/app/db/models.py`, com uma nova migração (`alembic check` precisa ficar limpo).
+  - Novo campo `KnowledgeDocument.content_hash`: String(64), nullable, com índice e único por (`knowledge_base_id`, `content_hash`).
+  - Nova tabela `knowledge_conversations`: `id`, `owner_id`, `knowledge_base_id` (FK cascade), `title`, `created_at`, `updated_at`.
+  - Nova tabela `knowledge_messages`: `id`, `conversation_id` (FK cascade), `role` (`user`|`assistant`), `content` Text, `sources` JSONB, `created_at`.
+- Modify: `agent-orchestrator/app/api/knowledge.py`.
+- Create: `agent-orchestrator/app/knowledge/chat.py`, com `async answer(db, owner_id, kb, conversation, question) -> KnowledgeMessage`.
+- Test: `tests/test_knowledge_duplicates.py`, `tests/test_knowledge_chat.py`, casos novos em `tests/test_knowledge_crud.py`.
+
+**Interfaces:**
+- Upload `POST /api/knowledge/{kb_id}/upload`:
+  - calcula o sha256 do arquivo;
+  - se já existe documento com o mesmo hash na base e não veio `?replace=<doc_id>`, responde `409 {code:"duplicate_document", details:{documentId, name}}`;
+  - com `replace`, apaga o documento antigo (chunks e storage) e indexa o novo;
+  - documentos antigos sem hash não bloqueiam.
+- `PUT /api/knowledge/{kb_id}` precisa aceitar `name` e `description`, com teste.
+- `DELETE /api/knowledge/{kb_id}/documents/{doc_id}` precisa remover chunks e storage e atualizar `document_count`, com teste.
+- Conversas:
+  - `GET /api/knowledge/{kb_id}/conversations` devolve `{items:[{id, title, updatedAt, messageCount}]}`.
+  - `POST .../conversations` recebe `{title?}` e responde 201.
+  - `GET .../conversations/{cid}` devolve `{id, title, messages:[{id, role, content, sources, createdAt}]}`.
+  - `DELETE .../conversations/{cid}` responde 204.
+- `POST .../conversations/{cid}/messages` recebe `{content}` e:
+  - grava a pergunta;
+  - busca com `rag.query`, usando o `top_k` e o limiar da base;
+  - chama o LLM (`app.core.llm`, provedor configurado);
+  - grava e devolve a resposta `{id, role:"assistant", content, sources:[{documentId, documentName, chunkId, text, score}]}`.
+- Todas as rotas são isoladas por dono (404 para outro dono).
+- Prompt do LLM:
+  - system: "Responda em pt-BR usando apenas os trechos fornecidos; se a resposta não estiver nos trechos, diga que não encontrou na base; cite as fontes como [1], [2]";
+  - as últimas 6 mensagens da conversa;
+  - os trechos numerados.
+- Sem trechos acima do limiar, não chama o LLM e responde "Não encontrei nada sobre isso nesta base.", com `sources` vazio.
+- Título da conversa: os primeiros 60 caracteres da primeira pergunta.
+
+- [ ] **Step 1: testes que falham** (LLM e embedder mock).
+  - Duplicado dá 409; `replace` troca o documento e o `document_count` continua igual.
+  - Editar nome e descrição.
+  - Excluir documento remove os chunks.
+  - Conversa: criar, perguntar (a resposta tem `sources`), listar, reabrir e excluir.
+  - A 2ª pergunta leva o histórico ao LLM: conferir as mensagens recebidas pelo mock.
+  - Sem trechos, a resposta padrão sai sem chamar o LLM.
+  - Outro dono dá 404.
+- [ ] **Step 2: rodar e ver falhar.**
+- [ ] **Step 3: implementar.**
+- [ ] **Step 4: suíte completa**, incluindo `test_migration.py`.
+- [ ] **Step 5: commit** — `feat(knowledge): duplicados por hash, conversas salvas e chat com fontes`
+
+### Task 16: Knowledge — portal (chat com conversas, remover documentos, editar base, duplicados)
+
+**Files:**
+- Modify: `agent-portal/components/library/knowledge-view.tsx`, dividido em:
+  - `components/knowledge/kb-header.tsx`: nome e descrição editáveis inline, no mesmo padrão do cabeçalho do pipeline; Excluir base com confirmação.
+  - `components/knowledge/documents-panel.tsx`: upload com tratamento do 409 e lista com "Remover" por documento, com confirmação.
+  - `components/knowledge/kb-chat.tsx`: o chat.
+- Reusar o componente `components/ui/markdown.tsx` da Task 11 nas respostas.
+- Test: `components/knowledge/*.test.tsx`.
+
+**Comportamento:**
+- Chat:
+  - Coluna de conversas: "Nova conversa", lista com título e data, excluir.
+  - Área de mensagens em bolhas: pergunta à direita; resposta à esquerda, em markdown.
+  - Abaixo de cada resposta, as fontes numeradas e recolhíveis: nome do documento, score e trecho.
+  - Campo de mensagem em textarea: Enter envia, Shift+Enter quebra linha.
+  - Enquanto espera, mostra "Pensando…"; em caso de erro, mostra "Tentar de novo".
+  - Ao abrir a base, carrega a conversa mais recente.
+- Duplicado:
+  - O 409 `duplicate_document` abre um modal: "Este arquivo já existe nesta base como <nome>. Substituir a versão existente?"
+  - "Substituir" reenvia com `?replace=<documentId>`; "Cancelar" descarta.
+- Remover documento: pede confirmação, chama `DELETE` e atualiza a lista e a contagem.
+- Editar base: faz `PUT` só do campo alterado; nome vazio é recusado com uma mensagem.
+
+- [ ] **Step 1: testes que falham.**
+  - Perguntar mostra a resposta com fontes.
+  - Trocar de conversa carrega as mensagens dela.
+  - Enter envia e Shift+Enter não envia.
+  - O modal de duplicado aparece, e "Substituir" reenvia com `replace`.
+  - Remover documento pede confirmação e chama `DELETE`.
+  - Editar nome e descrição.
+- [ ] **Step 2: rodar e ver falhar.**
+- [ ] **Step 3: implementar.**
+- [ ] **Step 4:** vitest, tsc e lint; reiniciar o portal.
+- [ ] **Step 5: commit** — `feat(portal): chat do Knowledge com conversas e fontes, remover documentos, editar base, duplicados`
