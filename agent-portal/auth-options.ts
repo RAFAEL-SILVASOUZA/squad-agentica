@@ -26,6 +26,39 @@ function getTokenExp(token: string): number {
   }
 }
 
+type RefreshResult = { accessToken: string; refreshToken?: string } | null;
+
+// O NextAuth roda o callback jwt em cada requisição. Quando o access token
+// expira, várias requisições simultâneas renovavam com o MESMO refresh token;
+// com rotação estrita (contrato §5) só a 1ª vale e as outras derrubavam a
+// sessão. Aqui uma renovação por refresh token é compartilhada (e reaproveitada
+// por alguns segundos pelas requisições que ainda carregam o token antigo).
+const refreshInFlight = new Map<string, Promise<RefreshResult>>();
+const REFRESH_REUSE_MS = 30_000;
+
+export function refreshOnce(refreshToken: string): Promise<RefreshResult> {
+  const existing = refreshInFlight.get(refreshToken);
+  if (existing) return existing;
+  const promise = (async (): Promise<RefreshResult> => {
+    try {
+      const res = await fetch(`${ORCHESTRATOR_API_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      // Backend returns a new refreshToken (rotation).
+      return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+    } catch {
+      return null;
+    }
+  })();
+  refreshInFlight.set(refreshToken, promise);
+  setTimeout(() => refreshInFlight.delete(refreshToken), REFRESH_REUSE_MS);
+  return promise;
+}
+
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: {
@@ -96,31 +129,14 @@ export const authOptions: NextAuthOptions = {
 
       if (exp - now < 60) {
         // Token is expired or about to expire (60s buffer).
-        try {
-          const res = await fetch(
-            `${ORCHESTRATOR_API_URL}/api/auth/refresh`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ refreshToken: token.refreshToken }),
-            }
-          );
-
-          if (!res.ok) {
-            // Refresh failed: mark session with error, force re-login.
-            token.authError = "refresh_failed";
-            return token;
-          }
-
-          const data = await res.json();
-          token.accessToken = data.accessToken;
-          // Backend may return a new refreshToken (rotation).
-          if (data.refreshToken) {
-            token.refreshToken = data.refreshToken;
-          }
-        } catch {
+        const refreshed = await refreshOnce(String(token.refreshToken ?? ""));
+        if (!refreshed) {
+          // Refresh failed: mark session with error, force re-login.
           token.authError = "refresh_failed";
+          return token;
         }
+        token.accessToken = refreshed.accessToken;
+        token.refreshToken = refreshed.refreshToken ?? token.refreshToken;
       }
 
       return token;

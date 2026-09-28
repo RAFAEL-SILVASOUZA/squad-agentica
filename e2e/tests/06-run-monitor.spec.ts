@@ -49,14 +49,19 @@ test.describe("Jornada 6: executar e monitor", () => {
       await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({ timeout: 30_000 });
       await expect(page.locator(".react-flow__node")).toHaveCount(2, { timeout: 30_000 });
 
-      // Iniciar execução (backend real: POST .../execute).
+      // Iniciar execução: o formulário pede as entradas do agente de entrada
+      // (backend real: POST .../execute com { inputs }).
+      await page.getByRole("button", { name: /Iniciar execução/i }).click();
+      const runDialog = page.getByRole("dialog");
+      await runDialog.getByLabel(/spec/).fill("Especificação de teste E2E");
       const [executeResp] = await Promise.all([
         page.waitForResponse(
           (r) => r.url().includes(`/api/pipelines/${seeded.id}/execute`),
           { timeout: 30_000 }
         ),
-        page.getByRole("button", { name: /Iniciar execução/i }).click(),
+        runDialog.getByRole("button", { name: /^Executar$/ }).click(),
       ]);
+      expect(executeResp.request().postDataJSON()).toEqual({ inputs: { spec: "Especificação de teste E2E" } });
       expect(executeResp.status(), `execute respondeu ${executeResp.status()}`).toBe(200);
       const runId = (await executeResp.json()).runId as string;
 

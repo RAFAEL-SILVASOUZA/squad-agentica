@@ -24,13 +24,6 @@ class _RefreshEntry:
     replaced_by: str | None = None  # jti of the new token that replaced this one
 
 
-# Janela em que um token recém-girado ainda pode ser reapresentado. O NextAuth
-# renova em paralelo (várias requisições no mesmo instante com o mesmo refresh
-# token); sem a janela, a 2ª renovação era tratada como replay e derrubava a
-# sessão logo após uma renovação bem-sucedida.
-CONCURRENT_REFRESH_GRACE_SECONDS = 30.0
-
-
 class RefreshTokenStore:
     """In-memory store for refresh token rotation.
 
@@ -53,10 +46,10 @@ class RefreshTokenStore:
         O chamador já validou assinatura, tipo e expiração do token. Regras:
         - jti desconhecido: o store é em memória e se perde a cada restart do
           orchestrator; o token é legítimo, então é aceito e registrado (sem
-          isto todo restart derrubava as sessões em até 15 min).
-        - jti já usado há menos de ``CONCURRENT_REFRESH_GRACE_SECONDS``:
-          renovação concorrente do mesmo cliente; aceita.
-        - jti já usado depois disso: replay; recusa (False).
+          isto todo restart derrubava as sessões em até 15 min). Efeito
+          colateral aceito: a detecção de reuso não sobrevive a um restart.
+        - jti já usado: replay; recusa (contrato §5, rotação estrita). As
+          renovações concorrentes do NextAuth são deduplicadas no portal.
         """
         now = time.time()
         with self._lock:
@@ -65,13 +58,8 @@ class RefreshTokenStore:
                 entry = _RefreshEntry(jti=old_jti, sub=sub)
                 self._tokens[old_jti] = entry
             elif entry.used:
-                if entry.sub != sub or entry.used_at is None:
-                    return False
-                if now - entry.used_at > CONCURRENT_REFRESH_GRACE_SECONDS:
-                    # Replay detected: old token was already rotated.
-                    return False
-                self._tokens[new_jti] = _RefreshEntry(jti=new_jti, sub=sub)
-                return True
+                # Replay detected: old token was already rotated.
+                return False
             entry.used = True
             entry.used_at = now
             entry.replaced_by = new_jti

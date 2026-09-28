@@ -285,12 +285,7 @@ class TestRefresh:
         )
         assert resp1.status_code == 200
 
-        # Reuse the old token after the concurrent-refresh grace window.
-        from app.auth import refresh_store as store_mod
-
-        for entry in store_mod.refresh_store._tokens.values():
-            if entry.used_at is not None:
-                entry.used_at -= store_mod.CONCURRENT_REFRESH_GRACE_SECONDS + 1
+        # Reuse the old token (should fail).
         resp2 = await client.post(
             "/api/auth/refresh",
             json={"refreshToken": old_refresh},
@@ -298,18 +293,6 @@ class TestRefresh:
         assert resp2.status_code == 401
         data = resp2.json()
         assert data["code"] == "refresh_token_reused"
-
-    async def test_concurrent_refresh_with_same_token_is_accepted(
-        self, client: AsyncClient, registered_user: User
-    ):
-        """NextAuth renova em paralelo: a 2ª renovação imediata não é replay."""
-        login = await client.post(
-            "/api/auth/login", json={"email": "test@example.com", "password": "testpass123"}
-        )
-        token = login.json()["refreshToken"]
-        first = await client.post("/api/auth/refresh", json={"refreshToken": token})
-        second = await client.post("/api/auth/refresh", json={"refreshToken": token})
-        assert first.status_code == 200 and second.status_code == 200
 
     async def test_refresh_survives_store_loss(self, client: AsyncClient, registered_user: User):
         """Store em memória some no restart do orchestrator; o token válido segue aceito."""
