@@ -249,7 +249,13 @@ def test_github_integration_crud(user):
     assert integ["type"] == "github" and integ["ownerId"] == user.id
     r = user.put(f"/api/integrations/{integ['id']}", json={"status": "disabled"})
     assert r.status_code == 200 and r.json()["status"] == "disabled"
+    # GitHub without owner now succeeds (owner is optional)
     r = user.post("/api/integrations", json={"type": "github", "name": "qa-gh-2", "config": {}})
+    assert r.status_code == 201, r.text
+    gh_no_owner = r.json()
+    assert user.delete(f"/api/integrations/{gh_no_owner['id']}").status_code == 204
+    # Azure without organization should fail with invalid_config
+    r = user.post("/api/integrations", json={"type": "azure", "name": "qa-az-invalid", "config": {}})
     assert_envelope(r, 400, "invalid_config")
     assert user.delete(f"/api/integrations/{integ['id']}").status_code == 204
 
