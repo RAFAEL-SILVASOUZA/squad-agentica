@@ -28,7 +28,11 @@ services:
     image: dxflrs/garage:v2.4.1
     container_name: agent-portal-garage
     restart: unless-stopped
-    command: ["/garage", "server", "--single-node"]
+    # Sem --single-node: esse modo recusa subir quando o layout já passou da
+    # versão 1 (o que acontecia após o garage-init), e o stack não voltava
+    # depois de reiniciar o Docker. O layout é aplicado uma vez pelo
+    # garage-init e persiste no volume.
+    command: ["/garage", "server"]
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
       GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
@@ -38,7 +42,9 @@ services:
       - ./garage/garage.toml:/etc/garage.toml:ro
       - garage-data:/var/lib/garage
     healthcheck:
-      test: ["CMD", "/garage", "-c", "/etc/garage.toml", "--rpc-secret", "${GARAGE_RPC_SECRET}", "--admin-token", "${GARAGE_ADMIN_TOKEN}", "health", "-q"]
+      # Daemon respondendo via RPC (não exige layout: num volume novo quem
+      # aplica o layout é o garage-init, que depende deste healthcheck).
+      test: ["CMD", "/garage", "-c", "/etc/garage.toml", "--rpc-secret", "${GARAGE_RPC_SECRET}", "--admin-token", "${GARAGE_ADMIN_TOKEN}", "node", "id", "-q"]
       interval: 5s
       timeout: 5s
       retries: 10
