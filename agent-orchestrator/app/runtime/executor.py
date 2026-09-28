@@ -678,6 +678,15 @@ class PipelineExecutor:
             # derrubam a execução.)
             try:
                 snapshot = await self._current_snapshot(active)
+                # O evento "updates" chega antes de o LangGraph gravar o
+                # checkpoint deste passo: o snapshot é o do passo anterior
+                # (data vazio no 1º nó). Aplica a atualização do nó por cima.
+                for key in ("data", "status", "actions"):
+                    part = state_update.get(key)
+                    if isinstance(part, dict) and node_id in part:
+                        snapshot[key] = {**(snapshot.get(key) or {}), node_id: part[node_id]}
+                if "pipeline_status" in state_update:
+                    snapshot["pipeline_status"] = state_update["pipeline_status"]
                 await self._persist_checkpoint(active, str(node_id), status, snapshot)
             except Exception:
                 logger.exception(

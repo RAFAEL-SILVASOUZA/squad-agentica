@@ -239,13 +239,21 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
         if (latest) {
           const since = new Date(latest.startedAt).getTime();
           const fromCheckpoints: Record<string, NodeStatus> = {};
+          const outputsFromCheckpoints: Record<string, unknown> = {};
           for (const cp of checkpointsRes.items) {
             if (new Date(cp.timestamp).getTime() < since) continue;
             if (cp.status === "completed") fromCheckpoints[cp.nodeId] = "completed";
             else if (cp.status === "failed") fromCheckpoints[cp.nodeId] = "failed";
+            // A saída do nó também fica no checkpoint: ao reabrir o monitor
+            // o painel do nó volta a mostrá-la (o agent:output já passou).
+            const data = (cp.state as { data?: Record<string, unknown> } | undefined)?.data;
+            if (data && data[cp.nodeId] !== undefined) outputsFromCheckpoints[cp.nodeId] = data[cp.nodeId];
           }
           if (Object.keys(fromCheckpoints).length > 0) {
             setNodeStatuses((prev) => ({ ...prev, ...fromCheckpoints }));
+          }
+          if (Object.keys(outputsFromCheckpoints).length > 0) {
+            setAgentOutputs((prev) => ({ ...outputsFromCheckpoints, ...prev }));
           }
         }
       } catch {

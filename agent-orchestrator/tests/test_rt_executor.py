@@ -776,3 +776,27 @@ class TestRunInputs:
         assert first["inputs"] == {"ideia": "app de tarefas"}
         # Os demais nós não recebem os inputs do disparo.
         assert "ideia" not in next(c for c in worker.calls if c["node_id"] == "C")["inputs"]
+
+
+class TestCheckpointContent:
+    async def test_checkpoint_of_node_contains_its_own_output(
+        self, executor: PipelineExecutor, worker: FakeWorker
+    ):
+        """O snapshot do checkpoint do nó traz a saída dele (antes vinha do passo anterior)."""
+        captured: list[tuple[str, dict]] = []
+
+        async def fake_persist(active, node_id, status, snapshot):
+            captured.append((node_id, snapshot))
+
+        pipeline = _simple_pipeline_a_b_c()
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch.object(
+            executor, "_persist_checkpoint", side_effect=fake_persist
+        ):
+            await executor.execute(pipeline, owner_id="owner-1")
+            active = get_active_run("p-test")
+            if active and active.task:
+                await asyncio.wait_for(active.task, timeout=10)
+        first_node, snap = captured[0]
+        assert first_node == "A"
+        assert snap["data"]["A"] == {"result": "agent-a:done"}
+        assert snap["status"]["A"] == "completed"

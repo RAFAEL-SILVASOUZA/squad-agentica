@@ -55,6 +55,15 @@ vi.mock("@xyflow/react", async (importOriginal) => {
     ...actual,
     ReactFlow: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) => (
       <div data-testid="react-flow" data-nodes={String((props as { nodes?: unknown[] }).nodes?.length ?? 0)}>
+        {((props as { nodes?: { id: string }[] }).nodes ?? []).map((n) => (
+          <button
+            key={n.id}
+            data-testid={`rf-node-${n.id}`}
+            onClick={(e) =>
+              (props as { onNodeClick?: (e: unknown, n: unknown) => void }).onNodeClick?.(e, n)
+            }
+          />
+        ))}
         {children}
       </div>
     ),
@@ -516,6 +525,28 @@ describe("PipelineMonitor", () => {
       onStatus({ pipelineId: "pipe-1", runId: "run-1", nodeId: "", status: "failed", at: "" });
     });
     expect(await screen.findByRole("alert")).toHaveTextContent("Missing tool call type");
+  });
+
+  it("restores a finished node output from its checkpoint when reopening the monitor", async () => {
+    mockGet.mockResolvedValue(makePipeline());
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun({ startedAt: "2026-01-01T10:00:00Z" })], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({
+        items: [
+          makeCheckpoint({
+            nodeId: "node-1",
+            status: "completed",
+            timestamp: "2026-01-01T10:01:00Z",
+            state: { data: { "node-1": { result: "especificação gerada" } } },
+          }),
+        ],
+        total: 1,
+        page: 1,
+        limit: 50,
+      });
+    renderMonitor();
+    fireEvent.click(await screen.findByTestId("rf-node-node-1"));
+    expect(await screen.findByText(/especificação gerada/)).toBeInTheDocument();
   });
 
   it("filters logs by node", async () => {

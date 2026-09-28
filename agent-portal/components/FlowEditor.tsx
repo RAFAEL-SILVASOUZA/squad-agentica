@@ -84,7 +84,7 @@ function pipelineToFlowNodes(pipeline: Pipeline): Node<AgentNodeData>[] {
   }));
 }
 
-function pipelineToFlowEdges(pipeline: Pipeline): Edge<PipelineEdgeData>[] {
+export function pipelineToFlowEdges(pipeline: Pipeline): Edge<PipelineEdgeData>[] {
   return pipeline.edges.map((pe) => ({
     id: pe.id,
     source: pe.source,
@@ -95,6 +95,10 @@ function pipelineToFlowEdges(pipeline: Pipeline): Edge<PipelineEdgeData>[] {
       condition: pe.condition,
       label: pe.label,
       requiresApproval: pe.requiresApproval,
+      // Sem estes campos, recarregar o editor e salvar de novo (o Executar
+      // salva antes de disparar) apagava a mensagem/canal da aprovação.
+      approvalChannel: pe.approvalChannel,
+      approvalMessage: pe.approvalMessage,
       dataMapping: pe.dataMapping,
     },
   }));
@@ -110,7 +114,7 @@ function flowNodesToPipelineNodes(nodes: Node<AgentNodeData>[]): PipelineNode[] 
   }));
 }
 
-function flowEdgesToPipelineEdges(edges: Edge<PipelineEdgeData>[]): PipelineEdge[] {
+export function flowEdgesToPipelineEdges(edges: Edge<PipelineEdgeData>[]): PipelineEdge[] {
   return edges.map((e) => ({
     id: e.id,
     type: (e.data?.edgeType ?? "flow") as "flow" | "data",

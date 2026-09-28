@@ -82,6 +82,20 @@ function isUrgent(approval: ApprovalRequestWithNode): boolean {
   return ctx.urgent === true || ctx.priority === "high";
 }
 
+// Chaves de controle no contexto (não são conteúdo para revisar).
+const CONTEXT_META_KEYS = new Set(["urgent", "priority", "_action"]);
+
+/**
+ * O contexto da aprovação traz as saídas do agente anterior (ex.:
+ * { especificacao: "..." }). Sem exibi-las o aprovador decidia às cegas.
+ */
+function getReviewEntries(approval: ApprovalRequestWithNode): [string, string][] {
+  const ctx = (approval.context ?? {}) as Record<string, unknown>;
+  return Object.entries(ctx)
+    .filter(([k, v]) => !CONTEXT_META_KEYS.has(k) && v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v, null, 2)]);
+}
+
 function getOutputSummary(approval: ApprovalRequestWithNode): string {
   const ctx = approval.context as Record<string, unknown>;
   if (ctx.output) return String(ctx.output);
@@ -101,6 +115,26 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
   const [argument, setArgument] = React.useState("");
   const [respondingId, setRespondingId] = React.useState<string | null>(null);
 
+  // Nomes para o card (antes: UUID do pipeline e id interno do nó).
+  const [names, setNames] = React.useState<{ pipelines: Record<string, string>; agents: Record<string, string> }>({
+    pipelines: {},
+    agents: {},
+  });
+  const namesLoaded = React.useRef(false);
+  const loadNames = React.useCallback(async () => {
+    if (namesLoaded.current) return;
+    namesLoaded.current = true;
+    const [p, a] = await Promise.allSettled([
+      api.list<{ id: string; name: string }>("/api/pipelines", { page: 1, limit: 100 }),
+      api.list<{ id: string; name: string }>("/api/agents", { page: 1, limit: 100 }),
+    ]);
+    const toMap = (r: typeof p) =>
+      r.status === "fulfilled" && Array.isArray(r.value?.items)
+        ? Object.fromEntries(r.value.items.filter((i) => i?.id && i?.name).map((i) => [i.id, i.name]))
+        : {};
+    setNames({ pipelines: toMap(p), agents: toMap(a) });
+  }, []);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -112,6 +146,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
       });
       setApprovals(res.items);
       onPendingCountChange?.(res.items.length);
+      if (res.items.length > 0) void loadNames();
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "Falha ao carregar aprovações";
@@ -119,7 +154,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [onPendingCountChange]);
+  }, [onPendingCountChange, loadNames]);
 
   React.useEffect(() => {
     void load();
@@ -362,6 +397,9 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         const expanded = expandedId === approval.id;
         const responding = respondingId === approval.id;
         const outputSummary = getOutputSummary(approval);
+        const reviewEntries = getReviewEntries(approval);
+        const pipelineName = names.pipelines[approval.pipelineId];
+        const agentName = approval.agentId ? names.agents[approval.agentId] : undefined;
 
         return (
           <div
@@ -423,13 +461,22 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                 }}
               >
                 <span>
-                  Pipeline <code style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>{approval.pipelineId}</code>
+                  Pipeline{" "}
+                  {pipelineName ? (
+                    <strong>{pipelineName}</strong>
+                  ) : (
+                    <code style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>{approval.pipelineId}</code>
+                  )}
                 </span>
-                <span aria-hidden="true">·</span>
-                <span>
-                  Nó <code style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>{approval.nodeId}</code>
-                </span>
-                {outputSummary && (
+                {agentName && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      Após <strong>{agentName}</strong>
+                    </span>
+                  </>
+                )}
+                {outputSummary && reviewEntries.length === 0 && (
                   <>
                     <span aria-hidden="true">·</span>
                     <span>{outputSummary}</span>
@@ -438,6 +485,38 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                 <span aria-hidden="true">·</span>
                 <span>{timeSince(approval.sentAt)}</span>
               </div>
+
+              {reviewEntries.length > 0 && (
+                <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {reviewEntries.map(([key, value]) => (
+                    <div key={key}>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
+                        {key}
+                      </div>
+                      <pre
+                        aria-label={`Conteúdo para revisão: ${key}`}
+                        style={{
+                          margin: 0,
+                          maxHeight: "260px",
+                          overflow: "auto",
+                          padding: "10px 12px",
+                          background: "var(--bg-elevated)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius-sm)",
+                          fontSize: "12px",
+                          lineHeight: 1.5,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          fontFamily: "var(--font-mono)",
+                          color: "var(--text)",
+                        }}
+                      >
+                        {value}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Expanded: argument textarea */}
               {expanded && (

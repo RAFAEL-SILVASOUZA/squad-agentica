@@ -166,7 +166,27 @@ describe("ApprovalPanel", () => {
       expect(screen.getByText("Aprovar deploy?")).toBeInTheDocument();
     });
     expect(screen.getByText(/pipe-42/)).toBeInTheDocument();
-    expect(screen.getByText(/node-7/)).toBeInTheDocument();
+    // O id interno do nó de aprovação não é informação útil para o usuário.
+    expect(screen.queryByText(/node-7/)).not.toBeInTheDocument();
+  });
+
+  it("shows the agent output to be reviewed and the pipeline/agent names", async () => {
+    const approval = makeApproval({
+      pipelineId: "pipe-42",
+      agentId: "agent-1",
+      context: { especificacao: "# Especificação\n\nObjetivos: controlar estoque" },
+    } as Partial<ApprovalRequest>);
+    mockList.mockImplementation(async (path: string) => {
+      if (path === "/api/pipelines") return { items: [{ id: "pipe-42", name: "Especificação de produto" }], total: 1, page: 1, limit: 100 };
+      if (path === "/api/agents") return { items: [{ id: "agent-1", name: "Redator" }], total: 1, page: 1, limit: 100 };
+      return { items: [approval], total: 1, page: 1, limit: 20 };
+    });
+    renderPanel();
+    expect(await screen.findByLabelText("Conteúdo para revisão: especificacao")).toHaveTextContent(
+      "Objetivos: controlar estoque"
+    );
+    expect(await screen.findByText("Especificação de produto")).toBeInTheDocument();
+    expect(screen.getByText("Redator")).toBeInTheDocument();
   });
 
   it("shows urgent styling for approvals with warning context", async () => {
