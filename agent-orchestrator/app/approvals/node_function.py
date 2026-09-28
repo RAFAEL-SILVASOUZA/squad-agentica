@@ -168,8 +168,13 @@ def create_approval_node(
                 "approval revised (feedback injected)",
                 extra={"edge_id": edge_id, "node_id": source_node_id, "goto": approve_target},
             )
+            # O reducer de `data` faz merge só no 1º nível: gravar
+            # {source: {humanFeedback}} substituía as saídas do source e o
+            # target ficava sem o dado (ex.: a especificação sumia).
             return Command(
-                update={"data": {source_node_id: {HUMAN_FEEDBACK_KEY: feedback}}},
+                update={
+                    "data": {source_node_id: {**source_data, HUMAN_FEEDBACK_KEY: feedback}}
+                },
                 goto=approve_target,
             )
 

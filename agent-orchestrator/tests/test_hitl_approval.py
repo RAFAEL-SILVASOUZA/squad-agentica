@@ -666,6 +666,11 @@ class TestApprovalNodeRouting:
         assert snap.values["status"]["B"] == "completed"
         # Feedback injetado no State (namespace do source A).
         assert snap.values["data"]["A"].get(HUMAN_FEEDBACK_KEY) == "Corrija X"
+        # A saída do source continua lá (antes o feedback a substituía e o
+        # target ficava sem dado) e o target recebe o feedback como input.
+        assert set(snap.values["data"]["A"]) - {HUMAN_FEEDBACK_KEY}
+        b_call = [c for c in worker.calls if c["node_id"] == "B"][-1]
+        assert b_call["inputs"].get("humanFeedback") == "Corrija X"
 
 
 # ---------------------------------------------------------------------------

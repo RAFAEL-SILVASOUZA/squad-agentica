@@ -135,6 +135,13 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
     setNames({ pipelines: toMap(p), agents: toMap(a) });
   }, []);
 
+  // Reporta a contagem ao pai depois do render. Chamar o setState do pai de
+  // dentro do updater de setApprovals gerava o aviso "Cannot update a
+  // component while rendering a different component".
+  React.useEffect(() => {
+    if (!loading) onPendingCountChange?.(approvals.length);
+  }, [approvals.length, loading, onPendingCountChange]);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -145,7 +152,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         query: { status: "pending" },
       });
       setApprovals(res.items);
-      onPendingCountChange?.(res.items.length);
       if (res.items.length > 0) void loadNames();
     } catch (e) {
       const message =
@@ -154,7 +160,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [onPendingCountChange, loadNames]);
+  }, [loadNames]);
 
   React.useEffect(() => {
     void load();
@@ -171,7 +177,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         // Remove da lista local (sai da fila de pendentes).
         setApprovals((prev) => {
           const next = prev.filter((a) => a.id !== approvalId);
-          onPendingCountChange?.(next.length);
           return next;
         });
         setExpandedId(null);
@@ -189,7 +194,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
           // Remove da lista local para sincronizar.
           setApprovals((prev) => {
             const next = prev.filter((a) => a.id !== approvalId);
-            onPendingCountChange?.(next.length);
             return next;
           });
         } else {
@@ -201,7 +205,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         setRespondingId(null);
       }
     },
-    [addToast, onPendingCountChange]
+    [addToast]
   );
 
   // Tempo real (contrato §7): approval:new adiciona o card,
@@ -235,7 +239,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
             setApprovals((prev) => {
               if (prev.some((a) => a.id === fresh.id)) return prev;
               const next = [fresh, ...prev];
-              onPendingCountChange?.(next.length);
               return next;
             });
           } catch {
@@ -251,7 +254,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
           setApprovals((prev) => {
             if (!prev.some((a) => a.id === event.approvalId)) return prev;
             const next = prev.filter((a) => a.id !== event.approvalId);
-            onPendingCountChange?.(next.length);
             return next;
           });
         };
@@ -275,7 +277,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
       if (wsClient && onResolved) wsClient.off("approval:resolved", onResolved);
       disposeWebSocketClient();
     };
-  }, [load, onPendingCountChange]);
+  }, [load]);
 
   const handleCancel = React.useCallback(
     async (approvalId: string) => {
@@ -284,7 +286,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         await api.delete(`/api/approvals/${approvalId}`);
         setApprovals((prev) => {
           const next = prev.filter((a) => a.id !== approvalId);
-          onPendingCountChange?.(next.length);
           return next;
         });
         addToast("info", "Aprovação cancelada");
@@ -293,7 +294,6 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
           addToast("warning", "Já respondida ou run cancelado");
           setApprovals((prev) => {
             const next = prev.filter((a) => a.id !== approvalId);
-            onPendingCountChange?.(next.length);
             return next;
           });
         } else {
@@ -305,7 +305,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
         setRespondingId(null);
       }
     },
-    [addToast, onPendingCountChange]
+    [addToast]
   );
 
   const toggleExpand = React.useCallback((approvalId: string) => {
@@ -524,7 +524,8 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                   <Textarea
                     id={`argument-${approval.id}`}
                     label="Argumento"
-                    placeholder="Descreva o que precisa mudar antes de aprovar..."
+                    placeholder="Orientação para o próximo agente..."
+                    hint="O conteúdo segue para o próximo agente junto com este feedback. Para o agente anterior refazer, use Rejeitar."
                     value={argument}
                     onChange={(e) => setArgument(e.target.value)}
                     rows={3}

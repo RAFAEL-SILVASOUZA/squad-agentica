@@ -301,6 +301,7 @@ def _make_agent_node(
     data_edges_in: list[tuple[str, DataMapping]],
     worker_client: WorkerClient,
     is_entry: bool = False,
+    feedback_sources: list[str] | None = None,
 ) -> Any:
     """Fábrica do node function de um agente.
 
@@ -342,6 +343,12 @@ def _make_agent_node(
             src_data = state.get("data", {}).get(src_node_id, {})
             if src_output_name in src_data:
                 inputs[input_name] = src_data[src_output_name]
+        # Argumentar (spec: "agente target retoma com a informação"): o
+        # feedback do humano gravado no source da aresta de aprovação.
+        for src_node_id in feedback_sources or []:
+            feedback = state.get("data", {}).get(src_node_id, {}).get("humanFeedback")
+            if feedback:
+                inputs["humanFeedback"] = feedback
 
         # 2. ADR-001/F14: worker indisponível NÃO encerra o grafo.
         #    O worker_client NUNCA levanta exceção (devolve failed); mas a
@@ -599,10 +606,19 @@ def compile_pipeline(
     # ------------------------------------------------------------------
     # Adicionar nós de agente.
     # ------------------------------------------------------------------
+    feedback_sources_by_target: dict[str, list[str]] = {}
+    for e in all_flow_edges:
+        if e.requires_approval:
+            feedback_sources_by_target.setdefault(e.target, []).append(e.source)
+
     for node in pipeline.nodes:
         data_edges_in = data_edges_by_target.get(node.id, [])
         node_fn = _make_agent_node(
-            node, data_edges_in, worker_client, is_entry=node.id == pipeline.entry_node_id
+            node,
+            data_edges_in,
+            worker_client,
+            is_entry=node.id == pipeline.entry_node_id,
+            feedback_sources=feedback_sources_by_target.get(node.id),
         )
         graph.add_node(node.id, node_fn)
 
