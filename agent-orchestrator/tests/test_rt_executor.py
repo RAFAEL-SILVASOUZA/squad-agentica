@@ -67,8 +67,12 @@ class FakeWorker:
         inputs: dict[str, Any],
         *,
         timeout: int = 60,
+        workspace_dir: str | None = None,
     ) -> WorkerResponse:
-        self.calls.append({"agent_id": agent_id, "node_id": node_id, "inputs": inputs})
+        self.calls.append(
+            {"agent_id": agent_id, "node_id": node_id, "inputs": inputs,
+             "workspace_dir": workspace_dir}
+        )
         if self._fail:
             return WorkerResponse(
                 status="failed",
@@ -346,10 +350,13 @@ class TestPauseResume:
             inputs: dict[str, Any],
             *,
             timeout: int = 60,
+            workspace_dir: str | None = None,
         ) -> WorkerResponse:
             if node_id == "B":
                 await asyncio.sleep(5)  # Slow enough to pause during.
-            return await original_execute(agent_id, node_id, inputs, timeout=timeout)
+            return await original_execute(
+                agent_id, node_id, inputs, timeout=timeout, workspace_dir=workspace_dir
+            )
 
         slow_worker.execute = slow_execute  # type: ignore
 
@@ -421,9 +428,12 @@ class TestStop:
             inputs: dict[str, Any],
             *,
             timeout: int = 60,
+            workspace_dir: str | None = None,
         ) -> WorkerResponse:
             await asyncio.sleep(5)
-            return await original_execute(agent_id, node_id, inputs, timeout=timeout)
+            return await original_execute(
+                agent_id, node_id, inputs, timeout=timeout, workspace_dir=workspace_dir
+            )
 
         slow_worker.execute = slow_execute  # type: ignore
 
@@ -482,9 +492,12 @@ class TestConcurrent:
             inputs: dict[str, Any],
             *,
             timeout: int = 60,
+            workspace_dir: str | None = None,
         ) -> WorkerResponse:
             await asyncio.sleep(5)
-            return await original_execute(agent_id, node_id, inputs, timeout=timeout)
+            return await original_execute(
+                agent_id, node_id, inputs, timeout=timeout, workspace_dir=workspace_dir
+            )
 
         slow_worker.execute = slow_execute  # type: ignore
 
@@ -800,3 +813,55 @@ class TestCheckpointContent:
         assert first_node == "A"
         assert snap["data"]["A"] == {"result": "agent-a:done"}
         assert snap["status"]["A"] == "completed"
+
+
+class TestWorkspaceAndPublish:
+    """Task 7: workspace do run chega ao worker; run concluído publica o PR."""
+
+    async def test_workspace_dir_reaches_worker(self, executor, worker):
+        pipeline = _simple_pipeline_a_b_c()
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch(
+            "app.runtime.executor.publish_run", new_callable=AsyncMock
+        ) as pub:
+            await executor.execute(pipeline, owner_id="o", workspace_dir="/workspaces/r1")
+            active = get_active_run("p-test")
+            await asyncio.wait_for(active.task, timeout=10)
+        assert {c["workspace_dir"] for c in worker.calls} == {"/workspaces/r1"}
+        pub.assert_awaited_once()
+
+    async def test_no_workspace_sends_none(self, executor, worker):
+        pipeline = _simple_pipeline_a_b_c()
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch(
+            "app.runtime.executor.publish_run", new_callable=AsyncMock
+        ):
+            await executor.execute(pipeline, owner_id="o")
+            await asyncio.wait_for(get_active_run("p-test").task, timeout=10)
+        assert {c["workspace_dir"] for c in worker.calls} == {None}
+
+    async def test_failed_run_does_not_publish(self, executor, worker):
+        worker.set_response(
+            "agent-a",
+            WorkerResponse(status="failed", outputs={}, action="follow", iterations=1,
+                           error="boom"),
+        )
+        pipeline = _simple_pipeline_a_b_c()
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch(
+            "app.runtime.executor.publish_run", new_callable=AsyncMock
+        ) as pub:
+            await executor.execute(pipeline, owner_id="o")
+            await asyncio.wait_for(get_active_run("p-test").task, timeout=10)
+        pub.assert_not_awaited()
+
+    async def test_publish_error_never_breaks_the_run(self, executor, worker):
+        pipeline = _simple_pipeline_a_b_c()
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock) as ws, patch(
+            "app.runtime.executor.publish_run", AsyncMock(side_effect=RuntimeError("x"))
+        ):
+            await executor.execute(pipeline, owner_id="o")
+            task = get_active_run("p-test").task
+            await asyncio.wait_for(task, timeout=10)
+        assert task.exception() is None
+        statuses = [c.args[2]["status"] for c in ws.await_args_list
+                    if c.args[1] == "pipeline:status" and c.args[2]["nodeId"] == ""]
+        assert statuses[-1] == "completed"
+        assert get_active_run("p-test") is None

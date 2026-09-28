@@ -87,8 +87,13 @@ class WorkerClient(Protocol):
         inputs: dict[str, Any],
         *,
         timeout: int = 60,
+        workspace_dir: str | None = None,
     ) -> WorkerResponse:
-        """Executa o agente no worker. Nunca levanta exceção (ADR-001)."""
+        """Executa o agente no worker. Nunca levanta exceção (ADR-001).
+
+        ``workspace_dir``: workspace do run onde as ferramentas do agente
+        trabalham (None = workspace padrão do worker).
+        """
         ...
 
 
@@ -363,6 +368,7 @@ def _make_agent_node(
                 node_id=node_id,
                 inputs=inputs,
                 timeout=timeout,
+                workspace_dir=state.get("workspace_dir") or None,
             )
         except Exception as exc:  # noqa: BLE001 — rede de segurança
             logger.exception(

@@ -8,12 +8,16 @@ Dono: rt-executor (FASE 6). Endpoints:
 - GET /api/pipelines/:id/runs
 - GET /api/pipelines/:id/checkpoints
 - POST /api/pipelines/:id/checkpoints/:cpId/resume
+- POST /api/runs/:runId/publish
 
 Contrato §8: envelope de erro, camelCase, 409/429/404.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import shutil
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -28,6 +32,7 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.db.models import (
     Checkpoint,
+    Integration,
     Pipeline,
     PipelineEdge,
     PipelineNode,
@@ -35,13 +40,19 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
+from app.integrations.git_providers import GitProviderError, provider_for
 from app.runtime.executor import (
     NoActiveRunError,
     PipelineAlreadyRunningError,
     PipelineExecutor,
     RateLimitError,
 )
+from app.runtime.publisher import publish_run
+from app.runtime.websocket import publish as ws_publish
 from app.runtime.worker_client import HttpWorkerClient
+from app.runtime.workspace import WorkspaceError, WorkspaceManager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["pipeline-runs"])
 
@@ -203,6 +214,50 @@ def _checkpoint_to_dict(cp: Checkpoint) -> dict[str, Any]:
     }
 
 
+async def _prepare_workspace(
+    db: AsyncSession, pipeline: Pipeline, ws: WorkspaceManager, run_id: str
+) -> None:
+    """Cria o workspace do run: clone do repositório da pipeline (se houver)
+    ou um diretório vazio. Levanta WorkspaceError/GitProviderError com
+    mensagem pt-BR sem credenciais."""
+    if pipeline.git_integration_id and pipeline.git_repository and pipeline.git_base_branch:
+        integration = (await db.execute(
+            select(Integration).where(
+                Integration.id == pipeline.git_integration_id,
+                Integration.owner_id == pipeline.owner_id,
+            )
+        )).scalar_one_or_none()
+        if integration is None:
+            raise GitProviderError("conexão Git da pipeline não encontrada")
+        clone_url = provider_for(integration).clone_url(pipeline.git_repository)
+        await ws.clone(run_id, clone_url, pipeline.git_base_branch)
+        return
+    try:
+        ws.create_empty(run_id)
+    except OSError as e:
+        raise WorkspaceError("não foi possível criar o workspace do run") from e
+
+
+async def _fail_run_setup(
+    db: AsyncSession, run: PipelineRun, pipeline: Pipeline, message: str
+) -> None:
+    """Grava o run como failed (workspace não preparado; nenhum agente roda)."""
+    now = datetime.now(UTC)
+    run.status = "failed"
+    run.error = message
+    run.completed_at = now
+    pipeline.status = "failed"
+    pipeline.completed_at = now
+    await db.commit()
+    await ws_publish(str(run.owner_id), "pipeline:status", {
+        "pipelineId": str(run.pipeline_id),
+        "runId": str(run.id),
+        "nodeId": "",
+        "status": "failed",
+        "at": now.isoformat().replace("+00:00", "Z"),
+    })
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -270,19 +325,41 @@ async def execute_pipeline(
     db_pipeline.status = "running"
     db_pipeline.started_at = datetime.now(UTC)
 
+    # Workspace do run (clone do repositório ou diretório vazio). Falha aqui
+    # (branch inexistente, token inválido...) grava o run como failed com o
+    # motivo e nenhum agente é chamado; o monitor mostra o erro.
+    ws = WorkspaceManager()
+    try:
+        await _prepare_workspace(db, db_pipeline, ws, run_id)
+    except (WorkspaceError, GitProviderError) as e:
+        ws.remove(run_id)
+        await _fail_run_setup(db, run, db_pipeline, e.message)
+        return {
+            "runId": run_id,
+            "status": "failed",
+            "threadId": thread_id,
+            "error": e.message,
+        }
+
     # Start execution (pode lançar 409/429). Em erro, o run NÃO vira órfão
     # (F8): removemos antes de re-levantar o envelope.
     try:
         await executor.execute(
-            pipeline, owner_id=str(user.owner_id), run_id=run_id, run_inputs=run_inputs
+            pipeline,
+            owner_id=str(user.owner_id),
+            run_id=run_id,
+            run_inputs=run_inputs,
+            workspace_dir=str(ws.path(run_id)),
         )
     except PipelineAlreadyRunningError as e:
         await db.rollback()
+        ws.remove(run_id)
         raise AppError(
             409, "conflict", "pipeline_already_running", {"runId": e.run_id}
         ) from e
     except RateLimitError as e:
         await db.rollback()
+        ws.remove(run_id)
         raise AppError(
             429, "rate_limited", "rate_limited", {"retryAfter": e.retry_after}
         ) from e
@@ -606,6 +683,32 @@ async def resume_from_checkpoint(
     # Get executor and resume from checkpoint state.
     executor = await _get_executor()
 
+    # Workspace do novo run: cópia do workspace do run de origem (os arquivos
+    # que os agentes já produziram); sem ele, o mesmo preparo do execute.
+    ws = WorkspaceManager()
+    source_dir = ws.path(str(checkpoint.run_id))
+    try:
+        if source_dir.is_dir():
+            try:
+                await asyncio.to_thread(
+                    shutil.copytree, source_dir, ws.path(run_id), symlinks=True
+                )
+            except (OSError, shutil.Error) as e:
+                raise WorkspaceError(
+                    "não foi possível copiar o workspace do run de origem"
+                ) from e
+        else:
+            await _prepare_workspace(db, db_pipeline, ws, run_id)
+    except (WorkspaceError, GitProviderError) as e:
+        ws.remove(run_id)
+        await _fail_run_setup(db, run, db_pipeline, e.message)
+        return {
+            "runId": run_id,
+            "status": "failed",
+            "resumedFromCheckpoint": str(cp_id),
+            "error": e.message,
+        }
+
     try:
         # Resume from checkpoint: use the checkpoint's state as initial state.
         # The thread_id is new, so we pass the checkpoint state as input.
@@ -614,11 +717,13 @@ async def resume_from_checkpoint(
             owner_id=str(user.owner_id),
             run_id=run_id,
             initial_inputs=checkpoint.state,
+            workspace_dir=str(ws.path(run_id)),
         )
     except PipelineAlreadyRunningError as e:
         await db.delete(run)
         db_pipeline.status = "draft"
         await db.commit()
+        ws.remove(run_id)
         raise AppError(
             409, "conflict", "pipeline_already_running", {"runId": e.run_id}
         ) from e
@@ -626,6 +731,7 @@ async def resume_from_checkpoint(
         await db.delete(run)
         db_pipeline.status = "draft"
         await db.commit()
+        ws.remove(run_id)
         raise AppError(
             429, "rate_limited", "rate_limited", {"retryAfter": e.retry_after}
         ) from e
@@ -637,3 +743,29 @@ async def resume_from_checkpoint(
         "status": "running",
         "resumedFromCheckpoint": str(cp_id),
     }
+
+
+@router.post("/runs/{run_id}/publish")
+async def publish_run_endpoint(
+    run_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """POST /api/runs/:runId/publish
+
+    (Re)publica o workspace do run: commit, push e Pull Request. Idempotente
+    (PR aberto da mesma branch é reaproveitado). Só o dono do run (404 caso
+    contrário); 409 ``run_not_completed`` se o run não está concluído.
+    """
+    result = await db.execute(
+        select(PipelineRun).where(
+            PipelineRun.id == run_id, PipelineRun.owner_id == user.owner_id
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise AppError(404, "not_found", "run_not_found")
+    status = run.status.value if hasattr(run.status, "value") else run.status
+    if status != "completed":
+        raise AppError(409, "conflict", "run_not_completed")
+    return await publish_run(str(run.id), db=db)

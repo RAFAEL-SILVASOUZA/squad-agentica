@@ -49,6 +49,7 @@ class FakeWorker:
         inputs: dict[str, Any],
         *,
         timeout: int = 60,
+        workspace_dir: str | None = None,
     ) -> WorkerResponse:
         self.calls.append({"agent_id": agent_id, "node_id": node_id, "inputs": inputs})
         if agent_id in self._responses:

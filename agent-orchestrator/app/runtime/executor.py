@@ -52,6 +52,7 @@ from app.compiler.state import initial_state
 from app.db.models import Artifact, Checkpoint
 from app.db.session import async_session_factory
 from app.runtime.checkpoint import make_thread_id
+from app.runtime.publisher import publish_run
 from app.runtime.websocket import publish as ws_publish
 
 logger = logging.getLogger(__name__)
@@ -272,6 +273,7 @@ class PipelineExecutor:
         run_id: str | None = None,
         initial_inputs: dict[str, Any] | None = None,
         run_inputs: dict[str, Any] | None = None,
+        workspace_dir: str | None = None,
     ) -> str:
         """Start a new pipeline execution.
 
@@ -286,6 +288,8 @@ class PipelineExecutor:
             initial_inputs: Optional initial inputs for the entry node.
             run_inputs: Valores dos inputs do agente de entrada, informados
                 pelo usuário no disparo (lidos pelo nó de entrada).
+            workspace_dir: Workspace do run (clone do repositório ou diretório
+                vazio) repassado ao worker em cada nó.
 
         Returns:
             The run_id usado na execução (o recebido, ou o gerado).
@@ -321,6 +325,7 @@ class PipelineExecutor:
             state["data"] = {pipeline.entry_node_id: initial_inputs}
         if run_inputs:
             state["run_inputs"] = dict(run_inputs)
+        state["workspace_dir"] = workspace_dir or ""
 
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -620,6 +625,18 @@ class PipelineExecutor:
         # Clean up active run tracking (only if still present).
         _active_runs.pop(active.pipeline_id, None)
 
+        # Run concluído: publica o workspace (commit, push e PR). Depois de
+        # liberar o run ativo, para uma publicação lenta não bloquear um novo
+        # disparo. A publicação nunca muda o status do run: qualquer falha só
+        # é logada (o publish_run já grava publish_status/publish_error).
+        if final_status == "completed" and _db_health is not False:
+            try:
+                await publish_run(active.run_id)
+            except Exception as exc:
+                logger.error(
+                    "Falha ao publicar o run %s: %s", active.run_id, type(exc).__name__
+                )
+
     # -- eventos por nó + persistência (F10/F11) ----------------------------
 
     async def _process_stream_update(
@@ -719,6 +736,8 @@ class PipelineExecutor:
             "iterations": values.get("iterations", {}),
             "max_iter_exceeded": bool(values.get("max_iter_exceeded", False)),
             "pipeline_status": values.get("pipeline_status", "running"),
+            # Entradas do disparo: o corpo do PR (publisher) as lê do checkpoint.
+            "run_inputs": values.get("run_inputs", {}),
         }
 
     async def _persist_checkpoint(

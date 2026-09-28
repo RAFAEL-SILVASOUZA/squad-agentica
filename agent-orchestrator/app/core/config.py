@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     workspace_retention_days: int = 7
     git_author_name: str = "Agent Portal"
     git_author_email: str = "agent-portal@localhost"
+    # URL pública do portal (link do run no corpo do PR).
+    portal_base_url: str = "http://localhost"
 
     @property
     def cors_origins_list(self) -> list[str]:

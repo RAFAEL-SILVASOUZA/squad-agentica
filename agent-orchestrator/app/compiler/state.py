@@ -107,6 +107,9 @@ class State(TypedDict):
     run_inputs: Annotated[dict[str, Any], _merge_dicts]
     node_logs: Annotated[dict[str, list[str]], _merge_dicts]
     node_errors: Annotated[dict[str, str], _merge_dicts]
+    # Diretório do workspace do run (volume compartilhado com o worker); ""
+    # quando o run não tem workspace. Reducer: last (default LangGraph).
+    workspace_dir: str
 
 
 def initial_state() -> dict[str, Any]:
@@ -125,4 +128,5 @@ def initial_state() -> dict[str, Any]:
         "run_inputs": {},
         "node_logs": {},
         "node_errors": {},
+        "workspace_dir": "",
     }

@@ -45,7 +45,8 @@ class HttpWorkerClient:
     """HTTP implementation of the WorkerClient Protocol.
 
     Implements:
-        async def execute(agent_id, node_id, inputs, *, timeout=60) -> WorkerResponse
+        async def execute(agent_id, node_id, inputs, *, timeout=60, workspace_dir=None)
+            -> WorkerResponse
 
     Never raises (ADR-001). All failures return WorkerResponse(status="failed").
 
@@ -73,6 +74,7 @@ class HttpWorkerClient:
         inputs: dict[str, Any],
         *,
         timeout: int = 60,
+        workspace_dir: str | None = None,
     ) -> WorkerResponse:
         """Execute an agent on the worker. NEVER raises (ADR-001).
 
@@ -81,17 +83,21 @@ class HttpWorkerClient:
             node_id: Node ID in the pipeline graph (for logging/correlation).
             inputs: Input data for the agent.
             timeout: Per-request timeout in seconds (sent in body to worker).
+            workspace_dir: Workspace do run (``workspaceDir`` no corpo; omitido
+                quando None).
 
         Returns:
             WorkerResponse with status="completed" on success, or
             status="failed" with error message on any failure.
         """
-        body = {
+        body: dict[str, Any] = {
             "agentId": agent_id,
             "nodeId": node_id,
             "inputs": inputs,
             "timeout": timeout,
         }
+        if workspace_dir:
+            body["workspaceDir"] = workspace_dir
         headers = {
             "X-Worker-Token": self._worker_token,
             "Content-Type": "application/json",

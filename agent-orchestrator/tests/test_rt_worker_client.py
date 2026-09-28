@@ -388,6 +388,21 @@ class TestWorkerClientBody:
 
         assert captured_body["timeout"] == 60
 
+    async def test_workspace_dir_in_body_only_when_set(self):
+        """``workspaceDir`` vai no corpo só quando o run tem workspace."""
+        bodies: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            bodies.append(json.loads(request.content))
+            return _success_response()
+
+        client = _make_client(handler)
+        await client.execute("agent-1", "node-1", {}, workspace_dir="/workspaces/r1")
+        await client.execute("agent-1", "node-1", {})
+
+        assert bodies[0]["workspaceDir"] == "/workspaces/r1"
+        assert "workspaceDir" not in bodies[1]
+
 
 # ---------------------------------------------------------------------------
 # Tests: Backoff timing (approximate)
