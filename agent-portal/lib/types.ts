@@ -280,6 +280,14 @@ export interface ApprovalRequest {
 
 // ─── Integration (spec §4.7) ──────────────────────────────────────────
 
+export type GitProvider = "github" | "azure";
+
+export interface GitConnectionTestResult {
+  ok: boolean;
+  repositories?: number;
+  error?: string;
+}
+
 export interface Integration {
   id: string;
   ownerId: string;

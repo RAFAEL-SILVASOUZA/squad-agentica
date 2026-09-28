@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { signOut, useSession } from "next-auth/react";
-import { Sun, Moon, LogOut, Bell } from "lucide-react";
+import { Sun, Moon, LogOut, Bell, Settings } from "lucide-react";
+import Link from "next/link";
 
 /**
  * Topbar do shell (design system §2.13).
@@ -110,6 +111,9 @@ export function AppTopbar({
 
       {/* Right side */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <Link href="/integrations" aria-label="Integrações" title="Integrações" style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
+          <Settings size={16} aria-hidden="true" />
+        </Link>
         {/* Notification bell */}
         <button
           onClick={onNotificationsClick}

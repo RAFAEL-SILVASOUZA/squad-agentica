@@ -13,6 +13,10 @@ import type { ApiErrorBody, PaginatedResponse } from "./types";
 // ("conflict", "validation error"); a UI mostrava esse texto cru. A mensagem
 // exibida vem do `code` (específico) ou do `error` (genérico), em pt-BR.
 const CODE_MESSAGES: Record<string, string> = {
+  git_provider_error: "Falha ao acessar o provedor Git.",
+  not_a_git_integration: "Esta conexão não é uma integração Git.",
+  invalid_repository: "Repositório inválido. Confira a conexão e o nome informado.",
+  secret_key_missing: "A chave de criptografia do servidor não está configurada. Contate o administrador.",
   email_already_exists: "Já existe uma conta com este e-mail.",
   invalid_credentials: "E-mail ou senha inválidos.",
   not_authenticated: "Sessão expirada. Entre novamente.",

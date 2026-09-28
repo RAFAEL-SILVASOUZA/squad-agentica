@@ -30,7 +30,6 @@ import { api, ApiError } from "@/lib/api";
  * - Criar base com escopo (POST /api/knowledge).
  * - Upload de documentos com progresso e status de ingestão (POST /api/knowledge/{id}/upload).
  * - Consulta de teste com resultados e score (POST /api/knowledge/query).
- * - Rivvn visível mas desabilitado com a mensagem definida no contrato.
  * - Excluir base com confirmação.
  * - Estados: loading (skeleton), vazio (EmptyState + CTA), erro (retry).
  */
@@ -554,16 +553,6 @@ export function KnowledgeView() {
                 )}
               </Card>
 
-              {/* Rivvn (desabilitado) */}
-              <Card style={{ opacity: 0.6 }}>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-muted)", margin: "0 0 8px" }}>
-                  Integração Rivvn
-                </h3>
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                  A integração com Rivvn está disponível apenas para clientes com contrato ativo.
-                  Entre em contato com o comercial para habilitar.
-                </p>
-              </Card>
             </>
           )}
         </div>
