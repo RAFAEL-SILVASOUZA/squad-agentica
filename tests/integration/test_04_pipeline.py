@@ -56,6 +56,79 @@ def test_pipeline_crud_two_agents(user):
     assert r.status_code == 200, r.text
 
 
+def _create_git_integration(user, name: str) -> dict:
+    r = user.post("/api/integrations", json={"type": "github", "name": name, "config": {}})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_pipeline_repository_roundtrip(user):
+    """Task 4: repository no create/get/put (set e null limpa)."""
+    a1, a2 = create_agent(user, "qa-repo1"), create_agent(user, "qa-repo2")
+    integ = _create_git_integration(user, f"qa-git-{uuid.uuid4().hex[:6]}")
+    graph = graph_payload(a1, a2)
+    graph["repository"] = {"integrationId": integ["id"], "fullName": "o/r", "baseBranch": "main"}
+    created = user.post("/api/pipelines", json=graph)
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+    assert created.json()["repository"] == {
+        "integrationId": integ["id"], "fullName": "o/r", "baseBranch": "main",
+    }
+    assert user.get(f"/api/pipelines/{pid}").json()["repository"] == created.json()["repository"]
+
+    cleared = user.put(f"/api/pipelines/{pid}", json={"repository": None})
+    assert cleared.status_code == 200 and cleared.json()["repository"] is None, cleared.text
+
+    kept = user.put(f"/api/pipelines/{pid}", json={"description": "sem repo"})
+    assert kept.json()["repository"] is None
+
+
+def test_pipeline_repository_invalid_integration_rejected(user):
+    a1, a2 = create_agent(user, "qa-repo3"), create_agent(user, "qa-repo4")
+    graph = graph_payload(a1, a2)
+    graph["repository"] = {"integrationId": str(uuid.uuid4()), "fullName": "o/r", "baseBranch": "main"}
+    r = user.post("/api/pipelines", json=graph)
+    assert_envelope(r, 400, "invalid_repository")
+
+
+def test_pipeline_duplicate_and_delete(user):
+    a1, a2 = create_agent(user, "qa-dup1"), create_agent(user, "qa-dup2")
+    graph = graph_payload(a1, a2)
+    graph["name"] = f"qa-dup-{uuid.uuid4().hex[:6]}"
+    created = user.post("/api/pipelines", json=graph)
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+
+    dup = user.post(f"/api/pipelines/{pid}/duplicate")
+    assert dup.status_code == 201, dup.text
+    dup_body = dup.json()
+    assert dup_body["name"] == f"{graph['name']} (cópia)"
+    assert dup_body["id"] != pid
+    original_ids = {n["id"] for n in created.json()["nodes"]}
+    dup_ids = {n["id"] for n in dup_body["nodes"]}
+    assert original_ids.isdisjoint(dup_ids)
+    assert user.get(f"/api/pipelines/{dup_body['id']}/runs").json()["total"] == 0
+
+    assert user.delete(f"/api/pipelines/{pid}").status_code == 204
+    assert user.get(f"/api/pipelines/{pid}").status_code == 404
+    assert user.delete(f"/api/pipelines/{dup_body['id']}").status_code == 204
+
+
+def test_pipeline_delete_conflicts_with_active_run(user, two_agent_pipeline, ws_factory):
+    """DELETE com run ativo -> 409 graph_running; apos concluir, delete funciona."""
+    p = two_agent_pipeline
+    ws = ws_factory(user.access)
+    assert user.post(f"/api/pipelines/{p.id}/execute").status_code == 200
+    r = user.delete(f"/api/pipelines/{p.id}")
+    assert_envelope(r, 409, "graph_running")
+
+    wait_until(
+        lambda: [e for e in ws.of("pipeline:status", p.id) if e["status"] in ("completed", "failed")],
+        timeout=RUN_TIMEOUT, desc="status final no WS antes do delete",
+    )
+    assert user.delete(f"/api/pipelines/{p.id}").status_code == 204
+
+
 def test_pipeline_validate_invalid_graph_structured_errors(user):
     a1, a2 = create_agent(user, "qa-v1"), create_agent(user, "qa-v2")
     r = user.post("/api/pipelines/validate", json=graph_payload(a1, a2, bad_entry=True))
@@ -183,6 +256,9 @@ def test_run_persisted_as_completed(user, two_agent_pipeline):
     assert row[0] == "completed" and row[1] is not None, row
     item = user.get(f"/api/pipelines/{p.id}/runs").json()["items"][0]
     assert item["status"] == "completed" and item["completedAt"].endswith("Z"), item
+    # Task 4: campos de publicação de PR (sem repositório configurado -> "none"/null).
+    assert item["publishStatus"] == "none"
+    assert item["prUrl"] is None and item["prNumber"] is None and item["publishError"] is None
 
 
 def test_checkpoints_listed_after_run(user, two_agent_pipeline):
