@@ -111,9 +111,6 @@ export function AppTopbar({
 
       {/* Right side */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <Link href="/integrations" aria-label="Integrações" title="Integrações" style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
-          <Settings size={16} aria-hidden="true" />
-        </Link>
         {/* Notification bell */}
         <button
           onClick={onNotificationsClick}
@@ -172,6 +169,11 @@ export function AppTopbar({
             </span>
           )}
         </button>
+
+        {/* Integrações (ao lado do tema) */}
+        <Link href="/integrations" aria-label="Integrações" title="Integrações" style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
+          <Settings size={16} aria-hidden="true" />
+        </Link>
 
         {/* Theme toggle */}
         <button

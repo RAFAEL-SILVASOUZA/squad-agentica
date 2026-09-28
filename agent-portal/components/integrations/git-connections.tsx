@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { GitProvider, Integration, GitConnectionTestResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,12 @@ import { useToast } from "@/components/ui/toast";
 import { GitConnectionForm } from "./git-connection-form";
 
 interface PipelineUsage { id: string; name: string; repository?: { integrationId: string } | null }
+
+/** Junta nomes em lista pt-BR: "A", "A e B", "A, B e C". */
+function joinNamesPtBr(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
 
 export function GitConnections({ provider }: { provider: GitProvider }) {
   const { addToast } = useToast();
@@ -38,7 +44,7 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
         page++;
       }
       setConnections(items.filter((item) => item.type === provider));
-    } catch { setError("Não foi possível carregar as conexões."); }
+    } catch (e) { setError(e instanceof ApiError ? e.message : "Não foi possível carregar as conexões."); }
     finally { setLoading(false); }
   }, [provider]);
   React.useEffect(() => { void load(); }, [load]);
@@ -48,7 +54,7 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
     try {
       const result = await api.post<GitConnectionTestResult>(`/api/integrations/${connection.id}/test`);
       setResults((prev) => ({ ...prev, [connection.id]: result.ok ? `Conectado, ${result.repositories ?? 0} repositórios` : result.error || "Falha ao testar conexão." }));
-    } catch { setResults((prev) => ({ ...prev, [connection.id]: "Não foi possível testar a conexão." })); }
+    } catch (e) { setResults((prev) => ({ ...prev, [connection.id]: e instanceof ApiError ? e.message : "Não foi possível testar a conexão." })); }
     finally { setTesting((prev) => ({ ...prev, [connection.id]: false })); }
   }
 
@@ -65,7 +71,7 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
         page++;
       }
       if (request === deletionRequest.current) setPipelines(items.filter((item) => item.repository?.integrationId === connection.id));
-    } catch { if (request === deletionRequest.current) setDeleteError("Não foi possível verificar os pipelines. Feche e tente novamente."); }
+    } catch (e) { if (request === deletionRequest.current) setDeleteError(e instanceof ApiError ? e.message : "Não foi possível verificar os pipelines. Feche e tente novamente."); }
     finally { if (request === deletionRequest.current) setUsageLoading(false); }
   }
 
@@ -75,7 +81,7 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
     try {
       await api.delete(`/api/integrations/${deleting.id}`);
       setDeleting(null); addToast("success", "Conexão excluída"); await load();
-    } catch { setDeleteError("Não foi possível excluir a conexão. Feche e tente novamente."); }
+    } catch (e) { setDeleteError(e instanceof ApiError ? e.message : "Não foi possível excluir a conexão. Feche e tente novamente."); }
     finally { setDeleteBusy(false); }
   }
 
@@ -98,7 +104,7 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
       <Button disabled={usageLoading || !!deleteError} loading={deleteBusy} onClick={() => void remove()}>Excluir conexão</Button>
     </>}>
       <p>Excluir a conexão {deleting?.name}?</p>
-      {usageLoading ? <p role="status">Verificando pipelines...</p> : deleteError ? <p role="alert">{deleteError}</p> : pipelines.length > 0 ? <p>Os pipelines {pipelines.map((item) => item.name).join(" e ")} ficarão sem repositório.</p> : <p>Nenhum pipeline usa esta conexão.</p>}
+      {usageLoading ? <p role="status">Verificando pipelines...</p> : deleteError ? <p role="alert">{deleteError}</p> : pipelines.length === 1 ? <p>O pipeline {pipelines[0].name} ficará sem repositório.</p> : pipelines.length > 1 ? <p>Os pipelines {joinNamesPtBr(pipelines.map((item) => item.name))} ficarão sem repositório.</p> : <p>Nenhum pipeline usa esta conexão.</p>}
     </Modal>
   </div>;
 }

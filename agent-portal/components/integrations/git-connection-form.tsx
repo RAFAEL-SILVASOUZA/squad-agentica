@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { GitProvider, Integration } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,8 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
       else await api.post("/api/integrations", { type: provider, name: name.trim(), config });
       setToken("");
       onSaved();
-    } catch {
-      // Nunca refletir erros de validação que possam conter a credencial enviada.
-      setError("Não foi possível salvar a conexão. Confira os dados e tente novamente.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Não foi possível salvar a conexão. Confira os dados e tente novamente.");
     } finally { setBusy(false); }
   }
 

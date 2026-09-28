@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { IntegrationsView } from "./integrations-view";
 import { ToastProvider } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api";
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), replace: vi.fn(), tab: "" }));
 vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api: mocks }));
@@ -40,6 +41,15 @@ describe("IntegrationsView", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByDisplayValue("pat-123")).not.toBeInTheDocument();
   });
+  it("shows the translated message when saving fails with an ApiError", async () => {
+    mocks.post.mockRejectedValue(new ApiError(400, { error: "validation error", code: "secret_key_missing" }));
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Nova conexão" }));
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Nova" } });
+    fireEvent.change(screen.getByLabelText("Token"), { target: { value: "pat-123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar conexão" }));
+    expect(await screen.findByText("A chave de criptografia do servidor não está configurada. Contate o administrador.")).toBeInTheDocument();
+  });
   it("preserves the token when editing without a replacement", async () => {
     show(); fireEvent.click(await screen.findByRole("button", { name: "Editar Meu GitHub" }));
     expect(screen.getByLabelText("Token")).toHaveValue("");
@@ -55,9 +65,19 @@ describe("IntegrationsView", () => {
     mocks.list.mockImplementation((path: string) => Promise.resolve(page(path === "/api/pipelines" ? [{ id: "p", name: "Gerador", repository: { integrationId: "1" } }] : [gh])));
     show(); fireEvent.click(await screen.findByRole("button", { name: "Excluir Meu GitHub" }));
     const dialog = await screen.findByRole("dialog");
-    expect(await within(dialog).findByText(/Gerador.*ficarão sem repositório/)).toBeInTheDocument();
+    expect(await within(dialog).findByText("O pipeline Gerador ficará sem repositório.")).toBeInTheDocument();
     expect(mocks.delete).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Excluir conexão" }));
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith("/api/integrations/1"));
+  });
+  it("joins three affected pipeline names in pt-BR (A, B e C)", async () => {
+    mocks.list.mockImplementation((path: string) => Promise.resolve(page(path === "/api/pipelines" ? [
+      { id: "p1", name: "Gerador", repository: { integrationId: "1" } },
+      { id: "p2", name: "Revisor", repository: { integrationId: "1" } },
+      { id: "p3", name: "Publicador", repository: { integrationId: "1" } },
+    ] : [gh])));
+    show(); fireEvent.click(await screen.findByRole("button", { name: "Excluir Meu GitHub" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Os pipelines Gerador, Revisor e Publicador ficarão sem repositório.")).toBeInTheDocument();
   });
 });
