@@ -90,7 +90,9 @@ export function AppShell({
       <main
         style={{
           overflowY: "auto",
-          padding: "24px",
+          // No celular o botão de menu (absoluto em 16,16) cobria o início do
+          // conteúdo (ex.: botão Voltar): o conteúdo começa abaixo dele.
+          padding: isMobile ? "64px 16px 24px" : "24px",
           position: "relative",
         }}
       >

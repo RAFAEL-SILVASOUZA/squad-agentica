@@ -799,15 +799,20 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
       {/* Main grid: graph + right panel */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 320px",
+          // Grafo + painel lado a lado; em telas estreitas quebram em coluna
+          // (o grid fixo "1fr 320px" reduzia o grafo a uma faixa no celular).
+          display: "flex",
+          flexWrap: "wrap",
           gap: 16,
-          height: "calc(100vh - 200px)",
+          minHeight: "calc(100vh - 200px)",
         }}
       >
         {/* Left: Graph */}
         <div
           style={{
+            flex: "999 1 420px",
+            minWidth: 0,
+            minHeight: 380,
             position: "relative",
             background: "var(--bg-card)",
             border: "1px solid var(--border)",
@@ -977,6 +982,8 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
         {/* Right panel: tabs for Node / Logs / History */}
         <div
           style={{
+            flex: "1 1 320px",
+            minWidth: 0,
             display: "flex",
             flexDirection: "column",
             gap: 12,
