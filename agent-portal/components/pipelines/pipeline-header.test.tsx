@@ -127,6 +127,41 @@ describe("PipelineHeader", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith({ repository: null }));
   });
 
+  it("attaches a repository from scratch: connection alone does not save, repository does, branch updates it (review round 1, item crítico 1)", async () => {
+    mockList.mockResolvedValue({ items: [{ id: "i1", type: "github", name: "GH", config: {} }], total: 1, page: 1, limit: 100 });
+    mockGet.mockImplementation(async (path: string) =>
+      path.endsWith("/repositories") ? { items: [{ fullName: "o/r", defaultBranch: "develop" }] } : { items: ["develop", "main"] }
+    );
+    const onChange = vi.fn();
+    render(
+      <ToastProvider>
+        <PipelineHeader pipeline={makePipeline({ repository: null })} onChange={onChange} onDeleted={vi.fn()} onDuplicated={vi.fn()} />
+      </ToastProvider>
+    );
+    // Abre o popover (chip "Sem repositório").
+    fireEvent.click(screen.getByRole("button", { name: "Sem repositório" }));
+    const dialog = screen.getByRole("dialog", { name: "Repositório do pipeline" });
+
+    // Escolher apenas a conexão é um estado intermediário: nada é salvo e o popover continua aberto.
+    fireEvent.change(await screen.findByLabelText("Conexão"), { target: { value: "i1" } });
+    await screen.findByLabelText("Repositório");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(dialog).toBeInTheDocument();
+
+    // Escolher o repositório é uma escolha completa: salva com a branch padrão.
+    fireEvent.change(screen.getByLabelText("Repositório"), { target: { value: "o/r" } });
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({ repository: { integrationId: "i1", fullName: "o/r", baseBranch: "develop" } })
+    );
+    expect(dialog).toBeInTheDocument();
+
+    // Trocar a branch atualiza o valor salvo.
+    fireEvent.change(await screen.findByLabelText("Branch"), { target: { value: "main" } });
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith({ repository: { integrationId: "i1", fullName: "o/r", baseBranch: "main" } })
+    );
+  });
+
   it("shows 'Sem repositório' as the chip label when there is none", () => {
     render(
       <ToastProvider>

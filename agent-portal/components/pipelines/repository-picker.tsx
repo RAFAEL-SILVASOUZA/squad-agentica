@@ -6,11 +6,19 @@ import { api, ApiError } from "@/lib/api";
 import type { GitProvider, Integration, PipelineRepository } from "@/lib/types";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /**
  * RepositoryPicker (Task 10).
- * Seleciona conexão Git -> repositório -> branch, pré-selecionando a branch
- * padrão do repositório. "Sem repositório" limpa o valor (null).
+ * Seleciona conexão Git -> repositório (com busca, spec §4) -> branch,
+ * pré-selecionando a branch padrão do repositório.
+ *
+ * Importante (review round 1, item crítico 1): só notifica o pai (`onChange`)
+ * quando há uma escolha *completa* (repositório selecionado, ou branch
+ * trocada com repositório já selecionado) ou na limpeza explícita via "Sem
+ * repositório". Trocar de conexão é um estado intermediário e NÃO deve
+ * disparar `onChange(null)` — isso apagaria um repositório já salvo assim que
+ * o usuário começasse a trocar de conexão, antes de concluir a escolha.
  *
  * Endpoints: GET /api/integrations, GET /api/integrations/{id}/repositories,
  * GET /api/integrations/{id}/branches?repo=<fullName>.
@@ -41,6 +49,7 @@ export function RepositoryPicker({ value, onChange }: RepositoryPickerProps) {
   const [fullName, setFullName] = React.useState(value?.fullName ?? "");
   const [branches, setBranches] = React.useState<string[]>([]);
   const [baseBranch, setBaseBranch] = React.useState(value?.baseBranch ?? "");
+  const [search, setSearch] = React.useState("");
 
   React.useEffect(() => {
     let active = true;
@@ -103,27 +112,26 @@ export function RepositoryPicker({ value, onChange }: RepositoryPickerProps) {
   }, []);
 
   function handleIntegrationChange(id: string) {
+    // Estado intermediário: NÃO notifica o pai (ver nota no topo do arquivo).
     setIntegrationId(id);
     setFullName("");
     setBaseBranch("");
     setRepositories([]);
     setBranches([]);
-    onChange(null);
+    setSearch("");
     if (id) void loadRepositories(id);
   }
 
   function handleRepositoryChange(name: string) {
+    if (!integrationId || !name) return;
     setFullName(name);
     const repo = repositories.find((r) => r.fullName === name);
     const branch = repo?.defaultBranch ?? "";
     setBaseBranch(branch);
     setBranches([]);
-    if (integrationId && name) {
-      onChange({ integrationId, fullName: name, baseBranch: branch });
-      void loadBranches(integrationId, name);
-    } else {
-      onChange(null);
-    }
+    // Escolha completa: agora sim notifica o pai.
+    onChange({ integrationId, fullName: name, baseBranch: branch });
+    void loadBranches(integrationId, name);
   }
 
   function handleBranchChange(branch: string) {
@@ -154,6 +162,11 @@ export function RepositoryPicker({ value, onChange }: RepositoryPickerProps) {
 
   const branchOptions = (branches.length ? branches : [baseBranch].filter(Boolean)).map((b) => ({ value: b, label: b }));
 
+  // Spec §4: busca na lista de repositórios do provedor (case-insensitive por fullName).
+  const filteredRepositories = repositories.filter((r) =>
+    r.fullName.toLowerCase().includes(search.trim().toLowerCase())
+  );
+
   return (
     <div style={{ display: "grid", gap: 12, minWidth: 260 }}>
       <Select
@@ -169,13 +182,21 @@ export function RepositoryPicker({ value, onChange }: RepositoryPickerProps) {
         ) : reposError ? (
           <p role="alert">{reposError}</p>
         ) : (
-          <Select
-            label="Repositório"
-            placeholder="Selecione um repositório"
-            value={fullName}
-            options={repositories.map((r) => ({ value: r.fullName, label: r.fullName }))}
-            onValueChange={handleRepositoryChange}
-          />
+          <>
+            <Input
+              label="Buscar repositório"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filtrar por nome"
+            />
+            <Select
+              label="Repositório"
+              placeholder="Selecione um repositório"
+              value={fullName}
+              options={filteredRepositories.map((r) => ({ value: r.fullName, label: r.fullName }))}
+              onValueChange={handleRepositoryChange}
+            />
+          </>
         ))}
       {fullName && (
         <Select

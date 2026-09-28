@@ -24,8 +24,28 @@ describe("RepositoryPicker", () => {
     const onChange = vi.fn();
     render(<RepositoryPicker value={null} onChange={onChange} />);
     fireEvent.change(await screen.findByLabelText("Conexão"), { target: { value: "i1" } });
-    fireEvent.change(await screen.findByLabelText("Repositório"), { target: { value: "o/r" } });
+    // Selecionar a conexão é um estado intermediário: nada é notificado ainda
+    // (review round 1, item crítico 1).
+    await screen.findByLabelText("Repositório");
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Repositório"), { target: { value: "o/r" } });
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ integrationId: "i1", fullName: "o/r", baseBranch: "develop" }));
+  });
+
+  it("filters the repository list by search text (case-insensitive, spec §4)", async () => {
+    mockList.mockResolvedValue({ items: [{ id: "i1", type: "github", name: "GH", config: {} }], total: 1, page: 1, limit: 100 });
+    mockGet.mockImplementation(async (path: string) =>
+      path.endsWith("/repositories")
+        ? { items: [{ fullName: "org/api-gateway", defaultBranch: "main" }, { fullName: "org/web-portal", defaultBranch: "main" }] }
+        : { items: ["main"] });
+    render(<RepositoryPicker value={null} onChange={vi.fn()} />);
+    fireEvent.change(await screen.findByLabelText("Conexão"), { target: { value: "i1" } });
+    const repoSelect = await screen.findByLabelText("Repositório");
+    expect(repoSelect.querySelectorAll("option")).toHaveLength(3); // placeholder + 2 repos
+    fireEvent.change(screen.getByLabelText("Buscar repositório"), { target: { value: "WEB" } });
+    await waitFor(() => expect(screen.getByLabelText("Repositório").querySelectorAll("option")).toHaveLength(2)); // placeholder + 1 repo
+    expect(screen.getByRole("option", { name: "org/web-portal" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "org/api-gateway" })).not.toBeInTheDocument();
   });
 
   it("shows a link to Integrations when there is no Git connection", async () => {

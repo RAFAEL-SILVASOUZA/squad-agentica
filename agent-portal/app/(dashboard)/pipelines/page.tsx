@@ -3,15 +3,15 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { GitBranch, Plus, RefreshCw, AlertTriangle, MoreVertical, Monitor } from "lucide-react";
+import { GitBranch, Plus, RefreshCw, AlertTriangle, Monitor } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Pipeline, PipelineRun, PaginatedResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { PipelineActionsMenu } from "@/components/pipelines/pipeline-actions-menu";
 
 const PAGE_SIZE = 20;
 
@@ -64,10 +64,6 @@ export default function PipelinesPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [lastRuns, setLastRuns] = React.useState<Record<string, PipelineRun | null>>({});
-  const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
-  const [deletingPipeline, setDeletingPipeline] = React.useState<Pipeline | null>(null);
-  const [deleteBusy, setDeleteBusy] = React.useState(false);
-  const [duplicatingId, setDuplicatingId] = React.useState<string | null>(null);
 
   const fetchPipelines = React.useCallback(async (pageNum: number) => {
     setLoading(true);
@@ -122,24 +118,6 @@ export default function PipelinesPage() {
     };
   }, [pipelines]);
 
-  // Esc/clique fora fecham o menu "Mais ações" do card aberto.
-  React.useEffect(() => {
-    if (!openMenuId) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpenMenuId(null);
-    }
-    function onClickOutside(e: MouseEvent) {
-      const el = document.getElementById(`pipeline-menu-${openMenuId}`);
-      if (el && !el.contains(e.target as Node)) setOpenMenuId(null);
-    }
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onClickOutside);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onClickOutside);
-    };
-  }, [openMenuId]);
-
   const handleCreate = React.useCallback(async () => {
     setCreating(true);
     try {
@@ -163,37 +141,17 @@ export default function PipelinesPage() {
     }
   }, [router, addToast]);
 
-  const handleDuplicate = React.useCallback(
-    async (pipeline: Pipeline) => {
-      setOpenMenuId(null);
-      setDuplicatingId(pipeline.id);
-      try {
-        const res = await api.post<Pipeline>(`/api/pipelines/${pipeline.id}/duplicate`);
-        addToast("success", "Pipeline duplicado.");
-        router.push(`/pipelines/${res.id}`);
-      } catch (err) {
-        addToast("error", err instanceof ApiError ? err.message : "Não foi possível duplicar o pipeline.");
-      } finally {
-        setDuplicatingId(null);
-      }
+  const handlePipelineDuplicated = React.useCallback(
+    (id: string) => {
+      router.push(`/pipelines/${id}`);
     },
-    [router, addToast]
+    [router]
   );
 
-  const handleDelete = React.useCallback(async () => {
-    if (!deletingPipeline) return;
-    setDeleteBusy(true);
-    try {
-      await api.delete(`/api/pipelines/${deletingPipeline.id}`);
-      addToast("success", "Pipeline excluído.");
-      setDeletingPipeline(null);
-      await fetchPipelines(page);
-    } catch (err) {
-      addToast("error", err instanceof ApiError ? err.message : "Não foi possível excluir o pipeline.");
-    } finally {
-      setDeleteBusy(false);
-    }
-  }, [deletingPipeline, page, fetchPipelines, addToast]);
+  const handlePipelineDeleted = React.useCallback(() => {
+    addToast("success", "Pipeline excluído.");
+    void fetchPipelines(page);
+  }, [addToast, fetchPipelines, page]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -327,6 +285,10 @@ export default function PipelinesPage() {
                   tabIndex={0}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") router.push(`/pipelines/${pipeline.id}`);
+                    if (e.key === " ") {
+                      e.preventDefault();
+                      router.push(`/pipelines/${pipeline.id}`);
+                    }
                   }}
                   style={{
                     display: "flex",
@@ -375,93 +337,13 @@ export default function PipelinesPage() {
                       }
                       label={PIPELINE_STATUS_LABEL[pipeline.status] ?? pipeline.status}
                     />
-                    <div id={`pipeline-menu-${pipeline.id}`} style={{ position: "relative" }}>
-                      <button
-                        type="button"
-                        aria-haspopup="menu"
-                        aria-expanded={openMenuId === pipeline.id}
-                        aria-label={`Mais ações de ${pipeline.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenMenuId((prev) => (prev === pipeline.id ? null : pipeline.id));
-                        }}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 24,
-                          height: 24,
-                          background: "none",
-                          border: "none",
-                          borderRadius: "var(--radius-sm)",
-                          color: "var(--text-muted)",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <MoreVertical size={14} aria-hidden="true" />
-                      </button>
-                      {openMenuId === pipeline.id && (
-                        <div
-                          role="menu"
-                          aria-label={`Mais ações de ${pipeline.name}`}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            position: "absolute",
-                            top: "calc(100% + 4px)",
-                            right: 0,
-                            zIndex: 20,
-                            minWidth: 150,
-                            background: "var(--bg-elevated)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                            boxShadow: "var(--shadow-lg)",
-                            padding: 4,
-                            display: "flex",
-                            flexDirection: "column",
-                          }}
-                        >
-                          <button
-                            role="menuitem"
-                            type="button"
-                            disabled={duplicatingId === pipeline.id}
-                            onClick={() => void handleDuplicate(pipeline)}
-                            style={{
-                              textAlign: "left",
-                              padding: "8px 10px",
-                              background: "none",
-                              border: "none",
-                              borderRadius: "var(--radius-sm)",
-                              color: "var(--text)",
-                              cursor: "pointer",
-                              fontSize: 13,
-                            }}
-                          >
-                            Duplicar pipeline
-                          </button>
-                          <button
-                            role="menuitem"
-                            type="button"
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              setDeletingPipeline(pipeline);
-                            }}
-                            style={{
-                              textAlign: "left",
-                              padding: "8px 10px",
-                              background: "none",
-                              border: "none",
-                              borderRadius: "var(--radius-sm)",
-                              color: "var(--error)",
-                              cursor: "pointer",
-                              fontSize: 13,
-                            }}
-                          >
-                            Excluir pipeline
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <PipelineActionsMenu
+                      pipelineId={pipeline.id}
+                      pipelineName={pipeline.name}
+                      label={`Mais ações de ${pipeline.name}`}
+                      onDuplicated={handlePipelineDuplicated}
+                      onDeleted={handlePipelineDeleted}
+                    />
                   </div>
 
                   {pipeline.description && (
@@ -584,26 +466,6 @@ export default function PipelinesPage() {
           )}
         </>
       )}
-
-      <Modal
-        open={!!deletingPipeline}
-        title="Excluir pipeline"
-        onClose={() => {
-          if (!deleteBusy) setDeletingPipeline(null);
-        }}
-        footer={
-          <>
-            <Button disabled={deleteBusy} onClick={() => setDeletingPipeline(null)}>
-              Cancelar
-            </Button>
-            <Button loading={deleteBusy} onClick={() => void handleDelete()}>
-              Excluir
-            </Button>
-          </>
-        }
-      >
-        <p>Excluir o pipeline {deletingPipeline?.name}? Esta ação não pode ser desfeita.</p>
-      </Modal>
     </div>
   );
 }

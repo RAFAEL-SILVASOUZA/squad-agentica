@@ -1,13 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { MoreVertical, GitBranch, X } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { GitBranch, X } from "lucide-react";
 import type { Pipeline } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/ui/modal";
-import { useToast } from "@/components/ui/toast";
 import { RepositoryPicker } from "./repository-picker";
+import { PipelineActionsMenu } from "./pipeline-actions-menu";
 
 /**
  * PipelineHeader (Task 10).
@@ -34,8 +31,6 @@ export function PipelineHeader({
   onDuplicated,
   autoEditName = false,
 }: PipelineHeaderProps) {
-  const { addToast } = useToast();
-
   const [editingName, setEditingName] = React.useState(autoEditName);
   const [nameValue, setNameValue] = React.useState(pipeline.name);
   const [nameError, setNameError] = React.useState("");
@@ -44,13 +39,7 @@ export function PipelineHeader({
   const [descriptionValue, setDescriptionValue] = React.useState(pipeline.description);
 
   const [repoOpen, setRepoOpen] = React.useState(false);
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [deleting, setDeleting] = React.useState(false);
-  const [duplicating, setDuplicating] = React.useState(false);
 
-  const menuRef = React.useRef<HTMLDivElement>(null);
-  const menuButtonRef = React.useRef<HTMLButtonElement>(null);
   const repoRef = React.useRef<HTMLDivElement>(null);
 
   // Mantém os buffers locais em sincronia com o pipeline vindo de fora,
@@ -88,53 +77,6 @@ export function PipelineHeader({
     setDescriptionValue(pipeline.description);
     setEditingDescription(false);
   }
-
-  async function handleDelete() {
-    setDeleting(true);
-    try {
-      await api.delete(`/api/pipelines/${pipeline.id}`);
-      setConfirmDelete(false);
-      onDeleted();
-    } catch (e) {
-      addToast("error", e instanceof ApiError ? e.message : "Não foi possível excluir o pipeline.");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function handleDuplicate() {
-    setMenuOpen(false);
-    setDuplicating(true);
-    try {
-      const res = await api.post<Pipeline>(`/api/pipelines/${pipeline.id}/duplicate`);
-      addToast("success", "Pipeline duplicado.");
-      onDuplicated(res.id);
-    } catch (e) {
-      addToast("error", e instanceof ApiError ? e.message : "Não foi possível duplicar o pipeline.");
-    } finally {
-      setDuplicating(false);
-    }
-  }
-
-  // Esc/clique fora fecham o menu "Mais ações".
-  React.useEffect(() => {
-    if (!menuOpen) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        menuButtonRef.current?.focus();
-      }
-    }
-    function onClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    }
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onClickOutside);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onClickOutside);
-    };
-  }, [menuOpen]);
 
   // Esc/clique fora fecham o popover do repositório.
   React.useEffect(() => {
@@ -304,110 +246,13 @@ export function PipelineHeader({
           </div>
         </div>
 
-        <div ref={menuRef} style={{ position: "relative" }}>
-          <button
-            ref={menuButtonRef}
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label="Mais ações"
-            onClick={() => setMenuOpen((v) => !v)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 32,
-              height: 32,
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              color: "var(--text)",
-              cursor: "pointer",
-            }}
-          >
-            <MoreVertical size={14} aria-hidden="true" />
-          </button>
-          {menuOpen && (
-            <div
-              role="menu"
-              aria-label="Mais ações"
-              style={{
-                position: "absolute",
-                top: "calc(100% + 4px)",
-                right: 0,
-                zIndex: 20,
-                minWidth: 160,
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                boxShadow: "var(--shadow-lg)",
-                padding: 4,
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <button
-                role="menuitem"
-                type="button"
-                disabled={duplicating}
-                onClick={() => void handleDuplicate()}
-                style={{
-                  textAlign: "left",
-                  padding: "8px 10px",
-                  background: "none",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--text)",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                Duplicar pipeline
-              </button>
-              <button
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmDelete(true);
-                }}
-                style={{
-                  textAlign: "left",
-                  padding: "8px 10px",
-                  background: "none",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--error)",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                Excluir pipeline
-              </button>
-            </div>
-          )}
-        </div>
+        <PipelineActionsMenu
+          pipelineId={pipeline.id}
+          pipelineName={pipeline.name}
+          onDuplicated={onDuplicated}
+          onDeleted={onDeleted}
+        />
       </div>
-
-      <Modal
-        open={confirmDelete}
-        title="Excluir pipeline"
-        onClose={() => {
-          if (!deleting) setConfirmDelete(false);
-        }}
-        footer={
-          <>
-            <Button disabled={deleting} onClick={() => setConfirmDelete(false)}>
-              Cancelar
-            </Button>
-            <Button loading={deleting} onClick={() => void handleDelete()}>
-              Excluir
-            </Button>
-          </>
-        }
-      >
-        <p>Excluir o pipeline {pipeline.name}? Esta ação não pode ser desfeita.</p>
-      </Modal>
     </div>
   );
 }
