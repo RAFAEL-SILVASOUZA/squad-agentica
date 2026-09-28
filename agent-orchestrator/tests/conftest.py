@@ -9,6 +9,7 @@ Nunca usa o banco ``agent_portal``.
 from __future__ import annotations
 
 import re
+import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from urllib.parse import urlparse, urlunparse
@@ -130,3 +131,24 @@ async def make_git_integration(full_client):  # noqa: F811 (nome do parâmetro =
         return resp.json()
 
     return _make
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+@pytest.fixture
+def remote(tmp_path) -> str:
+    """Repositório bare local usado como "remote" nos testes de workspace/git.
+
+    Compartilhado com a Task 7 (publicação de PR), que reusa este fixture.
+    """
+    bare = tmp_path / "remote.git"
+    _git(tmp_path, "init", "--bare", "-b", "main", str(bare))
+    seed = tmp_path / "seed"
+    _git(tmp_path, "clone", str(bare), str(seed))
+    (seed / "README.md").write_text("# base\n")
+    _git(seed, "-c", "user.name=t", "-c", "user.email=t@t", "add", ".")
+    _git(seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "base")
+    _git(seed, "push", "origin", "main")
+    return str(bare)

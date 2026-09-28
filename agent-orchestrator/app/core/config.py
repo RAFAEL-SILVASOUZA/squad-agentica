@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     rivvn_base_url: str = "https://api.rivvn.ai"
     rivvn_redirect_uri: str = "http://localhost/api/integrations/rivvn/callback"
 
+    # --- Workspaces (Task 5: clone/alterações/commit/push por run) ---
+    workspaces_dir: str = "/workspaces"
+    workspace_retention_days: int = 7
+    git_author_name: str = "Agent Portal"
+    git_author_email: str = "agent-portal@localhost"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

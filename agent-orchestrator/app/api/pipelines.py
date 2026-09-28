@@ -53,6 +53,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
+from app.runtime.workspace import WorkspaceManager
 
 router = APIRouter(tags=["pipelines"])
 
@@ -884,14 +885,24 @@ async def delete_pipeline(
 ) -> None:
     """DELETE /api/pipelines/:id: apaga a pipeline (cascade de nós/arestas/runs).
 
-    409 ``graph_running`` se há run ativo (mesma regra do PUT). A limpeza dos
-    workspaces em disco dos runs fica para a Task 5 (``WorkspaceManager``);
-    até lá não há nada a fazer aqui além do delete no banco.
+    409 ``graph_running`` se há run ativo (mesma regra do PUT). Além do
+    cascade no banco, remove os workspaces em disco (clone/alterações) de
+    cada run da pipeline (Task 5, ``WorkspaceManager``) — os ids são
+    coletados ANTES do delete porque o cascade apaga as linhas de
+    ``pipeline_runs``.
     """
     pipeline, _nodes, _edges = await _load_owned(db, pipeline_id, user)
     await _assert_not_running(db, pipeline_id)
+    run_ids = list(
+        (
+            await db.execute(
+                select(PipelineRun.id).where(PipelineRun.pipeline_id == pipeline_id)
+            )
+        ).scalars().all()
+    )
     await db.delete(pipeline)
     await db.commit()
+    WorkspaceManager().remove_many([str(r) for r in run_ids])
 
 
 @router.post("/pipelines/{pipeline_id}/duplicate", status_code=201)

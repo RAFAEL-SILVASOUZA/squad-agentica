@@ -14,8 +14,10 @@ WORKDIR /app
 
 # Ferramentas de sistema mínimas (binários usados pelos healthchecks e entrypoint).
 # curl é instalado só para o healthcheck do compose; o orchestrator também expõe /health.
+# git é usado pelo WorkspaceManager (Task 5): clone/commit/push dos workspaces
+# de cada run (agent-orchestrator/app/runtime/workspace.py).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
 
 # Instala as dependências primeiro (melhor cache de camada).

@@ -18,6 +18,7 @@ import uuid
 from datetime import UTC, datetime
 
 from app.db.models import PipelineRun, User
+from app.runtime.workspace import WorkspaceManager
 
 
 async def test_repository_roundtrip_delete_and_duplicate(
@@ -150,3 +151,36 @@ async def test_delete_pipeline_with_active_run_conflicts(full_client, session, t
 async def test_duplicate_unknown_pipeline_404(full_client):
     r = await full_client.post(f"/api/pipelines/{uuid.uuid4()}/duplicate")
     assert r.status_code == 404
+
+
+async def test_delete_pipeline_removes_run_workspaces(
+    full_client, session, test_user: User, monkeypatch, tmp_path
+):
+    """Ruling R2 (Task 5): DELETE /api/pipelines/:id remove os workspaces em
+    disco dos runs da pipeline (``WorkspaceManager.remove_many``)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
+
+    body = {"name": "Com workspace", "nodes": [], "edges": []}
+    created = await full_client.post("/api/pipelines", json=body)
+    pid = created.json()["id"]
+
+    run = PipelineRun(
+        id=uuid.uuid4(),
+        owner_id=test_user.owner_id,
+        pipeline_id=uuid.UUID(pid),
+        thread_id=f"{pid}:{uuid.uuid4()}",
+        status="completed",
+        started_at=datetime.now(UTC),
+    )
+    session.add(run)
+    await session.commit()
+
+    ws = WorkspaceManager(tmp_path)
+    ws.create_empty(str(run.id))
+    assert ws.path(str(run.id)).exists()
+
+    r = await full_client.delete(f"/api/pipelines/{pid}")
+    assert r.status_code == 204
+    assert not ws.path(str(run.id)).exists()
