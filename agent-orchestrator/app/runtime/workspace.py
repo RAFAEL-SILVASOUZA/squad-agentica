@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 import re
 import shutil
 import time
@@ -31,6 +32,17 @@ class WorkspaceError(Exception):
 # Casa credenciais embutidas em URLs (``https://user:token@host/...``) para
 # nunca vazarem em mensagens de erro/log (convenção do projeto).
 _CRED = re.compile(r"(https?://)[^@/\s]+@")
+
+# Variáveis de ambiente de rede/TLS que o git pode precisar (proxy corporativo,
+# CA customizada) e que devem passar do processo do orchestrator para o
+# subprocesso git — sem isso, clone/push/ls-remote falham silenciosamente
+# atrás de um proxy ou CA privada mesmo com credenciais corretas.
+_PASSTHROUGH_ENV = (
+    "HTTPS_PROXY", "https_proxy",
+    "HTTP_PROXY", "http_proxy",
+    "NO_PROXY", "no_proxy",
+    "SSL_CERT_FILE", "GIT_SSL_CAINFO",
+)
 
 
 def _scrub(text: str) -> str:
@@ -53,6 +65,10 @@ async def _git(cwd: Path | None, *args: str, check: bool = True) -> tuple[int, s
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": "/tmp",
     }
+    for key in _PASSTHROUGH_ENV:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
     proc = await asyncio.create_subprocess_exec(
         "git", "-c", "safe.directory=*", *args, cwd=str(cwd) if cwd else None, env=env,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
@@ -68,12 +84,27 @@ class WorkspaceManager:
         self.root = Path(root or settings.workspaces_dir)
 
     def path(self, run_id: str) -> Path:
+        # run_id vem de PipelineRun.id (UUID) em todo caminho de produção;
+        # a validação aqui é defesa em profundidade contra path traversal
+        # em remove()/rmtree caso algo passe um valor não confiável.
+        if not run_id or "/" in run_id or "\\" in run_id or ".." in run_id:
+            raise WorkspaceError("run_id inválido")
         return self.root / run_id
 
     def _safe(self, run_id: str, rel: str) -> Path:
-        base = self.path(run_id).resolve()
+        base = self.path(run_id)
+        # Rejeita qualquer segmento do caminho que seja um symlink — mesmo
+        # que o alvo resolvido caia (por acaso) dentro do workspace, nunca
+        # seguimos link para ler um arquivo (mesma postura de tree()/
+        # zip_bytes(), que também nunca seguem symlink).
+        node = base
+        for part in Path(rel).parts:
+            node = node / part
+            if node.is_symlink():
+                raise WorkspaceError("caminho fora do workspace")
+        base_resolved = base.resolve()
         target = (base / rel).resolve()
-        if target != base and base not in target.parents:
+        if target != base_resolved and base_resolved not in target.parents:
             raise WorkspaceError("caminho fora do workspace")
         return target
 
@@ -84,9 +115,13 @@ class WorkspaceManager:
 
     async def clone(self, run_id: str, clone_url: str, base_branch: str) -> Path:
         dest = self.path(run_id)
+        if dest.exists():
+            raise WorkspaceError("workspace do run já existe")
         self.root.mkdir(parents=True, exist_ok=True)
-        code, out = await _git(None, "clone", "--depth", "1", "--branch", base_branch,
-                                clone_url, str(dest), check=False)
+        code, out = await _git(
+            None, "clone", "--depth", "1", "--branch", base_branch, "--", clone_url, str(dest),
+            check=False,
+        )
         if code != 0:
             shutil.rmtree(dest, ignore_errors=True)
             if "Remote branch" in out and "not found" in out:
@@ -108,27 +143,76 @@ class WorkspaceManager:
         p = self.path(run_id)
         if not (p / ".git").exists():
             return [{"path": f["path"], "status": "added"} for f in self.tree(run_id)]
-        _, out = await _git(p, "status", "--porcelain", "--untracked-files=all")
+        # ``-z`` + ``core.quotePath=false``: sem isso, nomes não-ASCII saem
+        # escapados em octal ("especifica\303\247\303\243o.md") e renames
+        # ("a -> b") quebram o parsing por posição fixa.
+        _, out = await _git(
+            p, "-c", "core.quotePath=false", "status", "--porcelain", "-z",
+            "--untracked-files=all",
+        )
+        tokens = out.split("\x00")
         result = []
-        for line in out.splitlines():
-            code, name = line[:2], line[3:]
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            if not tok:
+                i += 1
+                continue
+            code, name = tok[:2], tok[3:]
+            if code[0] in ("R", "C"):
+                # Rename/copy: o próximo token é o caminho ANTIGO (descartado
+                # — reportamos só o caminho novo, já capturado em ``name``).
+                i += 1
             if "?" in code or "A" in code:
                 status = "added"
             elif "D" in code:
                 status = "deleted"
             else:
                 status = "modified"
-            result.append({"path": name.strip('"'), "status": status})
+            result.append({"path": name, "status": status})
+            i += 1
         return result
+
+    def _iter_files(self, run_id: str):
+        """Arquivos regulares do workspace, nunca seguindo symlinks.
+
+        Um symlink commitado (ex.: ``leak -> /proc/self/environ`` ou
+        ``-> /app/.env``) poderia vazar segredos do orchestrator via
+        tree()/zip_bytes() se seguido; aqui ele é ignorado por completo —
+        tanto o próprio arquivo quanto qualquer diretório symlink (que
+        também não é percorrido, via ``followlinks=False``).
+        """
+        base = self.path(run_id)
+        base_resolved = base.resolve()
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            dirpath_p = Path(dirpath)
+            dirnames[:] = [
+                d for d in dirnames
+                if d != ".git" and not (dirpath_p / d).is_symlink()
+            ]
+            for name in filenames:
+                fp = dirpath_p / name
+                if fp.is_symlink():
+                    continue
+                try:
+                    resolved = fp.resolve()
+                except OSError:
+                    continue
+                if resolved != base_resolved and base_resolved not in resolved.parents:
+                    continue
+                yield fp
 
     def tree(self, run_id: str) -> list[dict]:
         base = self.path(run_id)
         items = []
-        for f in sorted(base.rglob("*")):
-            if f.is_file() and ".git" not in f.relative_to(base).parts:
-                head = f.read_bytes()[:8000]
-                items.append({"path": f.relative_to(base).as_posix(), "size": f.stat().st_size,
-                              "binary": b"\x00" in head})
+        for f in sorted(self._iter_files(run_id)):
+            with f.open("rb") as h:
+                head = h.read(8000)
+            items.append({
+                "path": f.relative_to(base).as_posix(),
+                "size": f.stat().st_size,
+                "binary": b"\x00" in head,
+            })
         return items
 
     def read_file(self, run_id: str, rel_path: str, max_bytes: int = 1_000_000) -> dict:
@@ -136,7 +220,8 @@ class WorkspaceManager:
         if not f.is_file():
             raise WorkspaceError("arquivo não encontrado")
         size = f.stat().st_size
-        data = f.read_bytes()[: max_bytes + 1]
+        with f.open("rb") as h:
+            data = h.read(max_bytes + 1)
         binary = b"\x00" in data[:8000]
         too_large = size > max_bytes
         content = None if binary or too_large else data.decode("utf-8", errors="replace")
@@ -167,6 +252,12 @@ class WorkspaceManager:
         self, run_id: str, clone_url: str, branch: str, message: str
     ) -> str | None:
         p = self.path(run_id)
+        if not (p / ".git").exists():
+            # Sem repositório git no workspace: nada a commitar/publicar.
+            # Importante não rodar ``git add`` aqui — sem ``.git`` local, o
+            # git subiria procurando um repositório em diretórios pai (ex.:
+            # o volume compartilhado de workspaces), o que é sempre errado.
+            return None
         if not await self.changed_files(run_id):
             return None
         author = ["-c", f"user.name={settings.git_author_name}",
@@ -176,13 +267,23 @@ class WorkspaceManager:
         candidate, n = branch, 1
         while True:
             code, _ = await _git(
-                p, "ls-remote", "--exit-code", "--heads", clone_url, candidate, check=False
+                p, "ls-remote", "--exit-code", "--heads", "--", clone_url, candidate,
+                check=False,
             )
-            if code != 0:
+            if code == 0:
+                # Branch já existe no remoto: tenta o próximo sufixo.
+                n += 1
+                candidate = f"{branch}-{n}"
+                continue
+            if code == 2:
+                # ``--exit-code``: 2 = nenhuma ref encontrada, candidato livre.
                 break
-            n += 1
-            candidate = f"{branch}-{n}"
-        await _git(p, "push", clone_url, f"HEAD:refs/heads/{candidate}")
+            # Qualquer outro código (128 etc.) é falha de rede/autenticação
+            # ao consultar o remoto, não "branch livre" — não dá pra saber
+            # se dá pra publicar, então propaga o erro (mensagem já vem
+            # escrubada de credenciais por ``_git``).
+            raise WorkspaceError("não foi possível consultar o repositório remoto")
+        await _git(p, "push", "--", clone_url, f"HEAD:refs/heads/{candidate}")
         return candidate
 
     def remove(self, run_id: str) -> None:

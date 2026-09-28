@@ -5,7 +5,9 @@ compartilhado com a Task 7) como "remote" — evita depender de rede/GitHub
 real nos testes.
 """
 
+import io
 import subprocess
+import zipfile
 
 import pytest
 
@@ -139,3 +141,120 @@ def test_remove_many_and_purge_older_than(tmp_path):
     os.utime(p3, (old, old))
     assert ws.purge_older_than(7) == 1
     assert not p3.exists()
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 (code review): symlink leaks, quoted/renamed paths no
+# changed_files, ls-remote failure handling, path/run_id hardening, etc.
+# ---------------------------------------------------------------------------
+
+
+def test_tree_and_zip_skip_symlink_to_file_outside_workspace(tmp_path):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = ws.create_empty("r1")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SEGREDO_ORCH")
+    (p / "normal.txt").write_text("ok")
+    (p / "leak").symlink_to(secret)
+
+    tree = ws.tree("r1")
+    paths = {item["path"] for item in tree}
+    assert "leak" not in paths
+    assert "normal.txt" in paths
+
+    names = zipfile.ZipFile(io.BytesIO(ws.zip_bytes("r1"))).namelist()
+    assert "leak" not in names
+    assert "normal.txt" in names
+
+    with pytest.raises(WorkspaceError):
+        ws.read_file("r1", "leak")
+
+
+def test_tree_does_not_walk_symlinked_directory(tmp_path):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = ws.create_empty("r1")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("SEGREDO_DIR")
+    (p / "linkdir").symlink_to(outside, target_is_directory=True)
+
+    tree = ws.tree("r1")
+    assert not any(item["path"].startswith("linkdir") for item in tree)
+    assert not any("secret.txt" in item["path"] for item in tree)
+
+
+async def test_changed_files_accented_name_and_rename(tmp_path, remote):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "old.txt").write_text("conteudo\n")
+    await ws.commit_and_push("run1", remote, "agent-portal/tmp", "add old")
+
+    subprocess.run(["git", "mv", "old.txt", "novo.txt"], cwd=p, check=True, capture_output=True)
+    (p / "especificação.md").write_text("x")
+
+    changed = await ws.changed_files("run1")
+    paths = {c["path"] for c in changed}
+    assert "novo.txt" in paths
+    assert "old.txt" not in paths
+    assert "old.txt -> novo.txt" not in paths
+    assert {"path": "especificação.md", "status": "added"} in changed
+
+
+async def test_commit_and_push_unreachable_remote_raises_and_hides_credentials(tmp_path, remote):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "f.txt").write_text("x")
+    bad_url = "https://user:SEGREDO@127.0.0.1:9/o/r.git"
+    with pytest.raises(WorkspaceError) as exc:
+        await ws.commit_and_push("run1", bad_url, "agent-portal/x", "m")
+    assert "SEGREDO" not in exc.value.message
+    assert "não foi possível consultar o repositório remoto" in exc.value.message
+
+
+def test_path_rejects_unsafe_run_id(tmp_path):
+    ws = WorkspaceManager(tmp_path / "ws")
+    for bad in ("../x", "a/b", "a\\b", "", "..", "x/../y"):
+        with pytest.raises(WorkspaceError):
+            ws.path(bad)
+
+
+async def test_commit_and_push_without_git_returns_none(tmp_path):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = ws.create_empty("r1")
+    (p / "f.txt").write_text("x")
+    assert await ws.commit_and_push("r1", "https://example.invalid/o/r.git", "b", "m") is None
+
+
+async def test_clone_into_existing_workspace_raises(tmp_path, remote):
+    ws = WorkspaceManager(tmp_path / "ws")
+    ws.create_empty("r1")
+    with pytest.raises(WorkspaceError) as exc:
+        await ws.clone("r1", remote, "main")
+    assert "já existe" in exc.value.message
+
+
+async def test_git_env_passes_through_proxy_and_ssl_vars(tmp_path, monkeypatch):
+    import app.runtime.workspace as wsmod
+
+    captured: dict = {}
+
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_exec(*args, **kwargs):
+        captured.update(kwargs)
+        return _FakeProc()
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy:3128")
+    monkeypatch.setenv("NO_PROXY", "localhost")
+    monkeypatch.setenv("SSL_CERT_FILE", "/etc/ssl/certs/ca.pem")
+    monkeypatch.setattr(wsmod.asyncio, "create_subprocess_exec", fake_exec)
+
+    await wsmod._git(tmp_path, "status")
+    env = captured["env"]
+    assert env["HTTPS_PROXY"] == "http://proxy:3128"
+    assert env["NO_PROXY"] == "localhost"
+    assert env["SSL_CERT_FILE"] == "/etc/ssl/certs/ca.pem"
