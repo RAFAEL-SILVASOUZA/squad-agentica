@@ -20,7 +20,15 @@ class _RefreshEntry:
     sub: str
     created_at: float = field(default_factory=time.time)
     used: bool = False
+    used_at: float | None = None
     replaced_by: str | None = None  # jti of the new token that replaced this one
+
+
+# Janela em que um token recém-girado ainda pode ser reapresentado. O NextAuth
+# renova em paralelo (várias requisições no mesmo instante com o mesmo refresh
+# token); sem a janela, a 2ª renovação era tratada como replay e derrubava a
+# sessão logo após uma renovação bem-sucedida.
+CONCURRENT_REFRESH_GRACE_SECONDS = 30.0
 
 
 class RefreshTokenStore:
@@ -42,17 +50,30 @@ class RefreshTokenStore:
     def rotate(self, old_jti: str, new_jti: str, sub: str) -> bool:
         """Mark old token as used and register the new one.
 
-        Returns True if rotation succeeded (old token was valid and unused).
-        Returns False if the old token was already used (replay detected).
+        O chamador já validou assinatura, tipo e expiração do token. Regras:
+        - jti desconhecido: o store é em memória e se perde a cada restart do
+          orchestrator; o token é legítimo, então é aceito e registrado (sem
+          isto todo restart derrubava as sessões em até 15 min).
+        - jti já usado há menos de ``CONCURRENT_REFRESH_GRACE_SECONDS``:
+          renovação concorrente do mesmo cliente; aceita.
+        - jti já usado depois disso: replay; recusa (False).
         """
+        now = time.time()
         with self._lock:
             entry = self._tokens.get(old_jti)
             if entry is None:
-                return False
-            if entry.used:
-                # Replay detected: old token was already rotated.
-                return False
+                entry = _RefreshEntry(jti=old_jti, sub=sub)
+                self._tokens[old_jti] = entry
+            elif entry.used:
+                if entry.sub != sub or entry.used_at is None:
+                    return False
+                if now - entry.used_at > CONCURRENT_REFRESH_GRACE_SECONDS:
+                    # Replay detected: old token was already rotated.
+                    return False
+                self._tokens[new_jti] = _RefreshEntry(jti=new_jti, sub=sub)
+                return True
             entry.used = True
+            entry.used_at = now
             entry.replaced_by = new_jti
             self._tokens[new_jti] = _RefreshEntry(jti=new_jti, sub=sub)
             return True

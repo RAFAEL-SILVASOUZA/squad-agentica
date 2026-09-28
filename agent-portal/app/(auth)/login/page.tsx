@@ -29,7 +29,9 @@ function LoginPageInner() {
 
   // Redirect if already authenticated.
   useEffect(() => {
-    if (status === "authenticated" && session) {
+    // Sessão marcada como expirada (refresh recusado) ainda vem como
+    // "authenticated": voltar para a app criaria um loop com o middleware.
+    if (status === "authenticated" && session && !session.authError) {
       router.replace(callbackUrl);
     }
   }, [status, session, router, callbackUrl]);
@@ -128,7 +130,10 @@ function LoginPageInner() {
               marginBottom: "1rem",
             }}
           >
-            {apiError ?? "Falha na autenticação"}
+            {apiError ??
+              (urlError === "session_expired"
+                ? "Sua sessão expirou. Entre novamente."
+                : "Falha na autenticação")}
           </div>
         )}
 

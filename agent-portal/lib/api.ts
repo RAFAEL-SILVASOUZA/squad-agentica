@@ -143,6 +143,9 @@ async function getToken(): Promise<string> {
     if (!res.ok) {
       cachedToken = null;
       tokenPromise = null;
+      // Sessão sem token válido (refresh recusado): antes a tela ficava em
+      // "Sessão expirada" com um "Tentar novamente" que nunca funcionava.
+      if (res.status === 401) redirectToLogin();
       throw new ApiError(res.status, {
         error: "unauthorized",
         code: "not_authenticated",
@@ -174,7 +177,13 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+function redirectToLogin(): void {
+  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login?error=session_expired";
+  }
+}
+
+async function request<T>(path: string, opts: RequestOptions = {}, retried = false): Promise<T> {
   const { method = "GET", body, query, headers: extraHeaders, signal } = opts;
 
   const token = await getToken();
@@ -217,10 +226,11 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   });
 
   if (res.status === 401) {
+    // O token em cache expira (15 min); a sessão NextAuth renova ao pedir um
+    // token novo. Só vai para o login se, com o token novo, ainda for 401.
     invalidateToken();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
+    if (!retried) return request<T>(path, opts, true);
+    redirectToLogin();
     throw new ApiError(401, { error: "unauthorized", code: "not_authenticated" });
   }
 

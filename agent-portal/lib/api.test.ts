@@ -126,27 +126,41 @@ describe("api", () => {
 
   it("redirects to /login on 401", async () => {
     const originalLocation = window.location;
-    const mockLocation = { href: "" };
+    const mockLocation = { href: "", pathname: "/agents" };
     Object.defineProperty(window, "location", {
       value: mockLocation,
       writable: true,
       configurable: true,
     });
 
+    // 401 mesmo depois de buscar um token novo: sessão morta.
     mockFetch
       .mockResolvedValueOnce(mockResponse(200, { accessToken: "test-token" }))
-      .mockResolvedValueOnce(
-        mockResponse(401, { error: "unauthorized", code: "not_authenticated" })
-      );
+      .mockResolvedValueOnce(mockResponse(401, { error: "unauthorized", code: "not_authenticated" }))
+      .mockResolvedValueOnce(mockResponse(200, { accessToken: "test-token-2" }))
+      .mockResolvedValueOnce(mockResponse(401, { error: "unauthorized", code: "not_authenticated" }));
 
     await expect(api.get("/api/agents")).rejects.toThrow(ApiError);
-    expect(mockLocation.href).toBe("/login");
+    expect(mockLocation.href).toBe("/login?error=session_expired");
 
     Object.defineProperty(window, "location", {
       value: originalLocation,
       writable: true,
       configurable: true,
     });
+  });
+
+  it("retries once with a fresh session token after an expired access token", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, { accessToken: "expired" }))
+      .mockResolvedValueOnce(mockResponse(401, { error: "unauthorized", code: "not_authenticated" }))
+      .mockResolvedValueOnce(mockResponse(200, { accessToken: "renewed" }))
+      .mockResolvedValueOnce(mockResponse(200, { items: [], total: 0, page: 1, limit: 20 }));
+
+    const res = await api.get<{ items: unknown[] }>("/api/agents");
+    expect(res.items).toEqual([]);
+    const lastCall = mockFetch.mock.calls[3];
+    expect(lastCall[1].headers.Authorization).toBe("Bearer renewed");
   });
 
   it("returns undefined for 204 No Content", async () => {
