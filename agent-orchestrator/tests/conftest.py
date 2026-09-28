@@ -133,6 +133,73 @@ async def make_git_integration(full_client):  # noqa: F811 (nome do parâmetro =
     return _make
 
 
+@pytest_asyncio.fixture
+async def other_user(session: AsyncSession):
+    """Segundo usuário autenticado, para os testes de isolamento (F4)."""
+    from app.db.models import User as _User
+
+    user = _User(
+        id=uuid.uuid4(), email=f"other-{uuid.uuid4().hex[:8]}@example.com",
+        name="Other User", password_hash="hashed",
+    )
+    user.owner_id = user.id
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def client_other_user(full_app, other_user):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+    """``full_client`` autenticado como um usuário diferente (isolamento)."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.auth.dependencies import get_current_user
+
+    async def override_get_current_user():
+        return other_user
+
+    full_app.dependency_overrides[get_current_user] = override_get_current_user
+    transport = ASGITransport(app=full_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def make_run_with_workspace(session, test_user, tmp_path, monkeypatch):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+    """Cria uma pipeline + run (status ``completed``) do usuário de teste e um
+    workspace vazio (``WorkspaceManager.create_empty``) sob ``tmp_path``,
+    monkeypatchando ``WorkspaceManager`` em ``app.api.workspaces`` para usar
+    essa raiz isolada. Retorna ``(run_id, workspace_path)``."""
+    from datetime import UTC, datetime
+
+    import app.api.workspaces as workspaces_module
+    from app.db.models import Pipeline, PipelineRun
+    from app.runtime.workspace import WorkspaceManager
+
+    ws_root = tmp_path / "workspaces"
+    monkeypatch.setattr(workspaces_module, "WorkspaceManager", lambda: WorkspaceManager(ws_root))
+
+    async def _make(name: str = "Projeto de teste"):
+        pipeline = Pipeline(
+            id=uuid.uuid4(), owner_id=test_user.owner_id, name=name, description="",
+            status="completed", entry_node_id=uuid.uuid4(),
+        )
+        session.add(pipeline)
+        await session.flush()
+        run = PipelineRun(
+            id=uuid.uuid4(), owner_id=test_user.owner_id, pipeline_id=pipeline.id,
+            thread_id=f"{pipeline.id}:r", status="completed", started_at=datetime.now(UTC),
+        )
+        session.add(run)
+        await session.commit()
+        wm = WorkspaceManager(ws_root)
+        path = wm.create_empty(str(run.id))
+        return str(run.id), path
+
+    return _make
+
+
 def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 

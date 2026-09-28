@@ -54,10 +54,16 @@ def _scrub(text: str) -> str:
     return _CRED.sub(r"\1***@", text)
 
 
+def slugify(name: str) -> str:
+    """Slug ASCII curto (<=40 chars) a partir de um nome livre (ex.: nome da
+    pipeline); usado tanto no nome da branch (``slugify_branch``) quanto no
+    nome do arquivo de download do workspace (Task 8)."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")[:40].strip("-") or "pipeline"
+
+
 def slugify_branch(pipeline_name: str, run_id: str) -> str:
-    ascii_name = unicodedata.normalize("NFKD", pipeline_name).encode("ascii", "ignore").decode()
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")[:40].strip("-") or "pipeline"
-    return f"agent-portal/{slug}-{run_id.replace('-', '')[:8]}"
+    return f"agent-portal/{slugify(pipeline_name)}-{run_id.replace('-', '')[:8]}"
 
 
 async def _git(cwd: Path | None, *args: str, check: bool = True) -> tuple[int, str]:

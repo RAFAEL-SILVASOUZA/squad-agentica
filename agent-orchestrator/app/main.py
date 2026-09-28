@@ -9,6 +9,8 @@ Dono: infra-docker. Contrato §3:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import importlib
 import logging
 import pkgutil
@@ -27,6 +29,35 @@ from app.core.log_redaction import install_log_redaction
 logger = logging.getLogger(__name__)
 # F16: o JWT do WebSocket vai na query string e o uvicorn a registra.
 install_log_redaction()
+
+# Task 8: limpeza periódica de workspaces expirados (retenção).
+_PURGE_INTERVAL_SECONDS = 24 * 60 * 60
+
+
+async def _run_workspace_purge() -> int:
+    """Uma rodada de limpeza (``WorkspaceManager.purge_older_than``).
+
+    É bloqueante (I/O de disco: ``shutil.rmtree`` por workspace), por isso
+    roda em thread separada (``asyncio.to_thread``) para não travar o loop de
+    eventos do orchestrator enquanto outros requests estão em andamento.
+    """
+    from app.runtime.workspace import WorkspaceManager
+
+    removed = await asyncio.to_thread(
+        WorkspaceManager().purge_older_than, settings.workspace_retention_days
+    )
+    logger.info("workspace_purge: %d workspace(s) removido(s)", removed)
+    return removed
+
+
+async def _purge_loop() -> None:
+    """Roda a limpeza no startup e depois a cada 24h, até ser cancelada."""
+    try:
+        while True:
+            await _run_workspace_purge()
+            await asyncio.sleep(_PURGE_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        pass
 
 
 @asynccontextmanager
@@ -52,11 +83,15 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     register_approval_hook(build_approval_hook(async_session_factory))
     await get_executor()
     logger.info("startup: checkpointer pronto e hook de aprovação registrado")
+    purge_task = asyncio.create_task(_purge_loop(), name="workspace-purge-loop")
     try:
         yield
     finally:
         from app.api.pipeline_runs import shutdown_executor
 
+        purge_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await purge_task
         await shutdown_executor()
 
 

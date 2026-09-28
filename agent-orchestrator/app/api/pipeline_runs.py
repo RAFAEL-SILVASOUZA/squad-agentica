@@ -148,6 +148,23 @@ def _pipeline_to_dict(
     }
 
 
+async def get_owned_run(
+    db: AsyncSession, run_id: uuid.UUID, owner_id: uuid.UUID
+) -> PipelineRun:
+    """Busca o run garantindo que pertence ao ``owner_id`` (404 ``run_not_found``
+    caso contrário ou se não existir). Compartilhado com app/api/workspaces.py
+    (Task 8), que também expõe endpoints escopados ao dono do run."""
+    result = await db.execute(
+        select(PipelineRun).where(
+            PipelineRun.id == run_id, PipelineRun.owner_id == owner_id
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise AppError(404, "not_found", "run_not_found")
+    return run
+
+
 async def _load_pipeline(
     db: AsyncSession, pipeline_id: uuid.UUID, owner_id: uuid.UUID | None = None
 ) -> tuple[Pipeline, list[PipelineNode], list[PipelineEdge]]:
@@ -757,14 +774,7 @@ async def publish_run_endpoint(
     (PR aberto da mesma branch é reaproveitado). Só o dono do run (404 caso
     contrário); 409 ``run_not_completed`` se o run não está concluído.
     """
-    result = await db.execute(
-        select(PipelineRun).where(
-            PipelineRun.id == run_id, PipelineRun.owner_id == user.owner_id
-        )
-    )
-    run = result.scalar_one_or_none()
-    if run is None:
-        raise AppError(404, "not_found", "run_not_found")
+    run = await get_owned_run(db, run_id, user.owner_id)
     status = run.status.value if hasattr(run.status, "value") else run.status
     if status != "completed":
         raise AppError(409, "conflict", "run_not_completed")

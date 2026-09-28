@@ -111,6 +111,7 @@ async def full_app(session: AsyncSession, test_user: User, mock_agent_storage: M
     from app.api.integrations import router as integrations_router
     from app.api.pipeline_runs import router as pipeline_runs_router
     from app.api.pipelines import router as pipelines_router
+    from app.api.workspaces import router as workspaces_router
 
     app = FastAPI()
     register_exception_handlers(app)
@@ -118,6 +119,7 @@ async def full_app(session: AsyncSession, test_user: User, mock_agent_storage: M
     app.include_router(integrations_router, prefix="/api")
     app.include_router(pipelines_router, prefix="/api")
     app.include_router(pipeline_runs_router, prefix="/api")
+    app.include_router(workspaces_router, prefix="/api")
 
     async def override_get_db():
         yield session
