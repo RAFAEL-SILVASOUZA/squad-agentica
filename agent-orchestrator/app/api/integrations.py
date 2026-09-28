@@ -30,6 +30,7 @@ from app.core.secrets import SecretError, decrypt_secret, encrypt_secret
 from app.db.models import Integration, User
 from app.db.session import get_db
 from app.integrations import github as github_client
+from app.integrations.git_providers import GitProviderError, provider_for
 from app.integrations.registry import IntegrationRegistry
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -102,6 +103,35 @@ class RivvnStatusResponse(BaseModel):
 
     connected: bool
     contractStatus: str
+
+
+class GitTestResponse(BaseModel):
+    """Response para POST /api/integrations/{id}/test."""
+
+    model_config = {"exclude_none": True}
+
+    ok: bool
+    repositories: int | None = None
+    error: str | None = None
+
+
+class GitRepositoryItem(BaseModel):
+    """Item de repositório."""
+
+    fullName: str
+    defaultBranch: str
+
+
+class GitRepositoriesResponse(BaseModel):
+    """Response para GET /api/integrations/{id}/repositories."""
+
+    items: list[GitRepositoryItem]
+
+
+class GitBranchesResponse(BaseModel):
+    """Response para GET /api/integrations/{id}/branches."""
+
+    items: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +329,85 @@ async def delete_integration(
     registry = IntegrationRegistry(db)
     await registry.delete(integration_id, user.id)
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Git Integration Routes
+# ---------------------------------------------------------------------------
+
+
+async def _owned_git_integration(
+    db: AsyncSession, user: User, integration_id: uuid.UUID
+) -> Integration:
+    """Helper: busca integração Git por dono, validando tipo."""
+    registry = IntegrationRegistry(db)
+    integration = await registry.get(integration_id, user.id)
+    kind = (
+        integration.type.value
+        if hasattr(integration.type, "value")
+        else integration.type
+    )
+    if kind not in ("github", "azure"):
+        raise AppError(400, "validation error", "not_a_git_integration")
+    return integration
+
+
+@router.post(
+    "/{integration_id}/test",
+    response_model=GitTestResponse,
+    response_model_exclude_none=True,
+)
+async def test_git_integration(
+    integration_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GitTestResponse:
+    """Testa a conexão de uma integração Git."""
+    integration = await _owned_git_integration(db, user, integration_id)
+    try:
+        repos = await provider_for(integration).list_repos()
+    except GitProviderError as e:
+        return GitTestResponse(ok=False, error=e.message)
+    return GitTestResponse(ok=True, repositories=len(repos))
+
+
+@router.get("/{integration_id}/repositories")
+async def list_git_repositories(
+    integration_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GitRepositoriesResponse:
+    """Lista repositórios de uma integração Git."""
+    integration = await _owned_git_integration(db, user, integration_id)
+    try:
+        repos = await provider_for(integration).list_repos()
+    except GitProviderError as e:
+        raise AppError(
+            400, "validation error", "git_provider_error", {"errors": [e.message]}
+        ) from None
+    return GitRepositoriesResponse(
+        items=[
+            {"fullName": r.full_name, "defaultBranch": r.default_branch} for r in repos
+        ]
+    )
+
+
+@router.get("/{integration_id}/branches")
+async def list_git_branches(
+    integration_id: uuid.UUID,
+    repo: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GitBranchesResponse:
+    """Lista branches de um repositório."""
+    integration = await _owned_git_integration(db, user, integration_id)
+    try:
+        branches = await provider_for(integration).list_branches(repo)
+    except GitProviderError as e:
+        raise AppError(
+            400, "validation error", "git_provider_error", {"errors": [e.message]}
+        ) from None
+    return GitBranchesResponse(items=branches)
 
 
 # ---------------------------------------------------------------------------
