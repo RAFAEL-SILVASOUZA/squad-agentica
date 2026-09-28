@@ -122,6 +122,18 @@ describe("validateGraph (regras do compiler, spec 4.2)", () => {
     expect(errors.some((e) => e.rule === 6 && e.nodeId === "n2")).toBe(true);
   });
 
+  it("regra 6: o no de entrada recebe inputs no disparo e fica isento", () => {
+    const nodes = [makeNode("n1", "Redator", [taskIn], [planOut]), makeNode("n2", "Revisor", [], [])];
+    const edges = [makeEdge({ id: "e1", source: "n1", target: "n2" })];
+    expect(validateGraph(nodes, edges, "n1")).toEqual([]);
+  });
+
+  it("entrada nula (antes do 1o save) usa o primeiro no, sem erro de regra 9", () => {
+    const nodes = [makeNode("n1", "Redator", [taskIn], [planOut]), makeNode("n2", "Revisor", [], [])];
+    const edges = [makeEdge({ id: "e1", source: "n1", target: "n2" })];
+    expect(validateGraph(nodes, edges, "00000000-0000-0000-0000-000000000000")).toEqual([]);
+  });
+
   it("regra 8: no orfao (sem entrada) e erro; entry esta isento", () => {
     const nodes = [
       makeNode("n1", "A", [], []),

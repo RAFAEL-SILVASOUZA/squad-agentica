@@ -75,6 +75,8 @@ function conditionKey(condition: EdgeCondition | undefined): string {
  * Valida o grafo completo (regras 1-11 da spec 4.2).
  * Regra 10 e apenas aviso (action sem flow edge); nao bloqueia.
  */
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
 export function validateGraph(
   nodes: PipelineNode[],
   edges: PipelineEdge[],
@@ -82,6 +84,12 @@ export function validateGraph(
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  // UUID nulo = pipeline salva sem nós (o backend o trata como "sem entrada"
+  // e usa o 1º nó ao salvar). Mesma regra aqui para não acusar erros de
+  // entrada inexistente antes do primeiro save.
+  const declaredEntry = entryNodeId && entryNodeId !== NIL_UUID ? entryNodeId : undefined;
+  const effectiveEntry =
+    declaredEntry && nodeById.has(declaredEntry) ? declaredEntry : declaredEntry ? undefined : nodes[0]?.id;
   const flowEdges = edges.filter((e) => e.type === "flow");
   const dataEdges = edges.filter((e) => e.type === "data");
 
@@ -97,6 +105,9 @@ export function validateGraph(
 
   // Regra 6: input required sem data edge de nenhuma origem
   for (const node of nodes) {
+    // O nó de entrada recebe os inputs no disparo da execução (spec regra 6
+    // vale para agentes target).
+    if (node.id === effectiveEntry) continue;
     const requiredInputs = node.agentSnapshot.inputs.filter((p) => p.required);
     for (const input of requiredInputs) {
       const covered = dataEdges.some(
@@ -113,7 +124,7 @@ export function validateGraph(
   }
 
   // Regra 8: no orfao (exceto entry) sem flow nem data de entrada
-  const entryId = entryNodeId && nodeById.has(entryNodeId) ? entryNodeId : null;
+  const entryId = effectiveEntry ?? null;
   for (const node of nodes) {
     if (node.id === entryId) continue;
     const hasIncoming =
@@ -129,10 +140,10 @@ export function validateGraph(
   }
 
   // Regra 9: entryNodeId inexistente (entry vazia = pipeline ainda sem grafo desenhado; nao erro aqui)
-  if (entryNodeId && !nodeById.has(entryNodeId)) {
+  if (declaredEntry && !nodeById.has(declaredEntry)) {
     errors.push({
       rule: 9,
-      message: `entryNodeId "${entryNodeId}" não referencia um nó existente`,
+      message: `entryNodeId "${declaredEntry}" não referencia um nó existente`,
     });
   }
 

@@ -676,3 +676,30 @@ async def test_finalize_goes_to_end(fake_worker: FakeWorker, checkpointer: Memor
     # B não executou (A finalizou).
     assert "B" not in result.get("status", {}) or result["status"].get("B") is None
     assert result["iterations"].get("B", 0) == 0
+
+
+def test_approval_on_data_edge_is_not_dropped(fake_worker: FakeWorker, checkpointer: MemorySaver):
+    """A UI oferece "Requer aprovação" na data edge; a flow edge injetada (regra 7)
+    precisa herdar a aprovação, senão o run seguia sem pedir aprovação."""
+    pipeline = Pipeline(
+        id="p-appr-data",
+        name="approval-on-data-edge",
+        entry_node_id="A",
+        nodes=[
+            _make_node("A", "agent-a", outputs=[PortDef(name="spec", type="document")]),
+            _make_node("B", "agent-b", inputs=[PortDef(name="spec", type="document")]),
+        ],
+        edges=[
+            _make_edge(
+                "e1",
+                "A",
+                "B",
+                type="data",
+                requires_approval=True,
+                approval_message="Revisar",
+                data_mapping=DataMapping(source_output="spec", target_input="spec"),
+            )
+        ],
+    )
+    graph = compile_pipeline(pipeline, worker_client=fake_worker, checkpointer=checkpointer)
+    assert "approval_node___injected_e1" in graph.get_graph().nodes

@@ -284,6 +284,12 @@ def _rule_6_required_inputs_served(pipeline: Pipeline) -> list[ValidationError]:
                 served_inputs.setdefault(edge.target, set()).add(edge.data_mapping.target_input)
 
     for node in pipeline.nodes:
+        # Spec regra 6 fala do agente *target*: o nó de entrada recebe os
+        # inputs no disparo da execução (data[entryNodeId]), não por data edge.
+        # Sem esta isenção, nenhum pipeline cujo 1º agente tem input
+        # obrigatório podia ser executado.
+        if node.id == pipeline.entry_node_id:
+            continue
         snapshot = node.agent_snapshot
         for port in snapshot.inputs:
             if not port.required:

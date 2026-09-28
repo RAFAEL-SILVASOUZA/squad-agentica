@@ -566,14 +566,19 @@ def compile_pipeline(
     for de in data_edges:
         pair = (de.source, de.target)
         if pair not in flow_pairs:
-            # Injeta flow edge incondicional (regra 7).
+            # Injeta flow edge incondicional (regra 7). A aprovação marcada na
+            # data edge (o painel oferece o toggle nos dois tipos) vai junto;
+            # antes era descartada e o run seguia sem pedir aprovação.
             injected = PipelineEdge(
                 id=f"__injected_{de.id}",
                 type="flow",
                 source=de.source,
                 target=de.target,
                 condition=None,
-                requires_approval=False,
+                requires_approval=de.requires_approval,
+                approval_channel=de.approval_channel,
+                approval_message=de.approval_message,
+                reject_target=de.reject_target,
             )
             injected_flow_edges.append(injected)
             flow_pairs.add(pair)

@@ -516,6 +516,24 @@ def test_rule_6_required_input_not_served():
     assert "input" in r6_errors[0].message
 
 
+def test_rule_6_entry_node_inputs_come_from_execution():
+    """O nó de entrada recebe inputs no disparo: não exige data edge (spec: agente target)."""
+    pipeline = Pipeline(
+        id="p1",
+        name="r6-entry",
+        entry_node_id="A",
+        nodes=[
+            _make_node(
+                "A", "agent-a", inputs=[PortDef(name="ideia", type="document", required=True)]
+            ),
+            _make_node("B", "agent-b"),
+        ],
+        edges=[_make_edge("e1", "A", "B", type="flow")],
+    )
+    result = validate_pipeline(pipeline)
+    assert [e for e in result.errors if e.rule == 6] == []
+
+
 def test_rule_6_optional_input_not_served_ok():
     """Input optional sem data edge: não gera erro."""
     pipeline = Pipeline(
