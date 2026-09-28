@@ -253,6 +253,19 @@ class TestUpdateKB:
         assert resp.json()["topK"] == 10
         assert resp.json()["chunkSize"] == 256
 
+    async def test_update_name_and_description(self, client: AsyncClient):
+        created = await client.post(
+            "/api/knowledge",
+            json={"name": "Antes", "description": "Antiga", "scope": "global", "source": "upload"},
+        )
+        resp = await client.put(
+            f"/api/knowledge/{created.json()['id']}",
+            json={"name": "Depois", "description": "Nova descrição"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Depois"
+        assert resp.json()["description"] == "Nova descrição"
+
     async def test_update_kb_not_found(self, client: AsyncClient):
         resp = await client.put(f"/api/knowledge/{uuid.uuid4()}", json={"name": "X"})
         assert resp.status_code == 404
@@ -349,10 +362,10 @@ class TestUpload:
             )
         ).json()["id"]
         # 10/min por KB: 10 ok, 11º -> 429.
-        for _ in range(10):
+        for index in range(10):
             r = await client.post(
                 f"/api/knowledge/{cid}/upload",
-                files={"file": ("a.txt", b"data", "text/plain")},
+                files={"file": ("a.txt", f"data {index}".encode(), "text/plain")},
             )
             assert r.status_code == 200
         r = await client.post(
@@ -397,7 +410,7 @@ class TestDocuments:
         assert resp.status_code == 200
         assert resp.json()["total"] == 2
 
-    async def test_delete_document(self, client: AsyncClient, mock_storage):
+    async def test_delete_document(self, client: AsyncClient, mock_storage, session: AsyncSession):
         cid = (
             await client.post(
                 "/api/knowledge",
@@ -413,7 +426,17 @@ class TestDocuments:
         assert mock_storage.store
         resp = await client.delete(f"/api/knowledge/{cid}/documents/{doc_id}")
         assert resp.status_code == 204
+
+        from sqlalchemy import select
+
+        from app.db.models import KnowledgeBase, KnowledgeChunk
+
+        remaining = await client.get(f"/api/knowledge/{cid}/documents")
+        assert remaining.json()["total"] == 0
         assert mock_storage.store == {}
+        assert (await session.execute(select(KnowledgeChunk))).scalars().all() == []
+        base = await session.get(KnowledgeBase, uuid.UUID(cid))
+        assert base.document_count == 0
 
     async def test_delete_document_not_found(self, client: AsyncClient):
         cid = (

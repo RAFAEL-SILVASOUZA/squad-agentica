@@ -40,6 +40,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -657,6 +658,12 @@ class KnowledgeBase(Base):
 
 class KnowledgeDocument(Base):
     __tablename__ = "knowledge_documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "knowledge_base_id", "content_hash", name="uq_knowledge_documents_kb_hash"
+        ),
+        Index("ix_knowledge_documents_content_hash", "content_hash"),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     owner_id: Mapped[uuid.UUID] = _owner_fk()
@@ -670,6 +677,7 @@ class KnowledgeDocument(Base):
     source: Mapped[KnowledgeDocSource] = mapped_column(KnowledgeDocSource, nullable=False)
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[KnowledgeDocStatus] = mapped_column(
         KnowledgeDocStatus, nullable=False, default="processing"
@@ -714,6 +722,49 @@ class KnowledgeChunk(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<KnowledgeChunk kb={self.knowledge_base_id} #{self.chunk_index}>"
+
+
+KnowledgeMessageRole = Enum(
+    "knowledge_message_role", "user", "assistant", native_enum=False, length=22
+)
+
+
+class KnowledgeConversation(Base):
+    __tablename__ = "knowledge_conversations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = _owner_fk()
+    knowledge_base_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+    messages: Mapped[list["KnowledgeMessage"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class KnowledgeMessage(Base):
+    __tablename__ = "knowledge_messages"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(KnowledgeMessageRole, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = _created_at()
+
+    conversation: Mapped["KnowledgeConversation"] = relationship(back_populates="messages")
 
 
 # ---------------------------------------------------------------------------

@@ -18,12 +18,16 @@ KB com ``source="rivvn"`` responde erro claro "não disponível".
 
 from __future__ import annotations
 
+import hashlib
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -31,7 +35,9 @@ from app.core.errors import AppError
 from app.db.models import (
     KnowledgeBase,
     KnowledgeChunk,
+    KnowledgeConversation,
     KnowledgeDocument,
+    KnowledgeMessage,
     User,
 )
 from app.db.session import get_db
@@ -137,6 +143,14 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     chunks: list[dict[str, Any]]
+
+
+class ConversationCreateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+
+
+class MessageCreateRequest(BaseModel):
+    content: str = Field(..., min_length=1)
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +394,7 @@ async def upload_document(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     file: Annotated[UploadFile, File()],
+    replace: Annotated[uuid.UUID | None, Query()] = None,
 ) -> dict[str, Any]:
     kb = await _get_kb(db, user.id, kb_id)
 
@@ -399,6 +414,37 @@ async def upload_document(
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise AppError(400, "validation error", "file_too_large")
+    content_hash = hashlib.sha256(data).hexdigest()
+
+    duplicate_result = await db.execute(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.knowledge_base_id == kb.id,
+            KnowledgeDocument.content_hash == content_hash,
+        )
+    )
+    duplicate = duplicate_result.scalar_one_or_none()
+    replaced_doc = None
+    if duplicate is not None and replace is None:
+        raise AppError(
+            409,
+            "conflict",
+            "duplicate_document",
+            {"documentId": str(duplicate.id), "name": duplicate.name},
+        )
+    if replace is not None:
+        replace_result = await db.execute(
+            select(KnowledgeDocument).where(
+                KnowledgeDocument.id == replace, KnowledgeDocument.knowledge_base_id == kb.id
+            )
+        )
+        replaced_doc = replace_result.scalar_one_or_none()
+        if replaced_doc is None:
+            raise AppError(404, "not_found", "document_not_found")
+        if duplicate is not None and duplicate.id != replaced_doc.id:
+            raise AppError(
+                409, "conflict", "duplicate_document",
+                {"documentId": str(duplicate.id), "name": duplicate.name},
+            )
     try:
         content = extract_text(data, ext)
     except UnreadableDocumentError:
@@ -418,24 +464,92 @@ async def upload_document(
         source="upload",
         url=None,
         size=len(data),
+        content_hash=content_hash,
         chunk_count=0,
         status="processing",
     )
     db.add(doc)
-    await db.flush()
+    if replaced_doc is not None:
+        replaced_doc.content_hash = None
+
+    doc_id = doc.id
+    kb_uuid = kb.id
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        duplicate_result = await db.execute(
+            select(KnowledgeDocument).where(
+                KnowledgeDocument.knowledge_base_id == kb_uuid,
+                KnowledgeDocument.content_hash == content_hash,
+            )
+        )
+        duplicate = duplicate_result.scalar_one_or_none()
+        if duplicate is not None:
+            raise AppError(
+                409,
+                "conflict",
+                "duplicate_document",
+                {"documentId": str(duplicate.id), "name": duplicate.name},
+            ) from None
+        raise AppError(500, "internal error", "ingest_error") from exc
 
     try:
         await storage.save_document(str(kb.id), str(doc.id), data, ext)
     except Exception as e:
         await db.rollback()
+        try:
+            await storage.delete_document(str(kb_uuid), str(doc_id), ext)
+        except Exception:
+            pass
         raise AppError(500, "internal error", "storage_error") from e
 
-    # Indexa: chunk -> embed -> insert vector.
+    # Indexação, remoção substituída e metadados ficam na mesma transação.
+    old_doc_id = replaced_doc.id if replaced_doc is not None else None
+    old_doc_name = replaced_doc.name if replaced_doc is not None else None
     try:
-        await rag.ingest_document(db, kb, doc, content=content)
+        await rag.ingest_document(db, kb, doc, content=content, commit=False)
+        if replaced_doc is not None:
+            await db.execute(
+                sa_delete(KnowledgeChunk).where(KnowledgeChunk.document_id == old_doc_id)
+            )
+            await db.delete(replaced_doc)
+            kb.document_count = max(0, (kb.document_count or 0) - 1)
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        duplicate_result = await db.execute(
+            select(KnowledgeDocument).where(
+                KnowledgeDocument.knowledge_base_id == kb_uuid,
+                KnowledgeDocument.content_hash == content_hash,
+            )
+        )
+        duplicate = duplicate_result.scalar_one_or_none()
+        try:
+            await storage.delete_document(str(kb_uuid), str(doc_id), ext)
+        except Exception:
+            pass
+        if duplicate is not None:
+            raise AppError(
+                409, "conflict", "duplicate_document",
+                {"documentId": str(duplicate.id), "name": duplicate.name},
+            ) from None
+        raise AppError(500, "internal error", "ingest_error") from e
     except Exception as e:
         await db.rollback()
+        try:
+            await storage.delete_document(str(kb_uuid), str(doc_id), ext)
+        except Exception:
+            pass
         raise AppError(500, "internal error", "ingest_error") from e
+
+    if replaced_doc is not None:
+        try:
+            await storage.delete_document(
+                str(kb_uuid), str(old_doc_id), _ext_from_name(old_doc_name)
+            )
+        except Exception:
+            pass
 
     return {
         "documentId": str(doc.id),
@@ -500,8 +614,6 @@ async def delete_document(
     await db.execute(
         select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)
     )
-    from sqlalchemy import delete as sa_delete
-
     await db.execute(
         sa_delete(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)
     )
@@ -509,6 +621,181 @@ async def delete_document(
     kb.document_count = max(0, (kb.document_count or 0) - 1)
     await db.commit()
     return Response(status_code=204)
+
+
+async def _get_conversation(
+    db: AsyncSession,
+    owner_id: uuid.UUID,
+    kb_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> KnowledgeConversation:
+    statement = select(KnowledgeConversation).where(
+        KnowledgeConversation.id == conversation_id,
+        KnowledgeConversation.knowledge_base_id == kb_id,
+        KnowledgeConversation.owner_id == owner_id,
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    result = await db.execute(statement)
+    conversation = result.scalar_one_or_none()
+    if conversation is None:
+        raise AppError(404, "not_found", "conversation_not_found")
+    return conversation
+
+
+@router.get("/{kb_id}/conversations")
+async def list_conversations(
+    kb_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    kb = await _get_kb(db, user.id, kb_id)
+    conversations = list(
+        (
+            await db.execute(
+                select(KnowledgeConversation)
+                .where(KnowledgeConversation.knowledge_base_id == kb.id)
+                .order_by(KnowledgeConversation.updated_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items = []
+    for conversation in conversations:
+        count = (
+            await db.execute(
+                select(func.count()).select_from(KnowledgeMessage).where(
+                    KnowledgeMessage.conversation_id == conversation.id
+                )
+            )
+        ).scalar() or 0
+        items.append(
+            {
+                "id": str(conversation.id),
+                "title": conversation.title,
+                "updatedAt": conversation.updated_at.isoformat(),
+                "messageCount": count,
+            }
+        )
+    return {"items": items}
+
+
+@router.post("/{kb_id}/conversations", status_code=201)
+async def create_conversation(
+    kb_id: uuid.UUID,
+    body: ConversationCreateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, str]:
+    kb = await _get_kb(db, user.id, kb_id)
+    conversation = KnowledgeConversation(
+        id=uuid.uuid4(), owner_id=user.id, knowledge_base_id=kb.id, title=body.title or ""
+    )
+    db.add(conversation)
+    await db.commit()
+    await db.refresh(conversation)
+    return {"id": str(conversation.id), "title": conversation.title}
+
+
+@router.get("/{kb_id}/conversations/{conversation_id}")
+async def get_conversation(
+    kb_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    kb = await _get_kb(db, user.id, kb_id)
+    conversation = await _get_conversation(db, user.id, kb.id, conversation_id)
+    messages = list(
+        (
+            await db.execute(
+                select(KnowledgeMessage)
+                .where(KnowledgeMessage.conversation_id == conversation.id)
+                .order_by(KnowledgeMessage.created_at, KnowledgeMessage.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "id": str(conversation.id),
+        "title": conversation.title,
+        "messages": [
+            {
+                "id": str(message.id),
+                "role": message.role,
+                "content": message.content,
+                "sources": message.sources,
+                "createdAt": message.created_at.isoformat(),
+            }
+            for message in messages
+        ],
+    }
+
+
+@router.delete("/{kb_id}/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(
+    kb_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    kb = await _get_kb(db, user.id, kb_id)
+    conversation = await _get_conversation(db, user.id, kb.id, conversation_id)
+    await db.delete(conversation)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{kb_id}/conversations/{conversation_id}/messages")
+async def send_conversation_message(
+    kb_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    body: MessageCreateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    kb = await _get_kb(db, user.id, kb_id)
+    conversation = await _get_conversation(
+        db, user.id, kb.id, conversation_id, for_update=True
+    )
+    latest_timestamp = (
+        await db.execute(
+            select(KnowledgeMessage.created_at)
+            .where(KnowledgeMessage.conversation_id == conversation.id)
+            .order_by(KnowledgeMessage.created_at.desc(), KnowledgeMessage.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    question_timestamp = datetime.now(UTC)
+    if latest_timestamp is not None and question_timestamp <= latest_timestamp:
+        question_timestamp = latest_timestamp + timedelta(microseconds=1)
+    question = KnowledgeMessage(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        role="user",
+        content=body.content,
+        sources=[],
+        created_at=question_timestamp,
+    )
+    db.add(question)
+    conversation.updated_at = question_timestamp
+    if not conversation.title:
+        conversation.title = body.content[:60]
+    await db.flush()
+
+    from app.knowledge.chat import answer
+
+    response = await answer(db, user.id, kb, conversation, body.content)
+    return {
+        "id": str(response.id),
+        "role": response.role,
+        "content": response.content,
+        "sources": response.sources,
+    }
 
 
 # ---------------------------------------------------------------------------

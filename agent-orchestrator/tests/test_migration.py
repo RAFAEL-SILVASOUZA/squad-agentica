@@ -41,6 +41,8 @@ EXPECTED_TABLES = {
     "knowledge_bases",
     "knowledge_documents",
     "knowledge_chunks",
+    "knowledge_conversations",
+    "knowledge_messages",
     "approval_requests",
     "artifacts",
     "integrations",

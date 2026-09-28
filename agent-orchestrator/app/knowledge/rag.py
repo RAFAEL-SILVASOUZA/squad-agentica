@@ -47,6 +47,8 @@ class RagService:
         kb: KnowledgeBase,
         doc: KnowledgeDocument,
         content: str,
+        *,
+        commit: bool = True,
     ) -> int:
         """Chunka, embute e insere os vetores de um documento já criado.
 
@@ -78,12 +80,15 @@ class RagService:
             doc.chunk_count = len(chunks)
             doc.status = "ready"
             kb.document_count = (kb.document_count or 0) + 1
-            await db.commit()
-            await db.refresh(doc)
+            await db.flush()
+            if commit:
+                await db.commit()
+                await db.refresh(doc)
             return len(chunks)
         except Exception:
             doc.status = "failed"
-            await db.commit()
+            if commit:
+                await db.commit()
             raise
 
     # ------------------------------------------------------------------
@@ -174,6 +179,7 @@ class RagService:
                 {
                     "score": score,
                     "content": chunk.content,
+                    "chunkId": str(chunk.id),
                     "knowledgeBaseId": str(chunk.knowledge_base_id),
                     "documentId": str(chunk.document_id) if chunk.document_id else None,
                     "chunkIndex": chunk.chunk_index,
