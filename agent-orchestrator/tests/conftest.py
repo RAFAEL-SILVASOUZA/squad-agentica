@@ -83,12 +83,21 @@ async def session(test_engine) -> AsyncIterator[AsyncSession]:
 
 
 # Import shared API fixtures so pytest can discover them from integration_api_fixtures
-from tests.integration_api_fixtures import client, owner_id, test_app, test_user  # noqa: F401
+from tests.integration_api_fixtures import (  # noqa: F401
+    client,
+    full_app,
+    full_client,
+    mock_agent_storage,
+    owner_id,
+    test_app,
+    test_user,
+)
 
 
 @pytest_asyncio.fixture
-async def make_agent(client):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
-    """Cria um agente mínimo via POST /api/agents (usa o ``client`` visível no módulo)."""
+async def make_agent(full_client):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+    """Cria um agente mínimo via POST /api/agents (usa o ``full_client``: agents+
+    integrations+pipelines no mesmo app, de ``tests/integration_api_fixtures.py``)."""
 
     async def _make(name: str, **overrides):
         body = {
@@ -98,7 +107,7 @@ async def make_agent(client):  # noqa: F811 (nome do parâmetro == nome do fixtu
             "actions": ["finalize"],
             **overrides,
         }
-        resp = await client.post("/api/agents", json=body)
+        resp = await full_client.post("/api/agents", json=body)
         assert resp.status_code == 201, resp.text
         return resp.json()
 
@@ -106,7 +115,7 @@ async def make_agent(client):  # noqa: F811 (nome do parâmetro == nome do fixtu
 
 
 @pytest_asyncio.fixture
-async def make_git_integration(client):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+async def make_git_integration(full_client):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
     """Cria uma integração git (github por padrão) via POST /api/integrations."""
 
     async def _make(type: str = "github", **overrides):
@@ -116,7 +125,7 @@ async def make_git_integration(client):  # noqa: F811 (nome do parâmetro == nom
             "config": {"organization": "org"} if type == "azure" else {},
             **overrides,
         }
-        resp = await client.post("/api/integrations", json=body)
+        resp = await full_client.post("/api/integrations", json=body)
         assert resp.status_code == 201, resp.text
         return resp.json()
 
