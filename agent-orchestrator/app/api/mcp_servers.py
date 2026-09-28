@@ -22,7 +22,7 @@ from app.auth.dependencies import get_current_user
 from app.core.errors import AppError
 from app.db.models import User
 from app.db.session import get_db
-from app.mcp.client import test_mcp_connection
+from app.mcp.client import test_mcp_connection_detail
 from app.mcp.registry import MCPRegistry
 from app.mcp.validator import validate_mcp_config
 
@@ -95,6 +95,8 @@ class MCPServerTestResponse(BaseModel):
 
     status: str
     discoveredTools: list[MCPToolInfoResponse]
+    # Motivo legível quando status == "error" (acréscimo ao contrato mínimo).
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +280,7 @@ async def test_mcp_server(
     server = await registry.get(server_id, user.id)
 
     # Testa a conexao.
-    status, tools = await test_mcp_connection(
+    status, tools, error = await test_mcp_connection_detail(
         transport=server.transport,
         command=server.command,
         url=server.url,
@@ -301,4 +303,4 @@ async def test_mcp_server(
         )
         for t in tools
     ]
-    return MCPServerTestResponse(status=status, discoveredTools=tool_infos)
+    return MCPServerTestResponse(status=status, discoveredTools=tool_infos, error=error)

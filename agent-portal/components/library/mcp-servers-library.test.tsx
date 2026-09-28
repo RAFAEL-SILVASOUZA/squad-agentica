@@ -195,7 +195,8 @@ describe("MCPServersLibrary", () => {
 
   it("tests connection and shows discovered tools", async () => {
     mockList.mockResolvedValue({ items: [makeServer()], total: 1, page: 1, limit: 100 });
-    mockPost.mockResolvedValue({ success: true, message: "OK", tools: [{ name: "search" }, { name: "fetch" }] });
+    // Formato do contrato (POST /api/mcp-servers/:id/test).
+    mockPost.mockResolvedValue({ status: "connected", discoveredTools: [{ name: "search" }, { name: "fetch" }] });
     renderLibrary();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /testar conexão servidor de busca/i })).toBeInTheDocument();
@@ -215,6 +216,21 @@ describe("MCPServersLibrary", () => {
       expect(screen.getByText("Conectado")).toBeInTheDocument();
     });
     expect(screen.getAllByText(/tools descobertas/i).length).toBeGreaterThan(0);
+  });
+
+  it("shows the failure reason returned by the test endpoint", async () => {
+    mockList.mockResolvedValue({ items: [makeServer()], total: 1, page: 1, limit: 100 });
+    mockPost.mockResolvedValue({
+      status: "error",
+      discoveredTools: [],
+      error: "Não foi possível conectar a http://x/sse: timeout",
+    });
+    renderLibrary();
+    fireEvent.click(await screen.findByRole("button", { name: /testar conexão servidor de busca/i }));
+    const testBtn = (await screen.findAllByRole("button", { name: /testar conexão/i })).pop();
+    if (testBtn) fireEvent.click(testBtn);
+    expect(await screen.findByText("Falha na conexão")).toBeInTheDocument();
+    expect(screen.getByText(/Não foi possível conectar a http:\/\/x\/sse/)).toBeInTheDocument();
   });
 
   it("asks confirmation and deletes a server", async () => {

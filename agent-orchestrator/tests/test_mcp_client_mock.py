@@ -171,3 +171,22 @@ class TestMCPClientValidation:
         client = MCPClient(transport="websocket")
         with pytest.raises(ValueError, match="Unsupported"):
             await client.connect()
+
+
+def test_describe_missing_stdio_command():
+    """F: a UI mostrava só "Falha na conexão"; o motivo agora vai na resposta."""
+    from app.mcp.client import describe_connection_error
+
+    msg = describe_connection_error(
+        FileNotFoundError(2, "No such file or directory"), "stdio", "npx -y server", None
+    )
+    assert "npx" in msg and "não encontrado" in msg
+
+
+def test_describe_unreachable_url():
+    from app.mcp.client import describe_connection_error
+
+    msg = describe_connection_error(
+        ConnectionError("Name or service not known"), "sse", None, "http://x.local/sse"
+    )
+    assert msg.startswith("Não foi possível conectar a http://x.local/sse")

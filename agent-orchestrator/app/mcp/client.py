@@ -233,6 +233,20 @@ async def test_mcp_connection(
         Tuple (status, discovered_tools).
         status: "connected" | "error".
     """
+    status, tools, _ = await test_mcp_connection_detail(transport, command, url, env)
+    return status, tools
+
+
+async def test_mcp_connection_detail(
+    transport: str,
+    command: str | None = None,
+    url: str | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[str, list[dict[str, Any]], str | None]:
+    """Como ``test_mcp_connection``, mais o motivo legível da falha.
+
+    Sem o motivo a UI só mostrava "Falha na conexão" (a causa ficava no log).
+    """
     client = MCPClient(
         transport=transport,
         command=command,
@@ -242,9 +256,25 @@ async def test_mcp_connection(
     try:
         await client.connect()
         tools = await client.list_tools()
-        return "connected", tools
+        return "connected", tools, None
     except Exception as e:
         logger.warning("MCP connection test failed: %s", e)
-        return "error", []
+        return "error", [], describe_connection_error(e, transport, command, url)
     finally:
         await client.disconnect()
+
+
+def describe_connection_error(
+    exc: BaseException, transport: str, command: str | None, url: str | None
+) -> str:
+    """Mensagem em pt-BR para a falha de conexão MCP (sem segredos)."""
+    if isinstance(exc, FileNotFoundError) and transport == "stdio":
+        program = (command or "").split()[0] if command else ""
+        return (
+            f"Comando '{program}' não encontrado no servidor. Servidores stdio rodam "
+            "dentro do container do orchestrator: o programa precisa estar instalado lá."
+        )
+    text = str(exc) or type(exc).__name__
+    if transport in ("sse", "http"):
+        return f"Não foi possível conectar a {url}: {text}"[:500]
+    return text[:500]

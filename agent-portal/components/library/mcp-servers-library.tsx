@@ -226,14 +226,18 @@ export function MCPServersLibrary() {
     setTestBusy(true);
     setTestResult(null);
     try {
-      const res = await api.post<{ success: boolean; message?: string; tools?: unknown[] }>(
-        `/api/mcp-servers/${testing.id}/test`
-      );
-      setTestResult(res);
-      if (res.success && res.tools) {
-        addToast("success", `${res.tools.length} tools descobertas`);
-        await load();
-      }
+      // Contrato: 200 { status: "connected"|"error", discoveredTools, error? }.
+      // A tela lia { success, tools } e mostrava "Falha" mesmo conectando.
+      const res = await api.post<{
+        status: string;
+        discoveredTools?: { name: string; description?: string }[];
+        error?: string | null;
+      }>(`/api/mcp-servers/${testing.id}/test`);
+      const success = res.status === "connected";
+      const tools = res.discoveredTools ?? [];
+      setTestResult({ success, message: success ? undefined : res.error ?? undefined, tools });
+      if (success) addToast("success", `${tools.length} tools descobertas`);
+      await load();
     } catch (e) {
       setTestResult({ success: false, message: e instanceof Error ? e.message : "Erro ao testar conexão" });
     } finally {
@@ -575,7 +579,11 @@ export function MCPServersLibrary() {
                   </strong>
                   <ul style={{ margin: "6px 0 0", paddingLeft: "18px", fontSize: "12px", color: "var(--text-secondary)" }}>
                     {testResult.tools.map((tool, i) => (
-                      <li key={i}>{JSON.stringify(tool)}</li>
+                      <li key={i}>
+                        {typeof tool === "object" && tool && "name" in tool
+                          ? `${(tool as { name: string }).name}${(tool as { description?: string }).description ? ` — ${(tool as { description?: string }).description}` : ""}`
+                          : JSON.stringify(tool)}
+                      </li>
                     ))}
                   </ul>
                 </div>
