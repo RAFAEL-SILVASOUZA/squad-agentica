@@ -119,6 +119,12 @@ export interface PipelineEdge {
   dataMapping?: DataMapping;
 }
 
+export interface PipelineRepository {
+  integrationId: string;
+  fullName: string;
+  baseBranch: string;
+}
+
 export interface Pipeline {
   id: string;
   ownerId: string;
@@ -131,6 +137,7 @@ export interface Pipeline {
   currentCheckpoint: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  repository: PipelineRepository | null;
 }
 
 // ─── PipelineRun (spec §4.2) ──────────────────────────────────────────

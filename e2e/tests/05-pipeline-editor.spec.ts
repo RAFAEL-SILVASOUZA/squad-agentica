@@ -226,8 +226,9 @@ test.describe("Jornada 5: editor de pipeline", () => {
     ]);
     expect(created.status()).toBe(201);
     const pipeline = await created.json();
-    await page.waitForURL(`**/pipelines/${pipeline.id}`);
-    await expect(page.getByRole("heading", { name: "Novo pipeline" })).toBeVisible();
+    // ?new=1: o editor abre com o nome já em edição (Task 10), não mais como heading.
+    await page.waitForURL(`**/pipelines/${pipeline.id}?new=1`);
+    await expect(page.getByLabel("Nome do pipeline")).toHaveValue("Novo pipeline");
     await dbDeletePipeline(pipeline.id);
   });
 });

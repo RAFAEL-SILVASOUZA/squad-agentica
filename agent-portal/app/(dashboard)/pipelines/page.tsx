@@ -1,14 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { GitBranch, Plus, RefreshCw, AlertTriangle } from "lucide-react";
+import { GitBranch, Plus, RefreshCw, AlertTriangle, MoreVertical, Monitor } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { Pipeline, PaginatedResponse } from "@/lib/types";
+import type { Pipeline, PipelineRun, PaginatedResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 
 const PAGE_SIZE = 20;
@@ -29,6 +31,28 @@ const PIPELINE_STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
+const RUN_STATUS_LABEL: Record<PipelineRun["status"], string> = {
+  running: "Executando",
+  paused: "Pausado",
+  completed: "Concluído",
+  failed: "Falhou",
+  cancelled: "Cancelado",
+};
+
+function timeSince(iso: string | null | undefined): string {
+  if (!iso) return "agora";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "agora";
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} d`;
+}
+
 export default function PipelinesPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -39,6 +63,11 @@ export default function PipelinesPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
+  const [lastRuns, setLastRuns] = React.useState<Record<string, PipelineRun | null>>({});
+  const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
+  const [deletingPipeline, setDeletingPipeline] = React.useState<Pipeline | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [duplicatingId, setDuplicatingId] = React.useState<string | null>(null);
 
   const fetchPipelines = React.useCallback(async (pageNum: number) => {
     setLoading(true);
@@ -68,6 +97,49 @@ export default function PipelinesPage() {
     fetchPipelines(1);
   }, [fetchPipelines]);
 
+  // Último run de cada pipeline (card: "Último run: Concluído há 5 min").
+  React.useEffect(() => {
+    let active = true;
+    if (pipelines.length === 0) {
+      setLastRuns({});
+      return;
+    }
+    (async () => {
+      const entries = await Promise.all(
+        pipelines.map(async (p) => {
+          try {
+            const res = await api.list<PipelineRun>(`/api/pipelines/${p.id}/runs`, { page: 1, limit: 1 });
+            return [p.id, res.items[0] ?? null] as const;
+          } catch {
+            return [p.id, null] as const;
+          }
+        })
+      );
+      if (active) setLastRuns(Object.fromEntries(entries));
+    })();
+    return () => {
+      active = false;
+    };
+  }, [pipelines]);
+
+  // Esc/clique fora fecham o menu "Mais ações" do card aberto.
+  React.useEffect(() => {
+    if (!openMenuId) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenMenuId(null);
+    }
+    function onClickOutside(e: MouseEvent) {
+      const el = document.getElementById(`pipeline-menu-${openMenuId}`);
+      if (el && !el.contains(e.target as Node)) setOpenMenuId(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onClickOutside);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onClickOutside);
+    };
+  }, [openMenuId]);
+
   const handleCreate = React.useCallback(async () => {
     setCreating(true);
     try {
@@ -78,7 +150,8 @@ export default function PipelinesPage() {
         nodes: [],
         edges: [],
       });
-      router.push(`/pipelines/${res.id}`);
+      // ?new=1: o editor já abre com o nome em edição.
+      router.push(`/pipelines/${res.id}?new=1`);
     } catch (err) {
       if (err instanceof ApiError) {
         addToast("error", err.message);
@@ -89,6 +162,38 @@ export default function PipelinesPage() {
       setCreating(false);
     }
   }, [router, addToast]);
+
+  const handleDuplicate = React.useCallback(
+    async (pipeline: Pipeline) => {
+      setOpenMenuId(null);
+      setDuplicatingId(pipeline.id);
+      try {
+        const res = await api.post<Pipeline>(`/api/pipelines/${pipeline.id}/duplicate`);
+        addToast("success", "Pipeline duplicado.");
+        router.push(`/pipelines/${res.id}`);
+      } catch (err) {
+        addToast("error", err instanceof ApiError ? err.message : "Não foi possível duplicar o pipeline.");
+      } finally {
+        setDuplicatingId(null);
+      }
+    },
+    [router, addToast]
+  );
+
+  const handleDelete = React.useCallback(async () => {
+    if (!deletingPipeline) return;
+    setDeleteBusy(true);
+    try {
+      await api.delete(`/api/pipelines/${deletingPipeline.id}`);
+      addToast("success", "Pipeline excluído.");
+      setDeletingPipeline(null);
+      await fetchPipelines(page);
+    } catch (err) {
+      addToast("error", err instanceof ApiError ? err.message : "Não foi possível excluir o pipeline.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deletingPipeline, page, fetchPipelines, addToast]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -212,84 +317,230 @@ export default function PipelinesPage() {
               gap: 12,
             }}
           >
-            {pipelines.map((pipeline) => (
-              <button
-                key={pipeline.id}
-                onClick={() => router.push(`/pipelines/${pipeline.id}`)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  padding: 16,
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                  cursor: "pointer",
-                  transition: "border-color 0.2s",
-                  textAlign: "left",
-                }}
-              >
+            {pipelines.map((pipeline) => {
+              const lastRun = lastRuns[pipeline.id];
+              return (
                 <div
+                  key={pipeline.id}
+                  onClick={() => router.push(`/pipelines/${pipeline.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") router.push(`/pipelines/${pipeline.id}`);
+                  }}
                   style={{
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
+                    flexDirection: "column",
+                    gap: 8,
+                    padding: 16,
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    cursor: "pointer",
+                    transition: "border-color 0.2s",
+                    textAlign: "left",
+                    position: "relative",
                   }}
                 >
-                  <span
+                  <div
                     style={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: "var(--text)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
                     }}
                   >
-                    {pipeline.name}
-                  </span>
-                  <Badge
-                    status={
-                      pipeline.status === "running"
-                        ? "running"
-                        : pipeline.status === "failed"
-                          ? "failed"
-                          : pipeline.status === "paused"
-                            ? "paused"
-                            : "neutral"
-                    }
-                    label={PIPELINE_STATUS_LABEL[pipeline.status] ?? pipeline.status}
-                  />
-                </div>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        flex: 1,
+                      }}
+                    >
+                      {pipeline.name}
+                    </span>
+                    <Badge
+                      status={
+                        pipeline.status === "running"
+                          ? "running"
+                          : pipeline.status === "failed"
+                            ? "failed"
+                            : pipeline.status === "paused"
+                              ? "paused"
+                              : "neutral"
+                      }
+                      label={PIPELINE_STATUS_LABEL[pipeline.status] ?? pipeline.status}
+                    />
+                    <div id={`pipeline-menu-${pipeline.id}`} style={{ position: "relative" }}>
+                      <button
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={openMenuId === pipeline.id}
+                        aria-label={`Mais ações de ${pipeline.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId((prev) => (prev === pipeline.id ? null : pipeline.id));
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 24,
+                          height: 24,
+                          background: "none",
+                          border: "none",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--text-muted)",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <MoreVertical size={14} aria-hidden="true" />
+                      </button>
+                      {openMenuId === pipeline.id && (
+                        <div
+                          role="menu"
+                          aria-label={`Mais ações de ${pipeline.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            top: "calc(100% + 4px)",
+                            right: 0,
+                            zIndex: 20,
+                            minWidth: 150,
+                            background: "var(--bg-elevated)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius)",
+                            boxShadow: "var(--shadow-lg)",
+                            padding: 4,
+                            display: "flex",
+                            flexDirection: "column",
+                          }}
+                        >
+                          <button
+                            role="menuitem"
+                            type="button"
+                            disabled={duplicatingId === pipeline.id}
+                            onClick={() => void handleDuplicate(pipeline)}
+                            style={{
+                              textAlign: "left",
+                              padding: "8px 10px",
+                              background: "none",
+                              border: "none",
+                              borderRadius: "var(--radius-sm)",
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              fontSize: 13,
+                            }}
+                          >
+                            Duplicar pipeline
+                          </button>
+                          <button
+                            role="menuitem"
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuId(null);
+                              setDeletingPipeline(pipeline);
+                            }}
+                            style={{
+                              textAlign: "left",
+                              padding: "8px 10px",
+                              background: "none",
+                              border: "none",
+                              borderRadius: "var(--radius-sm)",
+                              color: "var(--error)",
+                              cursor: "pointer",
+                              fontSize: 13,
+                            }}
+                          >
+                            Excluir pipeline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                {pipeline.description && (
-                  <span
+                  {pipeline.description && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-secondary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {pipeline.description}
+                    </span>
+                  )}
+
+                  {pipeline.repository && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 11,
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      <GitBranch size={11} aria-hidden="true" />
+                      {pipeline.repository.fullName} ({pipeline.repository.baseBranch})
+                    </span>
+                  )}
+
+                  <div
                     style={{
-                      fontSize: 12,
-                      color: "var(--text-secondary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      gap: 12,
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 4,
                     }}
                   >
-                    {pipeline.description}
-                  </span>
-                )}
+                    <span>{pipeline.nodes.length} {pipeline.nodes.length === 1 ? "nó" : "nós"}</span>
+                    <span>{pipeline.edges.length} {pipeline.edges.length === 1 ? "aresta" : "arestas"}</span>
+                  </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    marginTop: 4,
-                  }}
-                >
-                  <span>{pipeline.nodes.length} {pipeline.nodes.length === 1 ? "nó" : "nós"}</span>
-                  <span>{pipeline.edges.length} {pipeline.edges.length === 1 ? "aresta" : "arestas"}</span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginTop: 4,
+                      paddingTop: 8,
+                      borderTop: "1px solid var(--border)",
+                    }}
+                  >
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {lastRun
+                        ? `Último run: ${RUN_STATUS_LABEL[lastRun.status] ?? lastRun.status} ${timeSince(lastRun.completedAt ?? lastRun.startedAt)}`
+                        : "Sem execuções"}
+                    </span>
+                    <Link
+                      href={`/pipelines/${pipeline.id}/run`}
+                      aria-label={`Ver monitor de ${pipeline.name}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 11,
+                        color: "var(--accent)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      <Monitor size={11} aria-hidden="true" />
+                      Monitor
+                    </Link>
+                  </div>
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* Pagination */}
@@ -333,6 +584,26 @@ export default function PipelinesPage() {
           )}
         </>
       )}
+
+      <Modal
+        open={!!deletingPipeline}
+        title="Excluir pipeline"
+        onClose={() => {
+          if (!deleteBusy) setDeletingPipeline(null);
+        }}
+        footer={
+          <>
+            <Button disabled={deleteBusy} onClick={() => setDeletingPipeline(null)}>
+              Cancelar
+            </Button>
+            <Button loading={deleteBusy} onClick={() => void handleDelete()}>
+              Excluir
+            </Button>
+          </>
+        }
+      >
+        <p>Excluir o pipeline {deletingPipeline?.name}? Esta ação não pode ser desfeita.</p>
+      </Modal>
     </div>
   );
 }

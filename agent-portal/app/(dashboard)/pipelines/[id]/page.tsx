@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { RunInputsModal } from "@/components/flow/run-inputs-modal";
+import { PipelineHeader } from "@/components/pipelines/pipeline-header";
 
 /**
  * Pipeline detail page: FlowEditor + EdgePanel (fe-flow-edges) + validacao + executar.
@@ -52,9 +53,12 @@ type ValidationState =
 export default function PipelineDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { addToast } = useToast();
 
   const pipelineId = params.id;
+  // ?new=1: o pipeline acabou de ser criado (CTA da lista) — o nome já entra em edição.
+  const autoEditName = searchParams.get("new") === "1";
 
   // E13: ref para sincronizar EdgePanel -> canvas interno do FlowEditor
   const flowEditorRef = React.useRef<FlowEditorHandle>(null);
@@ -137,6 +141,40 @@ export default function PipelineDetailPage() {
       }
     },
     [pipeline, pipelineId, addToast]
+  );
+
+  // PipelineHeader: salva só o campo alterado (nome/descrição/repositório) via PUT.
+  const handleHeaderChange = React.useCallback(
+    async (patch: Partial<Pipeline>) => {
+      if (!pipeline) return;
+      try {
+        const res = await api.put<Pipeline>(`/api/pipelines/${pipelineId}`, patch);
+        setPipeline(res);
+      } catch (err) {
+        if (err instanceof ApiError) {
+          if (err.status === 409) {
+            addToast("error", "O pipeline tem uma execução em andamento. Pare a execução antes de editar.");
+          } else {
+            addToast("error", err.message);
+          }
+        } else {
+          addToast("error", "Não foi possível salvar a alteração.");
+        }
+      }
+    },
+    [pipeline, pipelineId, addToast]
+  );
+
+  const handlePipelineDeleted = React.useCallback(() => {
+    addToast("success", "Pipeline excluído.");
+    router.push("/pipelines");
+  }, [addToast, router]);
+
+  const handlePipelineDuplicated = React.useCallback(
+    (id: string) => {
+      router.push(`/pipelines/${id}`);
+    },
+    [router]
   );
 
   // O editor notificou que o grafo de trabalho mudou: espelha e revalida
@@ -376,7 +414,7 @@ export default function PipelineDetailPage() {
           marginBottom: 16,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0 }}>
           <Button
             size="sm"
             onClick={() => router.push("/pipelines")}
@@ -384,28 +422,14 @@ export default function PipelineDetailPage() {
           >
             <ArrowLeft size={14} aria-hidden="true" />
           </Button>
-          <div>
-            <h1
-              style={{
-                fontSize: "var(--text-title)",
-                fontWeight: 700,
-                color: "var(--text)",
-                margin: 0,
-              }}
-            >
-              {pipeline.name}
-            </h1>
-            {pipeline.description && (
-              <p
-                style={{
-                  fontSize: "var(--text-lg)",
-                  color: "var(--text-secondary)",
-                  margin: "2px 0 0",
-                }}
-              >
-                {pipeline.description}
-              </p>
-            )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PipelineHeader
+              pipeline={pipeline}
+              onChange={handleHeaderChange}
+              onDeleted={handlePipelineDeleted}
+              onDuplicated={handlePipelineDuplicated}
+              autoEditName={autoEditName}
+            />
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

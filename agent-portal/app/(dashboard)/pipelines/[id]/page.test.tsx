@@ -11,6 +11,7 @@ const mockParams = { id: "pipe-1" };
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
   useParams: () => mockParams,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const mockAddToast = vi.fn();

@@ -160,6 +160,7 @@ function makePipeline(overrides: Partial<Pipeline> = {}): Pipeline {
     currentCheckpoint: null,
     startedAt: null,
     completedAt: null,
+    repository: null,
     ...overrides,
   };
 }

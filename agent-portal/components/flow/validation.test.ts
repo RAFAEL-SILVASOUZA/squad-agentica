@@ -230,6 +230,7 @@ describe("buildValidationPayload", () => {
       currentCheckpoint: null,
       startedAt: null,
       completedAt: null,
+      repository: null,
     } as Pipeline;
     const nodes = [makeNode("n1", "A", [], [])];
     const out = buildValidationPayload(pipeline, nodes, []);
