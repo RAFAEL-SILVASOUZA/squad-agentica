@@ -14,9 +14,11 @@ export interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /** "xl": painel largo (ex.: grafo da pipeline no monitor). */
+  size?: "md" | "xl";
 }
 
-export function Modal({ open, onClose, title, children, footer }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {
   const panelRef = React.useRef<HTMLDivElement>(null);
 
   // `onClose` costuma ser uma arrow nova a cada render do pai. Com ele nas
@@ -67,8 +69,8 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         // campos (ex.: criar skill) deixam o botão do footer fora da tela.
         style={{
           width: "100%",
-          maxWidth: 480,
-          maxHeight: "min(85vh, 720px)",
+          maxWidth: size === "xl" ? "min(1200px, 95vw)" : 480,
+          maxHeight: size === "xl" ? "92vh" : "min(85vh, 720px)",
           display: "flex",
           flexDirection: "column",
           background: "var(--bg-elevated)",

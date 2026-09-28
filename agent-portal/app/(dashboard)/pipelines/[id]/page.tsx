@@ -303,7 +303,7 @@ export default function PipelineDetailPage() {
       }
       await api.post(`/api/pipelines/${pipelineId}/execute`, { inputs: runInputs });
       setRunInputsOpen(false);
-      router.push(`/pipelines/${pipelineId}/run`);
+      router.push(`/pipelines/${pipelineId}/run?tab=resultado`);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {

@@ -7,11 +7,11 @@ import { PipelineMonitor } from "@/components/monitor";
 /**
  * Monitor de execução em tempo real (fe-monitor).
  *
- * - Grafo da pipeline em modo leitura com status por nó.
- * - Logs em streaming com auto-scroll pausável, filtro por nó e nível.
- * - Painel do nó selecionado: inputs, outputs, iterações, erro.
- * - Ações: iniciar, pausar, retomar, parar (estados otimistas + reconciliação).
- * - Histórico de runs e checkpoints com retomar a partir do último checkpoint.
+ * - Cabeçalho com status do run, repositório e link do PR (ou falha de
+ *   publicação com nova tentativa); ações iniciar, pausar, retomar, parar.
+ * - Faixa de etapas na ordem do grafo; "Ver grafo" abre o grafo num modal.
+ * - Abas (?tab=): Resultado (saída dos agentes em markdown), Arquivos do
+ *   projeto, Logs (filtros por agente e nível) e Histórico (checkpoints).
  * - Reconexão do WebSocket sem perder eventos (refetch do estado ao reconectar).
  */
 export default function PipelineRunPage() {

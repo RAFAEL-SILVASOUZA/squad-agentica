@@ -1,10 +1,10 @@
 import * as React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { act } from "react";
 import { PipelineMonitor } from "./pipeline-monitor";
 import { ToastProvider } from "@/components/ui/toast";
-import type { Pipeline, PipelineRun, Checkpoint } from "@/lib/types";
+import { makePipeline, makeRun, makeCheckpoint } from "./test-fixtures";
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -86,109 +86,6 @@ vi.mock("@xyflow/react", async (importOriginal) => {
 
 // ─── Test data ───────────────────────────────────────────────────────────────
 
-function makePipeline(overrides: Partial<Pipeline> = {}): Pipeline {
-  return {
-    id: "pipe-1",
-    ownerId: "owner-1",
-    name: "Test Pipeline",
-    description: "A test pipeline",
-    status: "draft",
-    entryNodeId: "node-1",
-    nodes: [
-      {
-        id: "node-1",
-        agentId: "agent-1",
-        position: { x: 100, y: 100 },
-        label: "Agent 1",
-        agentSnapshot: {
-          agentId: "agent-1",
-          version: 1,
-          name: "Agent 1",
-          description: "",
-          prompt: "",
-          strategy: "",
-          skills: [],
-          tools: [],
-          mcpServers: [],
-          knowledge: [],
-          integrations: [],
-          inputs: [{ name: "task", type: "string", required: true }],
-          outputs: [{ name: "result", type: "string", required: true }],
-          actions: ["follow"],
-          model: "gpt-4o",
-          maxIterations: 5,
-          timeout: 300,
-          shellAccess: false,
-        },
-      },
-      {
-        id: "node-2",
-        agentId: "agent-2",
-        position: { x: 300, y: 100 },
-        label: "Agent 2",
-        agentSnapshot: {
-          agentId: "agent-2",
-          version: 1,
-          name: "Agent 2",
-          description: "",
-          prompt: "",
-          strategy: "",
-          skills: [],
-          tools: [],
-          mcpServers: [],
-          knowledge: [],
-          integrations: [],
-          inputs: [{ name: "input", type: "string", required: true }],
-          outputs: [{ name: "output", type: "string", required: true }],
-          actions: ["finalize"],
-          model: "gpt-4o",
-          maxIterations: 3,
-          timeout: 120,
-          shellAccess: false,
-        },
-      },
-    ],
-    edges: [
-      {
-        id: "edge-1",
-        type: "flow",
-        source: "node-1",
-        target: "node-2",
-        requiresApproval: false,
-      },
-    ],
-    currentCheckpoint: null,
-    startedAt: null,
-    completedAt: null,
-    repository: null,
-    ...overrides,
-  };
-}
-
-function makeRun(overrides: Partial<PipelineRun> = {}): PipelineRun {
-  return {
-    id: "run-1",
-    pipelineId: "pipe-1",
-    threadId: "thread-1",
-    status: "running",
-    startedAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
-
-function makeCheckpoint(overrides: Partial<Checkpoint> = {}): Checkpoint {
-  return {
-    id: "cp-1",
-    pipelineId: "pipe-1",
-    nodeId: "node-1",
-    state: {},
-    timestamp: new Date().toISOString(),
-    status: "completed",
-    metadata: {},
-    ...overrides,
-  };
-}
-
 function mockFetchToken() {
   vi.stubGlobal(
     "fetch",
@@ -198,6 +95,14 @@ function mockFetchToken() {
       json: async () => ({ accessToken: "test-token" }),
     })
   );
+}
+
+function openTab(name: RegExp | string) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
+
+function wsHandler(channel = "pipeline:status") {
+  return mockWsClient.on.mock.calls.find((c) => c[0] === channel)?.[1] as (d: Record<string, unknown>) => void;
 }
 
 function renderMonitor(pipelineId = "pipe-1") {
@@ -214,6 +119,7 @@ describe("PipelineMonitor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchToken();
+    window.history.replaceState(null, "", "/pipelines/pipe-1/run");
   });
 
   afterEach(() => {
@@ -413,6 +319,7 @@ describe("PipelineMonitor", () => {
     await waitFor(() => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
+    openTab("Histórico");
 
     // Should show both runs in history (use getAllByText because legend also has these labels)
     expect(screen.getAllByText("Concluído").length).toBeGreaterThanOrEqual(1);
@@ -440,6 +347,7 @@ describe("PipelineMonitor", () => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
 
+    openTab("Histórico");
     // Should show "Retomar" buttons for interrupted and failed checkpoints
     const resumeButtons = screen.getAllByRole("button", { name: /retomar/i });
     expect(resumeButtons.length).toBeGreaterThanOrEqual(2);
@@ -464,6 +372,7 @@ describe("PipelineMonitor", () => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
 
+    openTab("Histórico");
     const resumeBtn = screen.getByRole("button", { name: /retomar/i });
     fireEvent.click(resumeBtn);
 
@@ -546,8 +455,9 @@ describe("PipelineMonitor", () => {
         limit: 50,
       });
     renderMonitor();
-    fireEvent.click(await screen.findByTestId("rf-node-node-1"));
-    expect(await screen.findByText(/especificação gerada/)).toBeInTheDocument();
+    // A aba Resultado (padrão) mostra a saída do nó, sem precisar clicar no grafo.
+    const section = await screen.findByRole("region", { name: "Agent 1" });
+    expect(within(section).getByText(/especificação gerada/)).toBeInTheDocument();
   });
 
   it("filters logs by node", async () => {
@@ -564,9 +474,10 @@ describe("PipelineMonitor", () => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
 
-    // The log filter select should be present
-    const nodeFilter = screen.getByLabelText("Filtrar por nó");
-    expect(nodeFilter).toBeInTheDocument();
+    openTab("Logs");
+    // Filtros de log por agente e por nível
+    expect(screen.getByLabelText("Filtrar por agente")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filtrar por nível")).toBeInTheDocument();
   });
 
   it("shows empty log message when no logs", async () => {
@@ -579,9 +490,9 @@ describe("PipelineMonitor", () => {
 
     renderMonitor();
 
-    await waitFor(() => {
-      expect(screen.getByText("Aguardando logs da execução…")).toBeInTheDocument();
-    });
+    await screen.findByText("Test Pipeline");
+    openTab("Logs");
+    expect(screen.getByText("Aguardando logs da execução…")).toBeInTheDocument();
   });
 
   it("shows empty history message when no runs", async () => {
@@ -594,26 +505,134 @@ describe("PipelineMonitor", () => {
 
     renderMonitor();
 
-    await waitFor(() => {
-      expect(screen.getByText("Nenhuma execução ainda.")).toBeInTheDocument();
-    });
+    await screen.findByText("Test Pipeline");
+    openTab("Histórico");
+    expect(screen.getByText("Nenhuma execução ainda.")).toBeInTheDocument();
   });
 
-  it("shows node panel hint when no node selected", async () => {
-    const pipeline = makePipeline();
-
-    mockGet.mockResolvedValue(pipeline);
+  it("opens the read-only graph in a modal; clicking a node focuses its result", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    mockGet.mockResolvedValue(makePipeline());
     mockList
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 });
 
     renderMonitor();
+    await screen.findByText("Test Pipeline");
+    // O grafo não ocupa mais a página: só aparece no modal.
+    expect(screen.queryByTestId("react-flow")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ver grafo" }));
+    const dialog = screen.getByRole("dialog", { name: /grafo/i });
+    expect(within(dialog).getByTestId("react-flow")).toHaveAttribute("data-nodes", "2");
 
-    await waitFor(() => {
-      expect(
-        screen.getByText("Clique em um nó no grafo para ver detalhes.")
-      ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByTestId("rf-node-node-2"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Resultado" })).toHaveAttribute("aria-selected", "true");
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(screen.getByRole("region", { name: "Agent 2" }));
+  });
+
+  it("shows the stage strip in graph order and live outputs as markdown in the Resultado tab", async () => {
+    mockGet.mockResolvedValue(makePipeline());
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun()], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 });
+
+    renderMonitor();
+    await waitFor(() => expect(mockWsClient.connect).toHaveBeenCalled());
+    const strip = screen.getByRole("list", { name: "Etapas" });
+    expect(within(strip).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      expect.stringContaining("Agent 1"),
+      expect.stringContaining("Agent 2"),
+    ]);
+
+    await act(async () => {
+      wsHandler()({ pipelineId: "pipe-1", runId: "run-1", nodeId: "node-1", status: "completed", at: "" });
+      wsHandler("agent:output")({ pipelineId: "pipe-1", nodeId: "node-1", output: { result: "# Plano\n\n- passo" } });
     });
+    const section = screen.getByRole("region", { name: "Agent 1" });
+    expect(within(section).getByRole("heading", { name: "Plano" })).toBeInTheDocument();
+    expect(within(strip).getByRole("button", { name: /Agent 1.*Concluído/ })).toBeInTheDocument();
+  });
+
+  it("reloads the run on every aggregate status event so the PR link appears after publishing", async () => {
+    mockGet.mockResolvedValue(makePipeline());
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun()], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      // 1º "completed": run concluído, publicação ainda em andamento.
+      .mockResolvedValueOnce({ items: [makeRun({ status: "completed", publishStatus: "none" })], total: 1, page: 1, limit: 50 })
+      // 2º "completed" (após publicar): o run volta com o PR.
+      .mockResolvedValueOnce({
+        items: [makeRun({ status: "completed", publishStatus: "published", prUrl: "https://git/pr/7", prNumber: 7 })],
+        total: 1,
+        page: 1,
+        limit: 50,
+      });
+
+    renderMonitor();
+    await waitFor(() => expect(mockWsClient.connect).toHaveBeenCalled());
+    await act(async () => {
+      wsHandler()({ pipelineId: "pipe-1", runId: "run-1", nodeId: "", status: "completed", at: "" });
+    });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(3));
+    expect(screen.queryByRole("link", { name: /PR #/ })).not.toBeInTheDocument();
+    await act(async () => {
+      wsHandler()({ pipelineId: "pipe-1", runId: "run-1", nodeId: "", status: "completed", at: "" });
+    });
+    expect(await screen.findByRole("link", { name: "PR #7" })).toHaveAttribute("href", "https://git/pr/7");
+  });
+
+  it("retries publishing via POST /api/runs/{id}/publish and shows the PR", async () => {
+    mockGet.mockResolvedValue(makePipeline());
+    mockList
+      .mockResolvedValueOnce({
+        items: [makeRun({ status: "completed", publishStatus: "failed", publishError: "push recusado" })],
+        total: 1,
+        page: 1,
+        limit: 50,
+      })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 });
+    mockPost.mockResolvedValue(
+      makeRun({ status: "completed", publishStatus: "published", prUrl: "https://git/pr/9", prNumber: 9 })
+    );
+
+    renderMonitor();
+    expect(await screen.findByRole("alert")).toHaveTextContent("push recusado");
+    fireEvent.click(screen.getByRole("button", { name: /Tentar publicar de novo/ }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/api/runs/run-1/publish", {}));
+    expect(await screen.findByRole("link", { name: "PR #9" })).toBeInTheDocument();
+  });
+
+  it("keeps the active tab in the URL and hides Arquivos without a run", async () => {
+    window.history.replaceState(null, "", "/pipelines/pipe-1/run?tab=logs");
+    mockGet.mockResolvedValue(makePipeline());
+    mockList
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 });
+
+    renderMonitor();
+    await screen.findByText("Test Pipeline");
+    expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("tab", { name: "Arquivos do projeto" })).not.toBeInTheDocument();
+    openTab("Histórico");
+    expect(window.location.search).toBe("?tab=historico");
+  });
+
+  it("shows the Arquivos tab when there is a run", async () => {
+    window.history.replaceState(null, "", "/pipelines/pipe-1/run?tab=arquivos");
+    mockGet.mockImplementation(async (p: string) =>
+      p.startsWith("/api/runs/")
+        ? { items: [{ path: "README.md", size: 3, binary: false, status: "modified" }] }
+        : makePipeline()
+    );
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun({ status: "completed" })], total: 1, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 });
+
+    renderMonitor();
+    expect(await screen.findByRole("button", { name: /README\.md/ })).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith("/api/runs/run-1/files");
   });
 
   it("shows 409 toast when execute fails with pipeline_already_running", async () => {

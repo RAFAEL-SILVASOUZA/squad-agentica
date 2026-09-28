@@ -39,6 +39,10 @@ const CODE_MESSAGES: Record<string, string> = {
   ingest_error: "Falha ao processar o documento.",
   storage_error: "Falha no armazenamento de arquivos. Tente novamente.",
   github_error: "Falha ao consultar o GitHub.",
+  run_not_completed: "A execução ainda não terminou; publique depois que ela concluir.",
+  workspace_not_found: "Os arquivos desta execução não estão mais disponíveis.",
+  file_not_found: "Arquivo não encontrado nesta execução.",
+  invalid_path: "Caminho de arquivo inválido.",
   rate_limited: "Muitas requisições. Aguarde um instante e tente de novo.",
   internal_error: "Erro interno do servidor. Tente novamente.",
 };
@@ -187,7 +191,11 @@ function redirectToLogin(): void {
   }
 }
 
-async function request<T>(path: string, opts: RequestOptions = {}, retried = false): Promise<T> {
+/**
+ * Envia a requisição autenticada e devolve a Response já validada (2xx);
+ * 401 renova o token uma vez, demais erros viram ApiError.
+ */
+async function send(path: string, opts: RequestOptions = {}, retried = false): Promise<Response> {
   const { method = "GET", body, query, headers: extraHeaders, signal } = opts;
 
   const token = await getToken();
@@ -233,7 +241,7 @@ async function request<T>(path: string, opts: RequestOptions = {}, retried = fal
     // O token em cache expira (15 min); a sessão NextAuth renova ao pedir um
     // token novo. Só vai para o login se, com o token novo, ainda for 401.
     invalidateToken();
-    if (!retried) return request<T>(path, opts, true);
+    if (!retried) return send(path, opts, true);
     redirectToLogin();
     throw new ApiError(401, { error: "unauthorized", code: "not_authenticated" });
   }
@@ -251,11 +259,32 @@ async function request<T>(path: string, opts: RequestOptions = {}, retried = fal
     throw new ApiError(res.status, errorBody);
   }
 
+  return res;
+}
+
+async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  const res = await send(path, opts);
+
   if (res.status === 204) {
     return undefined as T;
   }
 
   return (await res.json()) as T;
+}
+
+/** Nome do arquivo em `Content-Disposition: attachment; filename="x.zip"`. */
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8[1].trim());
+    } catch {
+      // cai para o filename simples
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : null;
 }
 
 export const api = {
@@ -277,6 +306,17 @@ export const api = {
 
   patch<T>(path: string, body?: unknown, opts?: Omit<RequestOptions, "method" | "body">): Promise<T> {
     return request<T>(path, { ...opts, method: "PATCH", body });
+  },
+
+  /**
+   * Download binário autenticado (ex.: zip do run). Um `<a href>` comum não
+   * manda o bearer da sessão; aqui o arquivo vem como Blob com o nome do
+   * `Content-Disposition`.
+   */
+  async download(path: string): Promise<{ blob: Blob; filename: string | null }> {
+    const res = await send(path, { method: "GET" });
+    const filename = filenameFromDisposition(res.headers.get("Content-Disposition"));
+    return { blob: await res.blob(), filename };
   },
 
   /**

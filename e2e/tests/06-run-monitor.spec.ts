@@ -45,9 +45,11 @@ test.describe("Jornada 6: executar e monitor", () => {
       await loginViaUI(page, user.email, PASSWORD);
       await page.goto(`/pipelines/${seeded.id}/run`);
 
-      // Monitor abre pelo GET real: título + 2 nós.
+      // Monitor abre pelo GET real: título + faixa de etapas com os 2 agentes.
       await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({ timeout: 30_000 });
-      await expect(page.locator(".react-flow__node")).toHaveCount(2, { timeout: 30_000 });
+      const stages = page.getByRole("list", { name: "Etapas" });
+      await expect(stages.getByRole("button")).toHaveCount(2, { timeout: 30_000 });
+      await expect(page.getByRole("tab", { name: "Resultado" })).toHaveAttribute("aria-selected", "true");
 
       // Iniciar execução: o formulário pede as entradas do agente de entrada
       // (backend real: POST .../execute com { inputs }).
@@ -77,6 +79,11 @@ test.describe("Jornada 6: executar e monitor", () => {
       // emitir eventos por nó; o teste coleta e documenta.
       await expect.poll(() => ofChannel(ws.frames, "pipeline:status", seeded.id)
         .filter((event: any) => !event.nodeId).at(-1)?.status, { timeout: 30_000 }).toBe("completed");
+      // A aba Resultado mostra a saída do 1º agente em largura total.
+      await expect(page.getByRole("region", { name: a1.name })).not.toContainText(/Aguardando execução|Em execução/, {
+        timeout: 30_000,
+      });
+      await expect(stages.getByRole("button", { name: new RegExp(`${a1.name}.*Concluído`) })).toBeVisible();
       const statusEvents = ofChannel(ws.frames, "pipeline:status", seeded.id);
       const logEvents = ofChannel(ws.frames, "pipeline:log", seeded.id);
       const outputEvents = ofChannel(ws.frames, "agent:output", seeded.id);
@@ -125,7 +132,7 @@ test.describe("Jornada 6: executar e monitor", () => {
     }
   });
 
-  test("logs e nó selecionado: painel do nó mostra status", async ({ page, user, api }) => {
+  test("grafo no modal, foco no resultado do nó e filtros de log", async ({ page, user, api }) => {
     const a1 = await createAgent(api, `E2E Node A ${Date.now().toString(36)}`);
     const a2 = await createAgent(api, `E2E Node B ${Date.now().toString(36)}`);
     const seeded = await dbSeedPipeline({
@@ -140,17 +147,23 @@ test.describe("Jornada 6: executar e monitor", () => {
     try {
       await loginViaUI(page, user.email, PASSWORD);
       await page.goto(`/pipelines/${seeded.id}/run`);
-      await expect(page.locator(".react-flow__node")).toHaveCount(2, { timeout: 30_000 });
+      await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({ timeout: 30_000 });
 
-      // Clique num nó abre o painel do nó selecionado.
-      await page.locator(".react-flow__node").first().click();
-      // O painel direito mostra o nó (naming: "Painel do nó" ou dados do nó).
-      await expect(
-        page.locator("text=/Painel do nó|Inputs|Outputs|Iteração/i").first()
-      ).toBeVisible({ timeout: 10_000 }).catch(() => undefined);
+      // "Ver grafo" abre o grafo somente leitura num modal.
+      await page.getByRole("button", { name: "Ver grafo" }).click();
+      const graph = page.getByRole("dialog", { name: /grafo/i });
+      await expect(graph.locator(".react-flow__node")).toHaveCount(2, { timeout: 30_000 });
 
-      // Filtros de log (por nó e por nível) existem e funcionam.
-      await expect(page.getByLabel(/Filtrar por n/i).first()).toBeVisible();
+      // Clique num nó fecha o modal e foca o resultado do agente.
+      await graph.locator(".react-flow__node").first().click();
+      await expect(graph).toBeHidden();
+      await expect(page.getByRole("tab", { name: "Resultado" })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("region").first()).toBeVisible();
+
+      // Aba Logs (vai para a URL) com filtros por agente e por nível.
+      await page.getByRole("tab", { name: "Logs" }).click();
+      await expect(page).toHaveURL(/\?tab=logs/);
+      await expect(page.getByLabel("Filtrar por agente")).toBeVisible();
       await expect(page.getByLabel(/Filtrar por n.vel/i)).toBeVisible();
       await page.screenshot({ path: test.info().outputPath("monitor-node.png") });
     } finally {

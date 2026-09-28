@@ -15,6 +15,16 @@ describe("Modal", () => {
     expect(screen.getByText("Modal content")).toBeInTheDocument();
   });
 
+  it("size xl widens the panel (grafo do monitor)", () => {
+    render(
+      <Modal open onClose={() => {}} title="Grafo" size="xl">
+        <p>grafo</p>
+      </Modal>
+    );
+    const panel = screen.getByText("grafo").closest("[tabindex='-1']") as HTMLElement;
+    expect(panel.style.maxWidth).toBe("min(1200px, 95vw)");
+  });
+
   it("does not render when closed", () => {
     render(
       <Modal open={false} onClose={() => {}} title="Test Modal">

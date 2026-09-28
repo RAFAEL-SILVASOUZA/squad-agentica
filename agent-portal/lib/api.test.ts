@@ -261,3 +261,34 @@ describe("errorMessageFromBody (E1)", () => {
     expect(errorMessageFromBody(404, { detail: "Not Found" })).toBe("Not Found");
   });
 });
+
+describe("api.download (zip do run)", () => {
+  it("baixa com o bearer da sessão e devolve o blob e o nome do Content-Disposition", async () => {
+    const blob = new Blob(["PK"], { type: "application/zip" });
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, { accessToken: "test-token" }))
+      .mockResolvedValueOnce({
+        ...mockResponse(200, undefined, { "Content-Disposition": 'attachment; filename="meu-pipe-abc12345.zip"' }),
+        blob: async () => blob,
+      });
+
+    const res = await api.download("/api/runs/r1/archive");
+
+    const [url, opts] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe("/api/runs/r1/archive");
+    expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect(res.blob).toBe(blob);
+    expect(res.filename).toBe("meu-pipe-abc12345.zip");
+  });
+
+  it("erro vira ApiError com a mensagem do código", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, { accessToken: "test-token" }))
+      .mockResolvedValueOnce(mockResponse(404, { error: "not_found", code: "workspace_not_found" }));
+
+    await expect(api.download("/api/runs/r1/archive")).rejects.toMatchObject({
+      status: 404,
+      message: expect.stringMatching(/arquivos desta execução não estão mais disponíveis/i),
+    });
+  });
+});

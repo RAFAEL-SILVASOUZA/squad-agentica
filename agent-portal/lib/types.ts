@@ -151,6 +151,11 @@ export interface PipelineRun {
   startedAt: string;
   completedAt?: string;
   error?: string;
+  /** Publicação do workspace (Task 4): PR aberto ao fim do run. */
+  prUrl?: string | null;
+  prNumber?: number | null;
+  publishStatus?: "none" | "published" | "failed" | "no_changes";
+  publishError?: string | null;
 }
 
 // ─── Checkpoint (spec §4.3) ───────────────────────────────────────────

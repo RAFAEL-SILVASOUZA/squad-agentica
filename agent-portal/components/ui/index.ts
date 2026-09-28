@@ -26,3 +26,5 @@ export { EmptyState } from "./empty-state";
 export type { EmptyStateProps } from "./empty-state";
 export { Skeleton } from "./skeleton";
 export type { SkeletonProps } from "./skeleton";
+export { Markdown } from "./markdown";
+export type { MarkdownProps } from "./markdown";

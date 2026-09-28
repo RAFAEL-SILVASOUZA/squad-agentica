@@ -313,7 +313,8 @@ describe("PipelineDetailPage", () => {
       await waitFor(() => {
         expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/execute", { inputs: {} });
       });
-      expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1/run");
+      // Depois de executar, o monitor abre direto na aba Resultado.
+      expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1/run?tab=resultado");
     });
 
     it("409 no execute vira toast e nao navega", async () => {
@@ -337,7 +338,7 @@ describe("PipelineDetailPage", () => {
       await waitFor(() => {
         expect(mockAddToast).toHaveBeenCalledWith("error", expect.stringMatching(/já está em execução/i));
       });
-      expect(mockPush).not.toHaveBeenCalledWith("/pipelines/pipe-1/run");
+      expect(mockPush).not.toHaveBeenCalledWith(expect.stringContaining("/pipelines/pipe-1/run"));
     });
 
     it("fallback: se o endpoint de validacao nao existe (404), usa validacao local", async () => {
