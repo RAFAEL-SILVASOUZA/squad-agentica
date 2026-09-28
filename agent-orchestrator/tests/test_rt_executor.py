@@ -68,10 +68,16 @@ class FakeWorker:
         *,
         timeout: int = 60,
         workspace_dir: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkerResponse:
         self.calls.append(
-            {"agent_id": agent_id, "node_id": node_id, "inputs": inputs,
-             "workspace_dir": workspace_dir}
+            {
+                "agent_id": agent_id,
+                "node_id": node_id,
+                "inputs": inputs,
+                "workspace_dir": workspace_dir,
+                "owner_id": owner_id,
+            }
         )
         if self._fail:
             return WorkerResponse(
@@ -214,9 +220,7 @@ class TestExecuteLinear:
             assert mock_pub.called
             # The last status should be "completed".
             calls = mock_pub.call_args_list
-            status_calls = [
-                c for c in calls if c[0][1] == "pipeline:status"
-            ]
+            status_calls = [c for c in calls if c[0][1] == "pipeline:status"]
             assert len(status_calls) >= 1
             last_status = status_calls[-1][0][2]["status"]
             assert last_status == "completed"
@@ -267,9 +271,7 @@ class TestWorkerDown:
                 await asyncio.wait_for(active.task, timeout=10)
 
             # The status should be "failed".
-            status_calls = [
-                c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"
-            ]
+            status_calls = [c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"]
             assert len(status_calls) >= 1
             last_status = status_calls[-1][0][2]["status"]
             assert last_status == "failed"
@@ -351,11 +353,17 @@ class TestPauseResume:
             *,
             timeout: int = 60,
             workspace_dir: str | None = None,
+            owner_id: str | None = None,
         ) -> WorkerResponse:
             if node_id == "B":
                 await asyncio.sleep(5)  # Slow enough to pause during.
             return await original_execute(
-                agent_id, node_id, inputs, timeout=timeout, workspace_dir=workspace_dir
+                agent_id,
+                node_id,
+                inputs,
+                timeout=timeout,
+                workspace_dir=workspace_dir,
+                owner_id=owner_id,
             )
 
         slow_worker.execute = slow_execute  # type: ignore
@@ -379,9 +387,7 @@ class TestPauseResume:
             assert paused_run_id == run_id
 
             # Verify status event.
-            status_calls = [
-                c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"
-            ]
+            status_calls = [c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"]
             last_status = status_calls[-1][0][2]["status"]
             assert last_status == "paused"
 
@@ -429,10 +435,16 @@ class TestStop:
             *,
             timeout: int = 60,
             workspace_dir: str | None = None,
+            owner_id: str | None = None,
         ) -> WorkerResponse:
             await asyncio.sleep(5)
             return await original_execute(
-                agent_id, node_id, inputs, timeout=timeout, workspace_dir=workspace_dir
+                agent_id,
+                node_id,
+                inputs,
+                timeout=timeout,
+                workspace_dir=workspace_dir,
+                owner_id=owner_id,
             )
 
         slow_worker.execute = slow_execute  # type: ignore
@@ -453,18 +465,14 @@ class TestStop:
             assert stopped_run_id == run_id
 
             # Verify status event.
-            status_calls = [
-                c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"
-            ]
+            status_calls = [c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"]
             last_status = status_calls[-1][0][2]["status"]
             assert last_status == "cancelled"
 
             # No active run after stop.
             assert get_active_run("p-test") is None
 
-    async def test_stop_no_active_run(
-        self, executor: PipelineExecutor
-    ):
+    async def test_stop_no_active_run(self, executor: PipelineExecutor):
         """Stop with no active run raises NoActiveRunError."""
         with pytest.raises(NoActiveRunError):
             await executor.stop("nonexistent-pipeline")
@@ -493,10 +501,16 @@ class TestConcurrent:
             *,
             timeout: int = 60,
             workspace_dir: str | None = None,
+            owner_id: str | None = None,
         ) -> WorkerResponse:
             await asyncio.sleep(5)
             return await original_execute(
-                agent_id, node_id, inputs, timeout=timeout, workspace_dir=workspace_dir
+                agent_id,
+                node_id,
+                inputs,
+                timeout=timeout,
+                workspace_dir=workspace_dir,
+                owner_id=owner_id,
             )
 
         slow_worker.execute = slow_execute  # type: ignore
@@ -581,9 +595,7 @@ class TestMaxIterations:
             assert len(a_calls) == 3
 
             # Pipeline should be failed (max_iter_exceeded).
-            status_calls = [
-                c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"
-            ]
+            status_calls = [c for c in mock_pub.call_args_list if c[0][1] == "pipeline:status"]
             last_status = status_calls[-1][0][2]["status"]
             assert last_status == "failed"
 
@@ -802,8 +814,9 @@ class TestCheckpointContent:
             captured.append((node_id, snapshot))
 
         pipeline = _simple_pipeline_a_b_c()
-        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch.object(
-            executor, "_persist_checkpoint", side_effect=fake_persist
+        with (
+            patch("app.runtime.executor.ws_publish", new_callable=AsyncMock),
+            patch.object(executor, "_persist_checkpoint", side_effect=fake_persist),
         ):
             await executor.execute(pipeline, owner_id="owner-1")
             active = get_active_run("p-test")
@@ -820,19 +833,22 @@ class TestWorkspaceAndPublish:
 
     async def test_workspace_dir_reaches_worker(self, executor, worker):
         pipeline = _simple_pipeline_a_b_c()
-        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch(
-            "app.runtime.executor.publish_run", new_callable=AsyncMock
-        ) as pub:
+        with (
+            patch("app.runtime.executor.ws_publish", new_callable=AsyncMock),
+            patch("app.runtime.executor.publish_run", new_callable=AsyncMock) as pub,
+        ):
             await executor.execute(pipeline, owner_id="o", workspace_dir="/workspaces/r1")
             active = get_active_run("p-test")
             await asyncio.wait_for(active.task, timeout=10)
         assert {c["workspace_dir"] for c in worker.calls} == {"/workspaces/r1"}
+        assert {c["owner_id"] for c in worker.calls} == {"o"}
         pub.assert_awaited_once()
 
     async def test_no_workspace_sends_none(self, executor, worker):
         pipeline = _simple_pipeline_a_b_c()
-        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch(
-            "app.runtime.executor.publish_run", new_callable=AsyncMock
+        with (
+            patch("app.runtime.executor.ws_publish", new_callable=AsyncMock),
+            patch("app.runtime.executor.publish_run", new_callable=AsyncMock),
         ):
             await executor.execute(pipeline, owner_id="o")
             await asyncio.wait_for(get_active_run("p-test").task, timeout=10)
@@ -841,27 +857,33 @@ class TestWorkspaceAndPublish:
     async def test_failed_run_does_not_publish(self, executor, worker):
         worker.set_response(
             "agent-a",
-            WorkerResponse(status="failed", outputs={}, action="follow", iterations=1,
-                           error="boom"),
+            WorkerResponse(
+                status="failed", outputs={}, action="follow", iterations=1, error="boom"
+            ),
         )
         pipeline = _simple_pipeline_a_b_c()
-        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock), patch(
-            "app.runtime.executor.publish_run", new_callable=AsyncMock
-        ) as pub:
+        with (
+            patch("app.runtime.executor.ws_publish", new_callable=AsyncMock),
+            patch("app.runtime.executor.publish_run", new_callable=AsyncMock) as pub,
+        ):
             await executor.execute(pipeline, owner_id="o")
             await asyncio.wait_for(get_active_run("p-test").task, timeout=10)
         pub.assert_not_awaited()
 
     async def test_publish_error_never_breaks_the_run(self, executor, worker):
         pipeline = _simple_pipeline_a_b_c()
-        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock) as ws, patch(
-            "app.runtime.executor.publish_run", AsyncMock(side_effect=RuntimeError("x"))
+        with (
+            patch("app.runtime.executor.ws_publish", new_callable=AsyncMock) as ws,
+            patch("app.runtime.executor.publish_run", AsyncMock(side_effect=RuntimeError("x"))),
         ):
             await executor.execute(pipeline, owner_id="o")
             task = get_active_run("p-test").task
             await asyncio.wait_for(task, timeout=10)
         assert task.exception() is None
-        statuses = [c.args[2]["status"] for c in ws.await_args_list
-                    if c.args[1] == "pipeline:status" and c.args[2]["nodeId"] == ""]
+        statuses = [
+            c.args[2]["status"]
+            for c in ws.await_args_list
+            if c.args[1] == "pipeline:status" and c.args[2]["nodeId"] == ""
+        ]
         assert statuses[-1] == "completed"
         assert get_active_run("p-test") is None

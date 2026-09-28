@@ -56,6 +56,8 @@ class ExecuteRequest(BaseModel):
     """Body de POST /execute (contrato 2.3)."""
 
     agentId: str = Field(..., description="UUID do agente")
+    ownerId: str | None = None
+    mcpServers: list[dict[str, Any]] | None = None
     nodeId: str = Field(..., description="ID do no na pipeline")
     inputs: dict[str, Any] = Field(default_factory=dict, description="Dados de entrada")
     timeout: int = Field(default=60, ge=1, le=600, description="Timeout em segundos")
@@ -139,12 +141,17 @@ async def execute(request: Request) -> JSONResponse:
         req.timeout,
     )
 
+    execute_options = {}
+    if req.mcpServers is not None:
+        execute_options["mcp_servers"] = req.mcpServers
     result = await execute_agent(
         agent_id=req.agentId,
         node_id=req.nodeId,
         inputs=req.inputs,
         timeout=req.timeout,
         workspace_dir=workspace_dir,
+        owner_id=req.ownerId,
+        **execute_options,
     )
 
     # 5. Monta a resposta.

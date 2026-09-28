@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
 
 from app.core.llm import LLMClient, get_llm_client
@@ -113,6 +114,7 @@ class AgentCapabilities:
     system_prompt: str
     tools: list[dict[str, Any]] = field(default_factory=list)
     mcp_tools: list[dict[str, Any]] = field(default_factory=list)
+    mcp_routes: dict[str, str] = field(default_factory=dict)
     knowledge_context: list[str] = field(default_factory=list)
 
 
@@ -161,12 +163,11 @@ class WorkerLoader:
             system_prompt=system_prompt,
             tools=tools,
             mcp_tools=mcp_tools,
+            mcp_routes={t["name"]: t["serverId"] for t in mcp_tools},
             knowledge_context=knowledge_context,
         )
 
-    async def _resolve_skills(
-        self, snapshot: AgentSnapshot, warnings: list[str]
-    ) -> str:
+    async def _resolve_skills(self, snapshot: AgentSnapshot, warnings: list[str]) -> str:
         """Baixa o .md das skills associadas e injeta no systemPrompt."""
         parts: list[str] = []
         if snapshot.prompt:
@@ -189,9 +190,7 @@ class WorkerLoader:
 
         return "\n\n".join(parts)
 
-    def _resolve_tools(
-        self, snapshot: AgentSnapshot, warnings: list[str]
-    ) -> list[dict[str, Any]]:
+    def _resolve_tools(self, snapshot: AgentSnapshot, warnings: list[str]) -> list[dict[str, Any]]:
         """Carrega ferramentas basicas + custom tools (do snapshot)."""
         tools: list[dict[str, Any]] = []
 
@@ -218,9 +217,7 @@ class WorkerLoader:
 
         return tools
 
-    def _resolve_mcp(
-        self, snapshot: AgentSnapshot, warnings: list[str]
-    ) -> list[dict[str, Any]]:
+    def _resolve_mcp(self, snapshot: AgentSnapshot, warnings: list[str]) -> list[dict[str, Any]]:
         """Tools MCP (serializadas no snapshot pelo orchestrator)."""
         mcp_tools: list[dict[str, Any]] = []
         for ref in snapshot.mcp_servers:
@@ -229,13 +226,17 @@ class WorkerLoader:
                 warnings.append(f"mcp ref sem serverId ignorada: {ref!r}")
                 continue
             # O orchestrator serializa as tools descobertas no ref.
-            if "tools" in ref:
-                mcp_tools.extend(ref["tools"])
+            reserved = {t["name"] for t in _BUILTIN_TOOLS} | {t["name"] for t in mcp_tools}
+            reserved.update(t.get("name") for t in snapshot.tools)
+            for tool in ref.get("tools", []):
+                if tool.get("name") in reserved:
+                    warnings.append(f"Colisão MCP: {tool['name']} já tem uma ferramenta registrada")
+                    continue
+                mcp_tools.append({**tool, "serverId": server_id})
+                reserved.add(tool["name"])
         return mcp_tools
 
-    def _resolve_knowledge(
-        self, snapshot: AgentSnapshot, warnings: list[str]
-    ) -> list[str]:
+    def _resolve_knowledge(self, snapshot: AgentSnapshot, warnings: list[str]) -> list[str]:
         """Contexto de knowledge (do snapshot, ja delimitado por EXTERNAL_DATA)."""
         context: list[str] = []
         for ref in snapshot.knowledge:
@@ -482,7 +483,14 @@ def check_shell_command(command: str) -> str | None:
     return None
 
 
-async def execute_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+async def execute_tool(
+    name: str,
+    args: dict[str, Any],
+    *,
+    owner_id: str | None = None,
+    mcp_routes: dict[str, str] | None = None,
+    workspace_dir: str | None = None,
+) -> dict[str, Any] | str:
     """Executa uma tool pelo nome. Retorna o resultado como dict."""
     if name == "shell":
         return await _execute_shell(args)
@@ -502,6 +510,31 @@ async def execute_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return await _execute_grep(args)
     elif name == "list_directory":
         return await _execute_list_directory(args)
+    elif mcp_routes and name in mcp_routes:
+        if not owner_id:
+            return {"error": "Dono do run ausente para chamada MCP"}
+        url = os.environ.get("ORCHESTRATOR_INTERNAL_URL", "http://orchestrator:8000").rstrip("/")
+        try:
+            body = {"ownerId": owner_id, "tool": name, "arguments": args}
+            if workspace_dir:
+                body["workspaceDir"] = workspace_dir
+            async with httpx.AsyncClient(timeout=70) as client:
+                response = await client.post(
+                    f"{url}/internal/mcp/{mcp_routes[name]}/call",
+                    headers={"X-Worker-Token": os.environ.get("WORKER_TOKEN", "")},
+                    json=body,
+                )
+                response.raise_for_status()
+                result = response.json()
+            text = "\n".join(
+                item.get("text", "")
+                if item.get("type") == "text"
+                else f"[{item.get('type', 'unknown')}]"
+                for item in result.get("content", [])
+            )
+            return f"Erro MCP: {text}" if result.get("isError") else text
+        except (httpx.HTTPError, ValueError):
+            return {"error": "Não foi possível executar a ferramenta MCP"}
     else:
         # Custom tool ou MCP tool: nao executavel no worker (V1).
         return {"error": f"Tool '{name}' is not executable in worker (V1)"}
@@ -773,6 +806,8 @@ async def execute_agent(
     llm: LLMClient | None = None,
     artifact_client: AgentArtifactClient | None = None,
     workspace_dir: str | None = None,
+    owner_id: str | None = None,
+    mcp_servers: list[dict[str, Any]] | None = None,
 ) -> ExecutionResult:
     """Executa um agente: baixa snapshot, monta capacidades, roda LLM loop.
 
@@ -798,6 +833,8 @@ async def execute_agent(
         client = artifact_client or get_artifact_client()
         yaml_content = await client.get_agent_yaml(agent_id)
         snapshot = snapshot_from_yaml(yaml_content)
+        if mcp_servers is not None:
+            snapshot.mcp_servers = mcp_servers
         logs.append(f"Loaded agent {snapshot.name} (type={snapshot.type})")
 
         # 2. Monta as capacidades (loader).
@@ -823,7 +860,7 @@ async def execute_agent(
         ]
 
         # Converte tools para formato OpenAI function calling.
-        tools_for_llm = _tools_to_openai_format(capabilities.tools)
+        tools_for_llm = _tools_to_openai_format(capabilities.tools + capabilities.mcp_tools)
 
         iteration = 0
         while iteration < MAX_TOOL_CALL_ITERATIONS:
@@ -880,12 +917,30 @@ async def execute_agent(
                     except (json.JSONDecodeError, ValueError):
                         func_args = {}
 
-                    logs.append(f"Tool call: {func_name}({json.dumps(func_args)[:200]})")
+                    is_mcp_tool = func_name in capabilities.mcp_routes
+                    if is_mcp_tool:
+                        logs.append(f"Tool call: {func_name}")
+                    else:
+                        logs.append(f"Tool call: {func_name}({json.dumps(func_args)[:200]})")
 
                     # Executa a tool.
-                    tool_result = await execute_tool(func_name, func_args)
-                    result_str = json.dumps(tool_result, ensure_ascii=False)
-                    logs.append(f"Tool result: {result_str[:200]}")
+                    tool_result = await execute_tool(
+                        func_name,
+                        func_args,
+                        owner_id=owner_id,
+                        mcp_routes=capabilities.mcp_routes,
+                        workspace_dir=workspace_dir,
+                    )
+                    result_str = (
+                        tool_result
+                        if isinstance(tool_result, str)
+                        else json.dumps(tool_result, ensure_ascii=False)
+                    )
+                    logs.append(
+                        "MCP response received"
+                        if is_mcp_tool
+                        else f"Tool result: {result_str[:200]}"
+                    )
 
                     messages.append(
                         {

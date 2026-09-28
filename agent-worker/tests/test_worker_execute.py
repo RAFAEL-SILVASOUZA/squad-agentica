@@ -183,8 +183,10 @@ def test_execute_success() -> None:
     mock_llm = MockLLM()
     mock_artifacts = MockArtifactClient()
 
-    with patch("app.worker.get_llm_client", return_value=mock_llm), \
-         patch("app.worker.get_artifact_client", return_value=mock_artifacts):
+    with (
+        patch("app.worker.get_llm_client", return_value=mock_llm),
+        patch("app.worker.get_artifact_client", return_value=mock_artifacts),
+    ):
         resp = client.post(
             "/execute",
             json={
@@ -211,8 +213,10 @@ def test_execute_agent_not_found() -> None:
     mock_llm = MockLLM()
     mock_artifacts = MockArtifactClient()
 
-    with patch("app.worker.get_llm_client", return_value=mock_llm), \
-         patch("app.worker.get_artifact_client", return_value=mock_artifacts):
+    with (
+        patch("app.worker.get_llm_client", return_value=mock_llm),
+        patch("app.worker.get_artifact_client", return_value=mock_artifacts),
+    ):
         resp = client.post(
             "/execute",
             json={
@@ -253,6 +257,56 @@ async def test_execute_with_tool_call() -> None:
     assert result.iterations == 2
     # Logs devem conter a tool call.
     assert any("Tool call: read_file" in log for log in result.logs)
+
+
+async def test_mcp_tool_arguments_and_result_are_not_logged() -> None:
+    """MCP data pode incluir segredos: logs registram apenas nome e status."""
+    from unittest.mock import AsyncMock
+
+    agent_yaml = AGENT_YAML.replace(
+        "mcpServers: []",
+        "mcpServers:\n  - serverId: server-1\n    tools:\n"
+        "      - name: secret_reader\n        description: Read secret\n"
+        "        inputSchema: {type: object}",
+    )
+    client = MockArtifactClient(agent_yaml=agent_yaml)
+    tool_result = "credential-private-value"
+
+    class SecretToolLLM(MockLLMWithToolCall):
+        async def chat(self, messages, **kwargs):
+            if self._call_count == 0:
+                self._call_count += 1
+                return {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-secret",
+                            "function": {
+                                "name": "secret_reader",
+                                "arguments": json.dumps({"token": tool_result}),
+                            },
+                        }
+                    ],
+                }
+            return {
+                "content": json.dumps({"result": "done", "_action": "finalize"}),
+                "tool_calls": None,
+            }
+
+    with patch("app.worker.execute_tool", new=AsyncMock(return_value=tool_result)):
+        result = await execute_agent(
+            "test-agent-1",
+            "node-1",
+            {"task": "read"},
+            llm=SecretToolLLM(),
+            artifact_client=client,
+            owner_id="owner-1",
+        )
+
+    assert result.status == "completed"
+    assert any("Tool call: secret_reader" == log for log in result.logs)
+    assert "MCP response received" in result.logs
+    assert tool_result not in "\n".join(result.logs)
 
 
 # ---------------------------------------------------------------------------

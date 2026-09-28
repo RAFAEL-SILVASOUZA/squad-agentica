@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def agent_to_yaml(agent: Agent) -> str:
+def agent_to_yaml(agent: Agent, mcp_servers: list[dict[str, Any]] | None = None) -> str:
     """Serializa o agente para o formato .yml do artefato."""
     data = {
         "id": str(agent.id),
@@ -51,7 +51,7 @@ def agent_to_yaml(agent: Agent) -> str:
         "strategy": agent.strategy,
         "skills": agent.skills,
         "tools": agent.tools,
-        "mcpServers": agent.mcp_servers,
+        "mcpServers": agent.mcp_servers if mcp_servers is None else mcp_servers,
         "knowledge": agent.knowledge,
         "integrations": agent.integrations,
         "inputs": agent.inputs,
@@ -80,6 +80,20 @@ class AgentService:
 
     def __init__(self, storage: AgentStorage | None = None) -> None:
         self._storage = storage or get_agent_storage()
+
+    async def _artifact_yaml(self, db: AsyncSession, agent: Agent) -> str:
+        from app.mcp.registry import MCPRegistry
+
+        servers = []
+        for ref in agent.mcp_servers or []:
+            server_id = ref.get("serverId") or ref.get("id")
+            try:
+                parsed_id = uuid.UUID(str(server_id))
+            except ValueError:
+                raise AppError(422, "Referência MCP inválida", "mcp_config_invalid") from None
+            server = await MCPRegistry(db).get(parsed_id, agent.owner_id)
+            servers.append({"serverId": str(server.id), "tools": server.discovered_tools or []})
+        return agent_to_yaml(agent, servers)
 
     async def create_agent(
         self,
@@ -131,7 +145,7 @@ class AgentService:
         )
 
         # PUT in Garage first.
-        agent_yaml = agent_to_yaml(agent)
+        agent_yaml = await self._artifact_yaml(db, agent)
         try:
             await self._storage.save_agent(str(agent.id), agent_yaml)
         except Exception as e:
@@ -261,7 +275,7 @@ class AgentService:
             agent.shell_access = data["shellAccess"]
 
         # PUT in Garage first.
-        agent_yaml = agent_to_yaml(agent)
+        agent_yaml = await self._artifact_yaml(db, agent)
         try:
             await self._storage.save_agent(str(agent.id), agent_yaml)
         except Exception as e:

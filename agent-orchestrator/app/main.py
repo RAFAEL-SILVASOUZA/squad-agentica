@@ -137,7 +137,7 @@ def _discover_routers() -> None:
         module = importlib.import_module(f"app.api.{module_info.name}")
         router = getattr(module, "router", None)
         if router is not None:
-            app.include_router(router, prefix="/api")
+            app.include_router(router, prefix="" if module_info.name == "internal_mcp" else "/api")
 
 
 _discover_routers()

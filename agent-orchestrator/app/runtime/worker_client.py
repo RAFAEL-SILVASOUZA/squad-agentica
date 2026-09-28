@@ -22,11 +22,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 
 from app.compiler.graph_builder import WorkerResponse
+from app.db.models import Agent
+from app.db.session import async_session_factory
+from app.mcp.registry import MCPRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +80,7 @@ class HttpWorkerClient:
         *,
         timeout: int = 60,
         workspace_dir: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkerResponse:
         """Execute an agent on the worker. NEVER raises (ADR-001).
 
@@ -98,6 +104,45 @@ class HttpWorkerClient:
         }
         if workspace_dir:
             body["workspaceDir"] = workspace_dir
+        if owner_id:
+            body["ownerId"] = owner_id
+            try:
+                async with async_session_factory() as db:
+                    agent_result = await db.execute(
+                        select(Agent).where(
+                            Agent.id == uuid.UUID(agent_id),
+                            Agent.owner_id == uuid.UUID(owner_id),
+                        )
+                    )
+                    agent = agent_result.scalar_one_or_none()
+                    if agent is not None and agent.mcp_servers:
+                        registry = MCPRegistry(db)
+                        resolved_servers = []
+                        for ref in agent.mcp_servers:
+                            server_id = ref.get("serverId") or ref.get("id")
+                            try:
+                                server = await registry.get(
+                                    uuid.UUID(str(server_id)), agent.owner_id
+                                )
+                            except (ValueError, TypeError):
+                                continue
+                            resolved_servers.append(
+                                {
+                                    "serverId": str(server.id),
+                                    "tools": server.discovered_tools or [],
+                                }
+                            )
+                        body["mcpServers"] = resolved_servers
+            except Exception:
+                logger.exception("Could not resolve MCP tools for agent %s", agent_id)
+                return WorkerResponse(
+                    status="failed",
+                    outputs={},
+                    action="follow",
+                    iterations=0,
+                    logs=["Não foi possível carregar as ferramentas MCP do agente."],
+                    error="MCP configuration unavailable",
+                )
         headers = {
             "X-Worker-Token": self._worker_token,
             "Content-Type": "application/json",

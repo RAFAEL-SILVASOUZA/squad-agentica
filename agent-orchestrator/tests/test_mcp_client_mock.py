@@ -37,16 +37,18 @@ class TestMCPClientHTTP:
 
     async def test_http_list_tools(self) -> None:
         """Mock do httpx para testar tools/list via HTTP."""
-        mock_response = self._make_mock_response({
-            "tools": [
-                {"name": "test_tool", "description": "A test", "inputSchema": {}},
-                {
-                    "name": "another_tool",
-                    "description": "Another",
-                    "inputSchema": {"type": "object"},
-                },
-            ]
-        })
+        mock_response = self._make_mock_response(
+            {
+                "tools": [
+                    {"name": "test_tool", "description": "A test", "inputSchema": {}},
+                    {
+                        "name": "another_tool",
+                        "description": "Another",
+                        "inputSchema": {"type": "object"},
+                    },
+                ]
+            }
+        )
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_response)
@@ -67,9 +69,7 @@ class TestMCPClientHTTP:
 
     async def test_http_call_tool(self) -> None:
         """Mock do httpx para testar tools/call via HTTP."""
-        mock_response = self._make_mock_response({
-            "content": [{"type": "text", "text": "done"}]
-        })
+        mock_response = self._make_mock_response({"content": [{"type": "text", "text": "done"}]})
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_response)
@@ -189,4 +189,4 @@ def test_describe_unreachable_url():
     msg = describe_connection_error(
         ConnectionError("Name or service not known"), "sse", None, "http://x.local/sse"
     )
-    assert msg.startswith("Não foi possível conectar a http://x.local/sse")
+    assert msg == "Não foi possível conectar ao servidor MCP remoto."

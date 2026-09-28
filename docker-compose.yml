@@ -129,6 +129,7 @@ services:
       start_period: 30s
 
   agent-worker:
+    # Ponte interna de ferramentas MCP (não passa pelo nginx público).
     build:
       context: ./agent-worker
       dockerfile: Dockerfile
@@ -138,6 +139,7 @@ services:
     # F20 (privilégio mínimo): sem env_file; o worker recebe só o que usa
     # (nada de GARAGE_RPC_SECRET/GARAGE_ADMIN_TOKEN, JWT ou banco).
     environment:
+      ORCHESTRATOR_INTERNAL_URL: http://orchestrator:8000
       WORKER_TOKEN: ${WORKER_TOKEN:-change-me-in-prod}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-adminkey01}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-in-prod}

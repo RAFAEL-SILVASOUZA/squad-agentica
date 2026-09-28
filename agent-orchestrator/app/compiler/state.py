@@ -110,6 +110,7 @@ class State(TypedDict):
     # Diretório do workspace do run (volume compartilhado com o worker); ""
     # quando o run não tem workspace. Reducer: last (default LangGraph).
     workspace_dir: str
+    owner_id: str
 
 
 def initial_state() -> dict[str, Any]:

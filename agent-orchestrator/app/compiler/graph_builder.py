@@ -88,6 +88,7 @@ class WorkerClient(Protocol):
         *,
         timeout: int = 60,
         workspace_dir: str | None = None,
+        owner_id: str | None = None,
     ) -> WorkerResponse:
         """Executa o agente no worker. Nunca levanta exceção (ADR-001).
 
@@ -369,24 +370,19 @@ def _make_agent_node(
                 inputs=inputs,
                 timeout=timeout,
                 workspace_dir=state.get("workspace_dir") or None,
+                **({"owner_id": state["owner_id"]} if state.get("owner_id") else {}),
             )
         except Exception as exc:  # noqa: BLE001 — rede de segurança
-            logger.exception(
-                "worker_client.execute raised unexpectedly for node %s", node_id
-            )
+            logger.exception("worker_client.execute raised unexpectedly for node %s", node_id)
             raise WorkerUnavailableError(node_id, f"unexpected: {exc}") from exc
 
         if getattr(resp, "worker_down", False):
-            logger.warning(
-                "worker unavailable; pausing run at node %s", node_id
-            )
+            logger.warning("worker unavailable; pausing run at node %s", node_id)
             raise WorkerUnavailableError(node_id, resp.error or "unavailable")
 
         # 3. Escrever outputs namespaceados por nodeId (ADR-003).
         new_data = {node_id: resp.outputs}
-        new_status = {
-            node_id: "completed" if resp.status == "completed" else "failed"
-        }
+        new_status = {node_id: "completed" if resp.status == "completed" else "failed"}
         new_actions = {node_id: resp.action}
         pipeline_status = (
             "failed" if resp.status == "failed" else state.get("pipeline_status", "running")
@@ -575,9 +571,7 @@ def compile_pipeline(
 
     # Regra 7: data edge sem flow edge explícita entre o mesmo par
     # injeta uma flow edge incondicional.
-    flow_pairs: set[tuple[str, str]] = {
-        (e.source, e.target) for e in flow_edges
-    }
+    flow_pairs: set[tuple[str, str]] = {(e.source, e.target) for e in flow_edges}
     injected_flow_edges: list[PipelineEdge] = []
     for de in data_edges:
         pair = (de.source, de.target)
@@ -605,9 +599,7 @@ def compile_pipeline(
     data_edges_by_target: dict[str, list[tuple[str, DataMapping]]] = {}
     for de in data_edges:
         if de.data_mapping is not None:
-            data_edges_by_target.setdefault(de.target, []).append(
-                (de.source, de.data_mapping)
-            )
+            data_edges_by_target.setdefault(de.target, []).append((de.source, de.data_mapping))
 
     # ------------------------------------------------------------------
     # Adicionar nós de agente.

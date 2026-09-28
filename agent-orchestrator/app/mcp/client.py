@@ -18,14 +18,21 @@ import asyncio
 import json
 import logging
 import os
+import shlex
+import signal
 from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
+# Excel tools podem devolver planilhas paginadas com JSON maior que o limite
+# padrão do StreamReader (64 KiB). Mantemos um teto para não aceitar linhas
+# ilimitadas vindas de processos stdio.
+STDIO_MAX_LINE_BYTES = 8 * 1024 * 1024
+
 # Timeouts (segundos).
-CONNECT_TIMEOUT = 10
+CONNECT_TIMEOUT = 30
 LIST_TIMEOUT = 15
 CALL_TIMEOUT = 30
 
@@ -39,11 +46,13 @@ class MCPClient:
         command: str | None = None,
         url: str | None = None,
         env: dict[str, str] | None = None,
+        cwd: str | None = None,
     ) -> None:
         self._transport = transport
         self._command = command
         self._url = url
         self._env = env or {}
+        self._cwd = cwd
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
 
@@ -74,21 +83,29 @@ class MCPClient:
         env.update(self._env)
 
         # Split command (simples: nao usa shell).
-        parts = self._command.split()
+        parts = shlex.split(self._command)
         self._process = await asyncio.create_subprocess_exec(
             *parts,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
             env=env,
+            cwd=self._cwd,
+            start_new_session=True,
+            limit=STDIO_MAX_LINE_BYTES,
         )
 
         # Handshake: initialize.
-        await self._send_jsonrpc("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "agent-portal", "version": "0.1.0"},
-        })
+        await self._send_jsonrpc(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "agent-portal", "version": "0.1.0"},
+            },
+        )
+        self._process.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+        await self._process.stdin.drain()
 
     async def _connect_http(self) -> None:
         """Conecta via HTTP/SSE (verifica acessibilidade)."""
@@ -136,14 +153,18 @@ class MCPClient:
         self._process.stdin.write(data.encode("utf-8"))
         await self._process.stdin.drain()
 
-        # Le a resposta (uma linha JSON).
-        line = await asyncio.wait_for(
-            self._process.stdout.readline(), timeout=LIST_TIMEOUT
+        # Notificações podem vir antes da resposta correlacionada.
+        timeout = {"initialize": CONNECT_TIMEOUT, "tools/call": CALL_TIMEOUT}.get(
+            method, LIST_TIMEOUT
         )
-        if not line:
-            raise ConnectionError("MCP server closed connection")
-
-        response = json.loads(line.decode("utf-8"))
+        async with asyncio.timeout(timeout):
+            while True:
+                line = await self._process.stdout.readline()
+                if not line:
+                    raise ConnectionError("MCP server closed connection")
+                response = json.loads(line.decode("utf-8"))
+                if response.get("id") == request["id"]:
+                    break
         if "error" in response:
             raise RuntimeError(f"MCP error: {response['error']}")
         return response.get("result", {})
@@ -211,11 +232,12 @@ class MCPClient:
         """Desconecta do servidor MCP."""
         if self._process is not None:
             try:
-                self._process.terminate()
+                os.killpg(self._process.pid, signal.SIGTERM)
                 await asyncio.wait_for(self._process.wait(), timeout=5)
             except (TimeoutError, ProcessLookupError):
                 try:
-                    self._process.kill()
+                    os.killpg(self._process.pid, signal.SIGKILL)
+                    await self._process.wait()
                 except (ProcessLookupError, OSError):
                     pass
             self._process = None
@@ -258,7 +280,7 @@ async def test_mcp_connection_detail(
         tools = await client.list_tools()
         return "connected", tools, None
     except Exception as e:
-        logger.warning("MCP connection test failed: %s", e)
+        logger.warning("MCP connection test failed: %s", type(e).__name__)
         return "error", [], describe_connection_error(e, transport, command, url)
     finally:
         await client.disconnect()
@@ -269,12 +291,16 @@ def describe_connection_error(
 ) -> str:
     """Mensagem em pt-BR para a falha de conexão MCP (sem segredos)."""
     if isinstance(exc, FileNotFoundError) and transport == "stdio":
-        program = (command or "").split()[0] if command else ""
+        try:
+            program = os.path.basename(shlex.split(command)[0]) if command else ""
+        except ValueError:
+            program = ""
         return (
             f"Comando '{program}' não encontrado no servidor. Servidores stdio rodam "
             "dentro do container do orchestrator: o programa precisa estar instalado lá."
         )
-    text = str(exc) or type(exc).__name__
+    if isinstance(exc, TimeoutError):
+        return "O servidor MCP excedeu o tempo limite de resposta."
     if transport in ("sse", "http"):
-        return f"Não foi possível conectar a {url}: {text}"[:500]
-    return text[:500]
+        return "Não foi possível conectar ao servidor MCP remoto."
+    return "Não foi possível executar a chamada ao servidor MCP."

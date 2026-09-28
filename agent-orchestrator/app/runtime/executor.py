@@ -194,9 +194,7 @@ async def _db_available() -> bool:
         _db_health = True
     except Exception:
         _db_health = False
-        logger.warning(
-            "banco indisponível; persistência de checkpoints/artefatos desativada"
-        )
+        logger.warning("banco indisponível; persistência de checkpoints/artefatos desativada")
     return _db_health
 
 
@@ -326,6 +324,7 @@ class PipelineExecutor:
         if run_inputs:
             state["run_inputs"] = dict(run_inputs)
         state["workspace_dir"] = workspace_dir or ""
+        state["owner_id"] = owner_id
 
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -549,9 +548,7 @@ class PipelineExecutor:
         try:
             # Use asyncio.timeout for global timeout (Python 3.11+).
             async with asyncio.timeout(self._global_timeout):
-                async for update in graph.astream(
-                    state, config=config, stream_mode="updates"
-                ):
+                async for update in graph.astream(state, config=config, stream_mode="updates"):
                     await self._process_stream_update(update, active, pipeline)
 
             # Stream terminou: lê o estado final (F1: aget_state, assíncrono
@@ -633,9 +630,7 @@ class PipelineExecutor:
             try:
                 await publish_run(active.run_id)
             except Exception as exc:
-                logger.error(
-                    "Falha ao publicar o run %s: %s", active.run_id, type(exc).__name__
-                )
+                logger.error("Falha ao publicar o run %s: %s", active.run_id, type(exc).__name__)
 
     # -- eventos por nó + persistência (F10/F11) ----------------------------
 
@@ -928,9 +923,7 @@ class PipelineExecutor:
                     extra={"run_id": active.run_id, "node_id": node_id},
                 )
 
-    async def _emit_status(
-        self, active: _ActiveRun, status: str, node_id: str = ""
-    ) -> None:
+    async def _emit_status(self, active: _ActiveRun, status: str, node_id: str = "") -> None:
         """Emit a pipeline:status WebSocket event (contrato §7)."""
         await ws_publish(
             active.owner_id,
@@ -944,9 +937,7 @@ class PipelineExecutor:
             },
         )
 
-    async def _emit_log(
-        self, active: _ActiveRun, node_id: str, level: str, message: str
-    ) -> None:
+    async def _emit_log(self, active: _ActiveRun, node_id: str, level: str, message: str) -> None:
         """Emit a pipeline:log WebSocket event (contrato §7)."""
         await ws_publish(
             active.owner_id,

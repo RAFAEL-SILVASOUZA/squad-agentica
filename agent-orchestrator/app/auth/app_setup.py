@@ -31,7 +31,12 @@ def apply_global_auth(app: FastAPI) -> None:
         async def dispatch(self, request: Request, call_next):
             # Skip public paths.
             from app.auth.dependencies import PUBLIC_PATHS
+
             if request.url.path in PUBLIC_PATHS:
+                return await call_next(request)
+
+            # A ponte interna exige o token do worker no próprio router.
+            if request.url.path.startswith("/internal/mcp/"):
                 return await call_next(request)
 
             # Validate the Bearer token.
