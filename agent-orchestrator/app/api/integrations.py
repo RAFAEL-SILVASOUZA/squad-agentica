@@ -108,8 +108,6 @@ class RivvnStatusResponse(BaseModel):
 class GitTestResponse(BaseModel):
     """Response para POST /api/integrations/{id}/test."""
 
-    model_config = {"exclude_none": True}
-
     ok: bool
     repositories: int | None = None
     error: str | None = None

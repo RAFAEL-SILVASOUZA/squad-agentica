@@ -140,3 +140,39 @@ class TestGitIntegrationEndpoints:
             branches = await client.get(f"/api/integrations/{iid}/branches", params={"repo": "o/r"})
         assert repos.json() == {"items": [{"fullName": "o/r", "defaultBranch": "main"}]}
         assert branches.json() == {"items": ["main", "dev"]}
+
+    async def test_non_git_integration_rejected(
+        self, client: AsyncClient, session, test_user
+    ) -> None:
+        """Test that non-git integrations (e.g. gitlab) are rejected."""
+        import uuid as uuid_module
+
+        from app.db.models import Integration
+
+        # Create a non-git integration directly in DB with test_user as owner
+        integration = Integration(
+            id=uuid_module.uuid4(),
+            owner_id=test_user.id,
+            type="gitlab",
+            name="gitlab-test",
+            config={"token": "gl_token"},
+        )
+        session.add(integration)
+        await session.commit()
+
+        # Test /test endpoint
+        r = await client.post(f"/api/integrations/{integration.id}/test")
+        assert r.status_code == 400
+        assert r.json()["code"] == "not_a_git_integration"
+
+        # Test /repositories endpoint
+        r = await client.get(f"/api/integrations/{integration.id}/repositories")
+        assert r.status_code == 400
+        assert r.json()["code"] == "not_a_git_integration"
+
+        # Test /branches endpoint
+        r = await client.get(
+            f"/api/integrations/{integration.id}/branches", params={"repo": "o/r"}
+        )
+        assert r.status_code == 400
+        assert r.json()["code"] == "not_a_git_integration"
