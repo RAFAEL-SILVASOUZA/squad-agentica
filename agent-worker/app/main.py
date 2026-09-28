@@ -114,19 +114,22 @@ async def execute(request: Request) -> JSONResponse:
             },
         )
 
-    # 3. Valida workspaceDir (precisa estar dentro de WORKSPACES_DIR).
+    # 3. Valida workspaceDir: precisa ser descendente ESTRITO de WORKSPACES_DIR
+    #    (a própria raiz daria ao agente acesso aos workspaces de outros runs).
+    workspace_dir: str | None = None
     if req.workspaceDir is not None:
-        resolved_workspace = Path(req.workspaceDir).resolve()
+        try:
+            resolved_workspace = Path(req.workspaceDir).resolve()
+        except (ValueError, TypeError, OSError):
+            resolved_workspace = None
         workspaces_root = WORKSPACES_ROOT.resolve()
-        is_inside = (
-            resolved_workspace == workspaces_root
-            or workspaces_root in resolved_workspace.parents
-        )
-        if not is_inside:
+        if resolved_workspace is None or workspaces_root not in resolved_workspace.parents:
             return JSONResponse(
                 status_code=400,
                 content={"error": "invalid workspace", "code": "invalid_workspace"},
             )
+        # Usa o caminho resolvido (sem ``..``/symlinks) daqui em diante.
+        workspace_dir = str(resolved_workspace)
 
     # 4. Executa o agente.
     logger.info(
@@ -141,7 +144,7 @@ async def execute(request: Request) -> JSONResponse:
         node_id=req.nodeId,
         inputs=req.inputs,
         timeout=req.timeout,
-        workspace_dir=req.workspaceDir,
+        workspace_dir=workspace_dir,
     )
 
     # 5. Monta a resposta.
