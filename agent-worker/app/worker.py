@@ -20,12 +20,14 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from app.core.llm import LLMClient, get_llm_client
 from app.minio_client import AgentArtifactClient, get_artifact_client
+from app.workspace_guard import WorkspaceEscapeError, current_workspace, resolve_in_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -480,10 +482,6 @@ def check_shell_command(command: str) -> str | None:
     return None
 
 
-# Diretorio de trabalho restrito (spec 14.1).
-WORKSPACE_DIR = os.environ.get("AGENT_WORKSPACE", "/workspace")
-
-
 async def execute_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Executa uma tool pelo nome. Retorna o resultado como dict."""
     if name == "shell":
@@ -518,9 +516,12 @@ async def _execute_shell(args: dict[str, Any]) -> dict[str, Any]:
     if block_result:
         return {"error": block_result}
 
+    workspace_dir = current_workspace.get()
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
     safe_env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": WORKSPACE_DIR,
+        "HOME": str(workspace_dir),
         "LANG": "en_US.UTF-8",
     }
 
@@ -529,7 +530,7 @@ async def _execute_shell(args: dict[str, Any]) -> dict[str, Any]:
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=WORKSPACE_DIR,
+            cwd=str(workspace_dir),
             env=safe_env,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -546,11 +547,10 @@ async def _execute_shell(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _execute_read_file(args: dict[str, Any]) -> dict[str, Any]:
-    from pathlib import Path
-
-    path = Path(args.get("path", ""))
-    if not path.is_absolute():
-        path = Path(WORKSPACE_DIR) / path
+    try:
+        path = resolve_in_workspace(args.get("path", ""))
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
     if not path.exists():
         return {"error": f"File not found: {path}"}
     if not path.is_file():
@@ -562,11 +562,10 @@ async def _execute_read_file(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _execute_write_file(args: dict[str, Any]) -> dict[str, Any]:
-    from pathlib import Path
-
-    path = Path(args.get("path", ""))
-    if not path.is_absolute():
-        path = Path(WORKSPACE_DIR) / path
+    try:
+        path = resolve_in_workspace(args.get("path", ""))
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(args.get("content", ""), encoding="utf-8")
@@ -576,11 +575,10 @@ async def _execute_write_file(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _execute_edit_file(args: dict[str, Any]) -> dict[str, Any]:
-    from pathlib import Path
-
-    path = Path(args.get("path", ""))
-    if not path.is_absolute():
-        path = Path(WORKSPACE_DIR) / path
+    try:
+        path = resolve_in_workspace(args.get("path", ""))
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
     if not path.exists():
         return {"error": f"File not found: {path}"}
     try:
@@ -639,15 +637,40 @@ async def _execute_web_fetch(args: dict[str, Any]) -> dict[str, Any]:
         return {"error": str(e)}
 
 
-async def _execute_glob(args: dict[str, Any]) -> dict[str, Any]:
-    from pathlib import Path
-
-    pattern = args.get("pattern", "")
-    base = Path(args.get("path", "."))
-    if not base.is_absolute():
-        base = Path(WORKSPACE_DIR) / base
+def _symlink_escapes(path: Path, base: Path) -> bool:
+    """True se ``path`` (ou algum ancestral ate ``base``) for symlink, ou se o
+    alvo resolvido cair fora do workspace (spec 14.1: sem seguir symlink pra
+    fora, nem ler arquivos atraves de um)."""
     try:
-        matches = sorted(str(p.relative_to(base)) for p in base.glob(pattern) if p.is_file())
+        resolved = path.resolve()
+    except OSError:
+        return True
+    if resolved != base and base not in resolved.parents:
+        return True
+    current = path
+    while True:
+        if current.is_symlink():
+            return True
+        if current == base:
+            return False
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
+async def _execute_glob(args: dict[str, Any]) -> dict[str, Any]:
+    pattern = args.get("pattern", "")
+    try:
+        base = resolve_in_workspace(args.get("path", "."))
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
+    try:
+        matches = sorted(
+            str(p.relative_to(base))
+            for p in base.glob(pattern)
+            if p.is_file() and not _symlink_escapes(p, base)
+        )
         return {"files": matches[:1000]}
     except Exception as e:
         return {"error": str(e)}
@@ -655,12 +678,13 @@ async def _execute_glob(args: dict[str, Any]) -> dict[str, Any]:
 
 async def _execute_grep(args: dict[str, Any]) -> dict[str, Any]:
     import fnmatch
-    from pathlib import Path
 
     pattern = args.get("pattern", "")
-    path = Path(args.get("path", ""))
-    if not path.is_absolute():
-        path = Path(WORKSPACE_DIR) / path
+    try:
+        base = resolve_in_workspace(args.get("path", ""))
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
+    path = base
     glob_filter = args.get("glob")
     try:
         regex = re.compile(pattern)
@@ -668,7 +692,7 @@ async def _execute_grep(args: dict[str, Any]) -> dict[str, Any]:
         if path.is_file():
             files = [path]
         else:
-            files = [f for f in path.rglob("*") if f.is_file()]
+            files = [f for f in path.rglob("*") if f.is_file() and not _symlink_escapes(f, base)]
             if glob_filter:
                 files = [f for f in files if fnmatch.fnmatch(f.name, glob_filter)]
 
@@ -690,11 +714,10 @@ async def _execute_grep(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _execute_list_directory(args: dict[str, Any]) -> dict[str, Any]:
-    from pathlib import Path
-
-    path = Path(args.get("path", ""))
-    if not path.is_absolute():
-        path = Path(WORKSPACE_DIR) / path
+    try:
+        path = resolve_in_workspace(args.get("path", ""))
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
     max_depth = args.get("max_depth", 3)
     try:
         if not path.exists():
@@ -706,6 +729,8 @@ async def _execute_list_directory(args: dict[str, Any]) -> dict[str, Any]:
                 return
             try:
                 for item in sorted(p.iterdir()):
+                    if _symlink_escapes(item, path):
+                        continue
                     rel = str(item.relative_to(path))
                     entries.append({"name": rel, "is_dir": item.is_dir()})
                     if item.is_dir():
@@ -747,6 +772,7 @@ async def execute_agent(
     *,
     llm: LLMClient | None = None,
     artifact_client: AgentArtifactClient | None = None,
+    workspace_dir: str | None = None,
 ) -> ExecutionResult:
     """Executa um agente: baixa snapshot, monta capacidades, roda LLM loop.
 
@@ -757,6 +783,8 @@ async def execute_agent(
         timeout: timeout em segundos para a execucao.
         llm: client LLM (injetavel para testes).
         artifact_client: client de artefatos (injetavel para testes).
+        workspace_dir: workspace do run (spec 14.1); confina as ferramentas de
+            arquivo/shell. Se None, usa o default de ``current_workspace``.
 
     Returns:
         ExecutionResult com status, outputs, action, iterations, logs.
@@ -764,6 +792,7 @@ async def execute_agent(
     logs: list[str] = []
     start_time = time.monotonic()
 
+    token = current_workspace.set(Path(workspace_dir)) if workspace_dir else None
     try:
         # 1. Baixa o snapshot do agente.
         client = artifact_client or get_artifact_client()
@@ -907,6 +936,9 @@ async def execute_agent(
             iterations=0,
             logs=logs,
         )
+    finally:
+        if token is not None:
+            current_workspace.reset(token)
 
 
 # ---------------------------------------------------------------------------

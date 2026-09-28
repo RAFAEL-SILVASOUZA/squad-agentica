@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -24,6 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.worker import execute_agent
+from app.workspace_guard import WORKSPACES_ROOT
 
 # ---------------------------------------------------------------------------
 # Logging estruturado (contrato 8: JSON no stdout, sem segredos)
@@ -57,6 +59,9 @@ class ExecuteRequest(BaseModel):
     nodeId: str = Field(..., description="ID do no na pipeline")
     inputs: dict[str, Any] = Field(default_factory=dict, description="Dados de entrada")
     timeout: int = Field(default=60, ge=1, le=600, description="Timeout em segundos")
+    workspaceDir: str | None = Field(
+        default=None, description="Workspace do run (spec 14.1), confina as ferramentas"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +114,21 @@ async def execute(request: Request) -> JSONResponse:
             },
         )
 
-    # 3. Executa o agente.
+    # 3. Valida workspaceDir (precisa estar dentro de WORKSPACES_DIR).
+    if req.workspaceDir is not None:
+        resolved_workspace = Path(req.workspaceDir).resolve()
+        workspaces_root = WORKSPACES_ROOT.resolve()
+        is_inside = (
+            resolved_workspace == workspaces_root
+            or workspaces_root in resolved_workspace.parents
+        )
+        if not is_inside:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid workspace", "code": "invalid_workspace"},
+            )
+
+    # 4. Executa o agente.
     logger.info(
         "Execute request: agent_id=%s node_id=%s timeout=%d",
         req.agentId,
@@ -122,9 +141,10 @@ async def execute(request: Request) -> JSONResponse:
         node_id=req.nodeId,
         inputs=req.inputs,
         timeout=req.timeout,
+        workspace_dir=req.workspaceDir,
     )
 
-    # 4. Monta a resposta.
+    # 5. Monta a resposta.
     if result.status == "failed" and result.error and "not found" in result.error.lower():
         return JSONResponse(
             status_code=404,
