@@ -80,3 +80,7 @@ async def session(test_engine) -> AsyncIterator[AsyncSession]:
     async with factory() as session:
         yield session
         await session.rollback()
+
+
+# Import shared API fixtures so pytest can discover them from integration_api_fixtures
+from tests.integration_api_fixtures import client, owner_id, test_app, test_user  # noqa: F401

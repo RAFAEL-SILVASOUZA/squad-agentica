@@ -5,19 +5,11 @@ Dono: be-integrations (FASE 4).
 
 from __future__ import annotations
 
-import uuid
 from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from httpx import AsyncClient
 
-from app.auth.dependencies import get_current_user
-from app.core.errors import register_exception_handlers
-from app.db.models import User
-from app.db.session import get_db
 from app.integrations.git_providers import GitProviderError, Repo
 
 # ---------------------------------------------------------------------------
@@ -43,27 +35,6 @@ class FakeProvider:
 # ---------------------------------------------------------------------------
 
 
-@pytest_asyncio.fixture
-async def test_user(session: AsyncSession) -> User:
-    """Cria um usuario de teste no banco."""
-    user = User(
-        id=uuid.uuid4(),
-        email="test@example.com",
-        name="Test User",
-        password_hash="hashed",
-    )
-    user.owner_id = user.id
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
-
-
-@pytest.fixture
-def owner_id(test_user: User) -> uuid.UUID:
-    return test_user.id
-
-
 @pytest.fixture(autouse=True)
 def fernet_key_fixture(monkeypatch):
     """Set up Fernet key for all tests in this module."""
@@ -72,33 +43,6 @@ def fernet_key_fixture(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
-
-
-@pytest_asyncio.fixture
-async def test_app(session: AsyncSession, test_user: User):
-    """Cria uma app FastAPI de teste com o router de integrações."""
-    from app.api.integrations import router as integrations_router
-
-    app = FastAPI()
-    register_exception_handlers(app)
-    app.include_router(integrations_router, prefix="/api")
-
-    async def override_get_db():
-        yield session
-
-    async def override_get_current_user():
-        return test_user
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    yield app
-
-
-@pytest_asyncio.fixture
-async def client(test_app):
-    transport = ASGITransport(app=test_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
 
 
 # ---------------------------------------------------------------------------
