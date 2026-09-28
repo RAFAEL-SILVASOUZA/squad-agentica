@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -7,6 +8,7 @@ from app.integrations.git_providers import (
     AzureDevOpsProvider,
     GitHubProvider,
     GitProviderError,
+    provider_for,
 )
 
 
@@ -81,3 +83,80 @@ async def test_azure_list_repos_branches_and_pr():
     assert pr.number == 12
     assert pr.url == "https://dev.azure.com/org/Proj/_git/app/pullrequest/12"
     assert az.clone_url("Proj/app") == "https://pat:az_x@dev.azure.com/org/Proj/_git/app"
+
+
+# ---------------------------------------------------------------------------
+# Tests: provider_for() factory
+# ---------------------------------------------------------------------------
+
+
+def test_provider_for_github(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.secrets import encrypt_secret
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "integrations_secret_key", key)
+
+    integration = SimpleNamespace(
+        type="github",
+        config={"token_encrypted": encrypt_secret("ghp_test")},
+    )
+    provider = provider_for(integration)
+    assert isinstance(provider, GitHubProvider)
+
+
+def test_provider_for_azure(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.secrets import encrypt_secret
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "integrations_secret_key", key)
+
+    integration = SimpleNamespace(
+        type="azure",
+        config={"token_encrypted": encrypt_secret("az_test"), "organization": "org"},
+    )
+    provider = provider_for(integration)
+    assert isinstance(provider, AzureDevOpsProvider)
+
+
+def test_provider_for_azure_without_organization(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.secrets import encrypt_secret
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "integrations_secret_key", key)
+
+    integration = SimpleNamespace(
+        type="azure",
+        config={"token_encrypted": encrypt_secret("az_test")},
+    )
+    with pytest.raises(GitProviderError) as exc:
+        provider_for(integration)
+    assert (
+        "Conexão Azure DevOps sem organização" in exc.value.message
+    )
+
+
+def test_provider_for_unsupported_type(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.secrets import encrypt_secret
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "integrations_secret_key", key)
+
+    integration = SimpleNamespace(
+        type="rivvn",
+        config={"token_encrypted": encrypt_secret("token")},
+    )
+    with pytest.raises(GitProviderError) as exc:
+        provider_for(integration)
+    assert "não é um provedor Git" in exc.value.message

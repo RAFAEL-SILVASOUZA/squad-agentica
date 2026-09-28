@@ -111,16 +111,47 @@ class TestIntegrationRegistry:
     async def test_create_github_without_owner(
         self, session: AsyncSession, owner_id: uuid.UUID
     ) -> None:
+        """GitHub without owner is allowed; routes can validate later."""
+        registry = IntegrationRegistry(session)
+        integration = await registry.create(
+            owner_id=owner_id,
+            type="github",
+            name="no-owner",
+            config={"repos": ["repo1"]},
+        )
+        assert integration.type == "github"
+        assert integration.config == {"repos": ["repo1"]}
+
+    async def test_create_azure_integration(
+        self, session: AsyncSession, owner_id: uuid.UUID
+    ) -> None:
+        registry = IntegrationRegistry(session)
+        integration = await registry.create(
+            owner_id=owner_id,
+            type="azure",
+            name="my-azure",
+            config={"organization": "myorg"},
+        )
+        assert integration.id is not None
+        assert integration.name == "my-azure"
+        assert integration.type == "azure"
+        assert integration.status == "active"
+        assert integration.config["organization"] == "myorg"
+
+    async def test_create_azure_without_organization(
+        self, session: AsyncSession, owner_id: uuid.UUID
+    ) -> None:
         registry = IntegrationRegistry(session)
         with pytest.raises(AppError) as exc_info:
             await registry.create(
                 owner_id=owner_id,
-                type="github",
-                name="no-owner",
-                config={"repos": ["repo1"]},
+                type="azure",
+                name="no-org",
+                config={},
             )
         assert exc_info.value.status_code == 400
         assert exc_info.value.code == "invalid_config"
+        assert "organization" in exc_info.value.details["message"]
 
     async def test_create_duplicate_name(
         self, session: AsyncSession, owner_id: uuid.UUID

@@ -71,26 +71,26 @@ class IntegrationRegistry:
     ) -> Integration:
         """Cria uma integração.
 
-        V1: apenas type="github" é aceito.
+        Tipos suportados: "github", "azure" (Azure DevOps).
         """
-        # Validação de tipo (V1: apenas github)
-        valid_types = {"github"}
+        # Validação de tipo
+        valid_types = {"github", "azure"}
         if type not in valid_types:
             raise AppError(
                 400,
                 "validation error",
                 "invalid_integration_type",
-                {"message": f"Tipo '{type}' não suportado na V1. Use 'github'."},
+                {"message": f"Tipo '{type}' não suportado. Use 'github' ou 'azure'."},
             )
 
-        # Validação de config para github
-        if type == "github":
-            if "owner" not in config or not config["owner"]:
+        # Validação de config para azure
+        if type == "azure":
+            if "organization" not in config or not config["organization"]:
                 raise AppError(
                     400,
                     "validation error",
                     "invalid_config",
-                    {"message": "Config do GitHub deve conter 'owner'."},
+                    {"message": "Config do Azure DevOps deve conter 'organization'."},
                 )
 
         # Verifica nome único por owner
@@ -151,13 +151,13 @@ class IntegrationRegistry:
             integration.name = name
 
         if config is not None:
-            if integration.type == "github":
-                if "owner" not in config or not config["owner"]:
+            if integration.type == "azure":
+                if "organization" not in config or not config["organization"]:
                     raise AppError(
                         400,
                         "validation error",
                         "invalid_config",
-                        {"message": "Config do GitHub deve conter 'owner'."},
+                        {"message": "Config do Azure DevOps deve conter 'organization'."},
                     )
             integration.config = config
 
