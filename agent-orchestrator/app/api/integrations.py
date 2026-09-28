@@ -26,7 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.core.errors import AppError
-from app.db.models import User
+from app.core.secrets import SecretError, decrypt_secret, encrypt_secret
+from app.db.models import Integration, User
 from app.db.session import get_db
 from app.integrations import github as github_client
 from app.integrations.registry import IntegrationRegistry
@@ -119,16 +120,53 @@ def _mask_config(config: dict[str, Any] | None) -> dict[str, Any]:
 
     Regra: qualquer chave que contenha ``token``/``secret``/``password``/
     ``key``/``credentials``/``auth`` (case-insensitive) vira ``***``; o resto
-    do config (ex.: ``owner``) permanece legível.
+    do config (ex.: ``owner``) permanece legível. ``token_encrypted`` nunca
+    sai da API: aparece para o cliente como ``token: "***"``.
     """
     masked: dict[str, Any] = {}
     for k, v in (config or {}).items():
+        if k == "token_encrypted":
+            if v:
+                masked["token"] = _MASKED
+            continue
         lower = k.lower()
         if any(s in lower for s in _SECRET_KEYS):
             masked[k] = _MASKED
         else:
             masked[k] = v
     return masked
+
+
+def _seal_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Troca ``token`` em claro por ``token_encrypted`` (Fernet)."""
+    sealed = dict(config)
+    token = sealed.pop("token", None)
+    if token and token != _MASKED:
+        try:
+            sealed["token_encrypted"] = encrypt_secret(str(token))
+        except SecretError as exc:
+            raise AppError(500, "internal error", "secret_key_missing") from exc
+    return sealed
+
+
+def get_integration_token(integration: Integration) -> str:
+    """Token em claro para uso interno (nunca devolver ao cliente)."""
+    cfg = integration.config or {}
+    if cfg.get("token_encrypted"):
+        try:
+            return decrypt_secret(cfg["token_encrypted"])
+        except SecretError as exc:
+            raise AppError(500, "internal error", "secret_key_missing") from exc
+    return str(cfg.get("token", ""))
+
+
+async def seal_legacy_token(db: AsyncSession, integration: Integration) -> None:
+    """Spec §3: token antigo em claro passa a ser criptografado na primeira leitura."""
+    cfg = integration.config or {}
+    if cfg.get("token") and not cfg.get("token_encrypted"):
+        integration.config = _seal_config(cfg)
+        await db.commit()
+        await db.refresh(integration)
 
 
 def _to_response(integration: Any) -> IntegrationResponse:
@@ -173,6 +211,8 @@ async def list_integrations(
     items, total = await registry.list(
         user.id, page=page, limit=limit, type_filter=type
     )
+    for item in items:
+        await seal_legacy_token(db, item)
     return IntegrationListResponse(
         items=[_to_response(i) for i in items],
         total=total,
@@ -193,7 +233,7 @@ async def create_integration(
         owner_id=user.id,
         type=body.type,
         name=body.name,
-        config=body.config,
+        config=_seal_config(body.config),
         status=body.status,
     )
     return _to_response(integration)
@@ -208,6 +248,7 @@ async def get_integration(
     """Obtém uma integração por id."""
     registry = IntegrationRegistry(db)
     integration = await registry.get(integration_id, user.id)
+    await seal_legacy_token(db, integration)
     return _to_response(integration)
 
 
@@ -222,17 +263,22 @@ async def update_integration(
     registry = IntegrationRegistry(db)
     # F12: o valor mascarado (``***``) devolvido por uma chave existente
     # significa "não mexer" (o valor real nunca é exposto, então é assim que
-    # o cliente expressa a inalteração).
+    # o cliente expressa a inalteração). ``token`` é tratado à parte: o valor
+    # real vive em ``token_encrypted`` (nunca em ``token``), então
+    # ``token: "***"`` significa "manter o token_encrypted atual".
     config_to_save = body.config
     if body.config is not None:
         existing = await registry.get(integration_id, user.id)
-        merged = dict(existing.config or {})
+        existing_config = existing.config or {}
+        merged = dict(existing_config)
         for k, v in body.config.items():
-            if v == _MASKED and k in (existing.config or {}):
-                merged[k] = existing.config[k]
+            if k == "token" and v == _MASKED:
+                continue
+            if v == _MASKED and k in existing_config:
+                merged[k] = existing_config[k]
             else:
                 merged[k] = v
-        config_to_save = merged
+        config_to_save = _seal_config(merged)
     integration = await registry.update(
         integration_id=integration_id,
         owner_id=user.id,

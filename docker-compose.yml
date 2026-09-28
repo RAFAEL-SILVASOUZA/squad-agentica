@@ -109,6 +109,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-in-prod}
       ADMIN_NAME: ${ADMIN_NAME:-Administrador}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80}
+      INTEGRATIONS_SECRET_KEY: ${INTEGRATIONS_SECRET_KEY:-}
     volumes:
       - ./agent-orchestrator:/app:ro
     depends_on:

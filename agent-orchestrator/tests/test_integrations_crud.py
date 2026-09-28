@@ -9,10 +9,14 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError
+from app.auth.dependencies import get_current_user
+from app.core.errors import AppError, register_exception_handlers
 from app.db.models import User
+from app.db.session import get_db
 from app.integrations.registry import IntegrationRegistry
 
 # ---------------------------------------------------------------------------
@@ -39,6 +43,33 @@ async def test_user(session: AsyncSession) -> User:
 @pytest.fixture
 def owner_id(test_user: User) -> uuid.UUID:
     return test_user.id
+
+
+@pytest_asyncio.fixture
+async def test_app(session: AsyncSession, test_user: User):
+    """Cria uma app FastAPI de teste com o router de integrações."""
+    from app.api.integrations import router as integrations_router
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(integrations_router, prefix="/api")
+
+    async def override_get_db():
+        yield session
+
+    async def override_get_current_user():
+        return test_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    yield app
+
+
+@pytest_asyncio.fixture
+async def client(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -298,3 +329,209 @@ class TestIntegrationRegistry:
         with pytest.raises(AppError) as exc_info:
             await registry.get_github_integration(owner_id)
         assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests: token criptografado (Fernet) via API
+# ---------------------------------------------------------------------------
+
+
+class TestTokenEncryption:
+    async def test_token_is_encrypted_at_rest(
+        self, client: AsyncClient, session: AsyncSession, monkeypatch
+    ) -> None:
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.db.models import Integration
+
+        monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+        r = await client.post(
+            "/api/integrations",
+            json={
+                "type": "github",
+                "name": "gh-teste",
+                "config": {"owner": "myorg", "token": "ghp_segredo"},
+            },
+        )
+        assert r.status_code == 201
+        assert r.json()["config"]["token"] == "***"
+        row = (
+            await session.execute(select(Integration).where(Integration.name == "gh-teste"))
+        ).scalar_one()
+        assert "token" not in row.config and "ghp_segredo" not in str(row.config)
+        assert row.config["token_encrypted"]
+
+    async def test_legacy_plain_token_is_sealed_on_read(
+        self, client: AsyncClient, session: AsyncSession, owner_id: uuid.UUID, monkeypatch
+    ) -> None:
+        from cryptography.fernet import Fernet
+
+        from app.core.config import settings
+        from app.db.models import Integration
+
+        monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+        row = Integration(
+            owner_id=owner_id,
+            type="github",
+            name="legado",
+            config={"owner": "myorg", "token": "ghp_velho"},
+        )
+        session.add(row)
+        await session.commit()
+
+        r = await client.get("/api/integrations")
+        assert r.status_code == 200
+
+        await session.refresh(row)
+        assert "token" not in row.config and row.config["token_encrypted"]
+
+    async def test_legacy_plain_token_is_sealed_on_get_by_id(
+        self, client: AsyncClient, session: AsyncSession, owner_id: uuid.UUID, monkeypatch
+    ) -> None:
+        from cryptography.fernet import Fernet
+
+        from app.core.config import settings
+        from app.db.models import Integration
+
+        monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+        row = Integration(
+            owner_id=owner_id,
+            type="github",
+            name="legado-2",
+            config={"owner": "myorg", "token": "ghp_velho2"},
+        )
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+
+        r = await client.get(f"/api/integrations/{row.id}")
+        assert r.status_code == 200
+        assert r.json()["config"]["token"] == "***"
+
+        await session.refresh(row)
+        assert "token" not in row.config and row.config["token_encrypted"]
+
+    async def test_update_with_masked_token_keeps_encrypted_value(
+        self, client: AsyncClient, session: AsyncSession, monkeypatch
+    ) -> None:
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.db.models import Integration
+
+        monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+        create = await client.post(
+            "/api/integrations",
+            json={
+                "type": "github",
+                "name": "gh-upd",
+                "config": {"owner": "myorg", "token": "ghp_original"},
+            },
+        )
+        assert create.status_code == 201
+        integration_id = create.json()["id"]
+
+        row = (
+            await session.execute(select(Integration).where(Integration.name == "gh-upd"))
+        ).scalar_one()
+        original_encrypted = row.config["token_encrypted"]
+
+        r = await client.put(
+            f"/api/integrations/{integration_id}",
+            json={"config": {"owner": "myorg2", "token": "***"}},
+        )
+        assert r.status_code == 200
+        assert r.json()["config"]["token"] == "***"
+        assert r.json()["config"]["owner"] == "myorg2"
+
+        await session.refresh(row)
+        assert row.config["token_encrypted"] == original_encrypted
+        assert "token" not in row.config
+
+    async def test_update_with_new_token_reencrypts(
+        self, client: AsyncClient, session: AsyncSession, monkeypatch
+    ) -> None:
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.core.secrets import decrypt_secret
+        from app.db.models import Integration
+
+        monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+        create = await client.post(
+            "/api/integrations",
+            json={
+                "type": "github",
+                "name": "gh-upd2",
+                "config": {"owner": "myorg", "token": "ghp_original"},
+            },
+        )
+        integration_id = create.json()["id"]
+
+        r = await client.put(
+            f"/api/integrations/{integration_id}",
+            json={"config": {"owner": "myorg", "token": "ghp_novo"}},
+        )
+        assert r.status_code == 200
+        assert r.json()["config"]["token"] == "***"
+
+        row = (
+            await session.execute(select(Integration).where(Integration.name == "gh-upd2"))
+        ).scalar_one()
+        assert decrypt_secret(row.config["token_encrypted"]) == "ghp_novo"
+
+    async def test_create_with_token_and_missing_key_returns_500(
+        self, client: AsyncClient, monkeypatch
+    ) -> None:
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "integrations_secret_key", "")
+        r = await client.post(
+            "/api/integrations",
+            json={
+                "type": "github",
+                "name": "gh-nokey",
+                "config": {"owner": "myorg", "token": "ghp_x"},
+            },
+        )
+        assert r.status_code == 500
+        assert r.json()["code"] == "secret_key_missing"
+
+
+class TestGetIntegrationToken:
+    def test_get_integration_token_decrypts(self, monkeypatch) -> None:
+        from cryptography.fernet import Fernet
+
+        from app.api.integrations import get_integration_token
+        from app.core.config import settings
+        from app.core.secrets import encrypt_secret
+        from app.db.models import Integration
+
+        monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+        integration = Integration(
+            id=uuid.uuid4(),
+            owner_id=uuid.uuid4(),
+            type="github",
+            name="x",
+            config={"token_encrypted": encrypt_secret("ghp_plain")},
+            status="active",
+        )
+        assert get_integration_token(integration) == "ghp_plain"
+
+    def test_get_integration_token_plain_fallback(self) -> None:
+        from app.api.integrations import get_integration_token
+        from app.db.models import Integration
+
+        integration = Integration(
+            id=uuid.uuid4(),
+            owner_id=uuid.uuid4(),
+            type="github",
+            name="x",
+            config={"token": "ghp_plain"},
+            status="active",
+        )
+        assert get_integration_token(integration) == "ghp_plain"

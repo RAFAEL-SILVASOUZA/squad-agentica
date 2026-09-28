@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_api_base: str = "https://api.github.com"
 
+    # --- Integrações (criptografia dos tokens armazenados; Fernet) ---
+    integrations_secret_key: str = ""
+
     # --- Admin (seed) ---
     admin_email: str = ""
     admin_password: str = ""
