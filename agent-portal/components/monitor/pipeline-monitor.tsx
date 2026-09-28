@@ -45,6 +45,7 @@ import { useToast } from "@/components/ui/toast";
 import { AgentNode, type AgentNodeData } from "@/components/flow/agent-node";
 import { PipelineEdgeComponent, type PipelineEdgeData } from "@/components/flow/pipeline-edge";
 import { api, ApiError } from "@/lib/api";
+import { RunInputsModal } from "@/components/flow/run-inputs-modal";
 import { getWebSocketClient, disposeWebSocketClient } from "@/lib/websocket";
 import type {
   Pipeline,
@@ -425,10 +426,16 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
   refreshRunsRef.current = refreshRuns;
 
   // ── Action handlers ──
-  const handleExecute = React.useCallback(async () => {
+  const [runInputsOpen, setRunInputsOpen] = React.useState(false);
+  const entryNode = pipeline
+    ? pipeline.nodes.find((n) => n.id === pipeline.entryNodeId) ?? pipeline.nodes[0]
+    : undefined;
+
+  const handleExecute = React.useCallback(async (runInputs: Record<string, string> = {}) => {
     setActionLoading("execute");
     try {
-      await api.post(`/api/pipelines/${pipelineId}/execute`, {});
+      await api.post(`/api/pipelines/${pipelineId}/execute`, { inputs: runInputs });
+      setRunInputsOpen(false);
       addToast("success", "Pipeline iniciada.");
       // Optimistic: set all nodes to pending
       setNodeStatuses((prev) => {
@@ -691,7 +698,10 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
             <Button
               size="sm"
               variant="primary"
-              onClick={() => void handleExecute()}
+              onClick={() => {
+                if (entryNode && entryNode.agentSnapshot.inputs.length > 0) setRunInputsOpen(true);
+                else void handleExecute();
+              }}
               loading={actionLoading === "execute"}
               aria-label="Iniciar execução"
             >
@@ -765,6 +775,17 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
           <strong style={{ color: "var(--error)", flexShrink: 0 }}>Falha na execução:</strong>
           <span>{activeRun.error}</span>
         </div>
+      )}
+
+      {entryNode && (
+        <RunInputsModal
+          open={runInputsOpen}
+          agentName={entryNode.agentSnapshot.name}
+          inputs={entryNode.agentSnapshot.inputs}
+          busy={actionLoading === "execute"}
+          onCancel={() => setRunInputsOpen(false)}
+          onSubmit={(values) => void handleExecute(values)}
+        />
       )}
 
       {/* Main grid: graph + right panel */}

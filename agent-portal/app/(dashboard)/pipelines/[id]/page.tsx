@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
+import { RunInputsModal } from "@/components/flow/run-inputs-modal";
 
 /**
  * Pipeline detail page: FlowEditor + EdgePanel (fe-flow-edges) + validacao + executar.
@@ -236,7 +237,15 @@ export default function PipelineDetailPage() {
   );
 
   // Executar: POST /api/pipelines/{id}/execute -> cria o run e navega para o monitor
-  const handleExecute = React.useCallback(async () => {
+  // Nó de entrada efetivo (o UUID nulo de pipeline recém-criada = 1º nó).
+  const entryNode = React.useMemo(
+    () => workNodes.find((n) => n.id === entryNodeId) ?? workNodes[0],
+    [workNodes, entryNodeId]
+  );
+  const [runInputsOpen, setRunInputsOpen] = React.useState(false);
+
+
+  const handleExecute = React.useCallback(async (runInputs: Record<string, string>) => {
     if (hasErrors || executing || !pipeline) return;
     setExecuting(true);
     try {
@@ -254,7 +263,8 @@ export default function PipelineDetailPage() {
           throw err;
         }
       }
-      await api.post(`/api/pipelines/${pipelineId}/execute`, { inputs: {} });
+      await api.post(`/api/pipelines/${pipelineId}/execute`, { inputs: runInputs });
+      setRunInputsOpen(false);
       router.push(`/pipelines/${pipelineId}/run`);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -272,6 +282,12 @@ export default function PipelineDetailPage() {
       setExecuting(false);
     }
   }, [hasErrors, executing, pipeline, workNodes, workEdges, pipelineId, router, addToast]);
+
+  const handleExecuteClick = () => {
+    if (hasErrors || executing || !pipeline) return;
+    if (entryNode && entryNode.agentSnapshot.inputs.length > 0) setRunInputsOpen(true);
+    else void handleExecute({});
+  };
 
   // Loading state
   if (loading) {
@@ -450,7 +466,7 @@ export default function PipelineDetailPage() {
           <Button
             size="sm"
             variant="primary"
-            onClick={handleExecute}
+            onClick={handleExecuteClick}
             disabled={hasErrors || isRunning || executing}
             loading={executing}
             aria-label="Executar pipeline"
@@ -492,6 +508,16 @@ export default function PipelineDetailPage() {
           ) : null
         }
       />
+      {entryNode && (
+        <RunInputsModal
+          open={runInputsOpen}
+          agentName={entryNode.agentSnapshot.name}
+          inputs={entryNode.agentSnapshot.inputs}
+          busy={executing}
+          onCancel={() => setRunInputsOpen(false)}
+          onSubmit={(values) => void handleExecute(values)}
+        />
+      )}
     </div>
   );
 }

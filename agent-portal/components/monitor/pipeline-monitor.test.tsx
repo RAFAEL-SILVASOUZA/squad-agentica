@@ -327,9 +327,14 @@ describe("PipelineMonitor", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar/i }));
+    // Agente de entrada tem input obrigatório: o modal pede o valor antes.
+    fireEvent.change(await screen.findByLabelText("task *"), { target: { value: "gerar plano" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Executar$/ }));
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/execute", {});
+      expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/execute", {
+        inputs: { task: "gerar plano" },
+      });
     });
   });
 
@@ -599,6 +604,9 @@ describe("PipelineMonitor", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar/i }));
+    // Agente de entrada tem input obrigatório: o modal pede o valor antes.
+    fireEvent.change(await screen.findByLabelText("task *"), { target: { value: "gerar plano" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Executar$/ }));
 
     await waitFor(() => {
       expect(screen.getByText(/já está em execução/i)).toBeInTheDocument();

@@ -102,6 +102,9 @@ class State(TypedDict):
     pipeline_status: Annotated[str, _pipeline_status_reducer]
     # {nodeId: [linhas]} e {nodeId: mensagem} — logs e erro devolvidos pelo
     # worker, publicados pelo executor como ``pipeline:log`` (contrato §7).
+    # {inputName: valor} informados no disparo da execução; lidos pelo nó de
+    # entrada (os demais recebem dados por data edge).
+    run_inputs: Annotated[dict[str, Any], _merge_dicts]
     node_logs: Annotated[dict[str, list[str]], _merge_dicts]
     node_errors: Annotated[dict[str, str], _merge_dicts]
 
@@ -119,6 +122,7 @@ def initial_state() -> dict[str, Any]:
         "iterations": {},
         "max_iter_exceeded": False,
         "pipeline_status": "running",
+        "run_inputs": {},
         "node_logs": {},
         "node_errors": {},
     }

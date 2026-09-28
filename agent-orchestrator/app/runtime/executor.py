@@ -271,6 +271,7 @@ class PipelineExecutor:
         owner_id: str,
         run_id: str | None = None,
         initial_inputs: dict[str, Any] | None = None,
+        run_inputs: dict[str, Any] | None = None,
     ) -> str:
         """Start a new pipeline execution.
 
@@ -283,6 +284,8 @@ class PipelineExecutor:
             owner_id: The owner (for WebSocket events and DB writes).
             run_id: UUID of the PipelineRun (fonte única de verdade).
             initial_inputs: Optional initial inputs for the entry node.
+            run_inputs: Valores dos inputs do agente de entrada, informados
+                pelo usuário no disparo (lidos pelo nó de entrada).
 
         Returns:
             The run_id usado na execução (o recebido, ou o gerado).
@@ -316,6 +319,8 @@ class PipelineExecutor:
         state = initial_state()
         if initial_inputs:
             state["data"] = {pipeline.entry_node_id: initial_inputs}
+        if run_inputs:
+            state["run_inputs"] = dict(run_inputs)
 
         config = {"configurable": {"thread_id": thread_id}}
 

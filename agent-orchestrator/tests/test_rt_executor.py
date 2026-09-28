@@ -756,3 +756,23 @@ class TestRateLimiting:
         with pytest.raises(RateLimitError) as exc_info:
             await executor.execute(p, owner_id="owner-1")
         assert exc_info.value.retry_after > 0
+
+
+class TestRunInputs:
+    """Inputs informados no disparo chegam ao agente de entrada."""
+
+    async def test_entry_node_receives_run_inputs(
+        self, executor: PipelineExecutor, worker: FakeWorker
+    ):
+        pipeline = _simple_pipeline_a_b_c()
+        with patch("app.runtime.executor.ws_publish", new_callable=AsyncMock):
+            await executor.execute(
+                pipeline, owner_id="owner-1", run_inputs={"ideia": "app de tarefas"}
+            )
+            active = get_active_run("p-test")
+            if active and active.task:
+                await asyncio.wait_for(active.task, timeout=10)
+        first = next(c for c in worker.calls if c["node_id"] == "A")
+        assert first["inputs"] == {"ideia": "app de tarefas"}
+        # Os demais nós não recebem os inputs do disparo.
+        assert "ideia" not in next(c for c in worker.calls if c["node_id"] == "C")["inputs"]

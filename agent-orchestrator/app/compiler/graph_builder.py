@@ -300,6 +300,7 @@ def _make_agent_node(
     node: PipelineNode,
     data_edges_in: list[tuple[str, DataMapping]],
     worker_client: WorkerClient,
+    is_entry: bool = False,
 ) -> Any:
     """Fábrica do node function de um agente.
 
@@ -333,8 +334,10 @@ def _make_agent_node(
                 "max_iter_exceeded": True,
             }
 
-        # 1. Ler inputs: resolver dataMapping lendo o state do source.
-        inputs: dict[str, Any] = {}
+        # 1. Ler inputs: resolver dataMapping lendo o state do source. O nó de
+        #    entrada começa com os inputs informados no disparo (run_inputs);
+        #    antes eles nunca chegavam ao agente ("Execute your task.").
+        inputs: dict[str, Any] = dict(state.get("run_inputs", {}) or {}) if is_entry else {}
         for input_name, (src_node_id, src_output_name) in input_sources.items():
             src_data = state.get("data", {}).get(src_node_id, {})
             if src_output_name in src_data:
@@ -598,7 +601,9 @@ def compile_pipeline(
     # ------------------------------------------------------------------
     for node in pipeline.nodes:
         data_edges_in = data_edges_by_target.get(node.id, [])
-        node_fn = _make_agent_node(node, data_edges_in, worker_client)
+        node_fn = _make_agent_node(
+            node, data_edges_in, worker_client, is_entry=node.id == pipeline.entry_node_id
+        )
         graph.add_node(node.id, node_fn)
 
     # ------------------------------------------------------------------

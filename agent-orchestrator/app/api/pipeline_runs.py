@@ -18,7 +18,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -209,12 +209,22 @@ async def execute_pipeline(
     pipeline_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    body: Annotated[dict[str, Any] | None, Body()] = None,
 ) -> dict[str, Any]:
     """POST /api/pipelines/:id/execute
 
     Creates a new PipelineRun and starts execution.
     409 if already running. 429 if rate limited.
+
+    Body opcional ``{"inputs": {<input do agente de entrada>: valor}}``: os
+    valores com que o primeiro agente trabalha (decisão mínima: o contrato não
+    define o corpo; sem ele o agente de entrada rodava sem nenhum dado).
     """
+    run_inputs = (body or {}).get("inputs") or {}
+    if not isinstance(run_inputs, dict):
+        raise AppError(422, "unprocessable", "schema_validation", {
+            "errors": ["inputs: deve ser um objeto {nome: valor}"]
+        })
     # Load pipeline (só do owner; F4).
     db_pipeline, nodes, edges = await _load_pipeline(db, pipeline_id, user.owner_id)
 
@@ -260,7 +270,7 @@ async def execute_pipeline(
     # (F8): removemos antes de re-levantar o envelope.
     try:
         await executor.execute(
-            pipeline, owner_id=str(user.owner_id), run_id=run_id
+            pipeline, owner_id=str(user.owner_id), run_id=run_id, run_inputs=run_inputs
         )
     except PipelineAlreadyRunningError as e:
         await db.rollback()
