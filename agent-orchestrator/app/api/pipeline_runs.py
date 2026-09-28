@@ -181,6 +181,10 @@ def _run_to_dict(run: PipelineRun) -> dict[str, Any]:
         if run.completed_at
         else None,
         "error": run.error,
+        "prUrl": run.pr_url,
+        "prNumber": run.pr_number,
+        "publishStatus": run.publish_status,
+        "publishError": run.publish_error,
     }
 
 

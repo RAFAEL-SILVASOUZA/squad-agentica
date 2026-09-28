@@ -45,6 +45,7 @@ from app.compiler.graph_builder import (
 from app.compiler.validator import validate_pipeline
 from app.core.errors import AppError
 from app.db.models import (
+    Integration,
     Pipeline,
     PipelineEdge,
     PipelineNode,
@@ -277,11 +278,68 @@ def _edge_to_dict(e: PipelineEdge) -> dict[str, Any]:
     }
 
 
+async def _resolve_repository(
+    db: AsyncSession, owner_id: uuid.UUID, raw: Any
+) -> dict[str, Any] | None:
+    """Valida ``body["repository"]`` e devolve os 3 campos de coluna, ou ``None``.
+
+    ``raw`` é ``None`` (limpa o repositório) ou um dict com ``integrationId``
+    (UUID de uma integração do dono, tipo ``github``/``azure``), ``fullName``
+    e ``baseBranch`` (strings não vazias); qualquer outro caso é 400
+    ``invalid_repository``.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise AppError(400, "validation error", "invalid_repository", {
+            "message": "repository deve ser um objeto ou null"
+        })
+
+    full_name = raw.get("fullName")
+    base_branch = raw.get("baseBranch")
+    if not isinstance(full_name, str) or not full_name.strip():
+        raise AppError(400, "validation error", "invalid_repository", {
+            "message": "repository.fullName obrigatório"
+        })
+    if not isinstance(base_branch, str) or not base_branch.strip():
+        raise AppError(400, "validation error", "invalid_repository", {
+            "message": "repository.baseBranch obrigatório"
+        })
+    try:
+        integration_id = uuid.UUID(str(raw.get("integrationId")))
+    except (ValueError, TypeError):
+        raise AppError(400, "validation error", "invalid_repository", {
+            "message": "repository.integrationId inválido"
+        }) from None
+
+    result = await db.execute(
+        select(Integration).where(
+            Integration.id == integration_id, Integration.owner_id == owner_id
+        )
+    )
+    integration = result.scalar_one_or_none()
+    integ_type = (
+        integration.type.value if integration and hasattr(integration.type, "value")
+        else (integration.type if integration else None)
+    )
+    if integration is None or integ_type not in ("github", "azure"):
+        raise AppError(400, "validation error", "invalid_repository", {
+            "message": "integrationId deve ser uma integração git (github/azure) do usuário"
+        })
+
+    return {
+        "git_integration_id": integration_id,
+        "git_repository": full_name.strip(),
+        "git_base_branch": base_branch.strip(),
+    }
+
+
 def _pipeline_to_dict(
     p: Pipeline,
     nodes: list[PipelineNode],
     edges: list[PipelineEdge],
 ) -> dict[str, Any]:
+    has_repo = p.git_integration_id and p.git_repository and p.git_base_branch
     return {
         "id": str(p.id),
         "ownerId": str(p.owner_id),
@@ -289,6 +347,15 @@ def _pipeline_to_dict(
         "description": p.description,
         "status": p.status.value if hasattr(p.status, "value") else p.status,
         "entryNodeId": str(p.entry_node_id),
+        "repository": (
+            {
+                "integrationId": str(p.git_integration_id),
+                "fullName": p.git_repository,
+                "baseBranch": p.git_base_branch,
+            }
+            if has_repo
+            else None
+        ),
         "nodes": [_node_to_dict(n) for n in nodes],
         "edges": [_edge_to_dict(e) for e in edges],
         "startedAt": p.started_at.isoformat().replace("+00:00", "Z")
@@ -531,6 +598,12 @@ async def create_pipeline(
         status="draft",
         entry_node_id=fields["entry_node_id"],
     )
+    if "repository" in body:
+        repo_fields = await _resolve_repository(db, user.owner_id, body.get("repository"))
+        if repo_fields is not None:
+            pipeline.git_integration_id = repo_fields["git_integration_id"]
+            pipeline.git_repository = repo_fields["git_repository"]
+            pipeline.git_base_branch = repo_fields["git_base_branch"]
     db.add(pipeline)
     await _replace_graph(db, pipeline, node_fields, edge_fields)
     await db.commit()
@@ -654,6 +727,17 @@ async def update_pipeline(
                     "errors": ["entryNodeId: não é um nó da pipeline"]
                 })
             pipeline.entry_node_id = entry
+
+    if "repository" in body:
+        repo_fields = await _resolve_repository(db, user.owner_id, body.get("repository"))
+        if repo_fields is None:
+            pipeline.git_integration_id = None
+            pipeline.git_repository = None
+            pipeline.git_base_branch = None
+        else:
+            pipeline.git_integration_id = repo_fields["git_integration_id"]
+            pipeline.git_repository = repo_fields["git_repository"]
+            pipeline.git_base_branch = repo_fields["git_base_branch"]
 
     pipeline.updated_at = datetime.now(UTC)
     await db.commit()
@@ -790,3 +874,85 @@ async def validate_pipeline_endpoint(
             {"errors": [e.to_dict() for e in result.errors]},
         )
     return result.to_dict()
+
+
+@router.delete("/pipelines/{pipeline_id}", status_code=204, response_model=None)
+async def delete_pipeline(
+    pipeline_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    """DELETE /api/pipelines/:id: apaga a pipeline (cascade de nós/arestas/runs).
+
+    409 ``graph_running`` se há run ativo (mesma regra do PUT). A limpeza dos
+    workspaces em disco dos runs fica para a Task 5 (``WorkspaceManager``);
+    até lá não há nada a fazer aqui além do delete no banco.
+    """
+    pipeline, _nodes, _edges = await _load_owned(db, pipeline_id, user)
+    await _assert_not_running(db, pipeline_id)
+    await db.delete(pipeline)
+    await db.commit()
+
+
+@router.post("/pipelines/{pipeline_id}/duplicate", status_code=201)
+async def duplicate_pipeline(
+    pipeline_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """POST /api/pipelines/:id/duplicate: cópia do grafo, sem runs.
+
+    Novos UUIDs para nós e arestas (mapa antigo→novo, remapeando
+    source/target e o entryNodeId); nome ``"<nome> (cópia)"``; status
+    ``draft``; repositório (se houver) é copiado junto.
+    """
+    pipeline, nodes, edges = await _load_owned(db, pipeline_id, user)
+
+    new_id = uuid.uuid4()
+    id_map: dict[uuid.UUID, uuid.UUID] = {n.id: uuid.uuid4() for n in nodes}
+    new_entry = id_map.get(pipeline.entry_node_id, pipeline.entry_node_id)
+
+    new_pipeline = Pipeline(
+        id=new_id,
+        owner_id=user.owner_id,
+        name=f"{pipeline.name} (cópia)",
+        description=pipeline.description,
+        status="draft",
+        entry_node_id=new_entry,
+        git_integration_id=pipeline.git_integration_id,
+        git_repository=pipeline.git_repository,
+        git_base_branch=pipeline.git_base_branch,
+    )
+    db.add(new_pipeline)
+
+    for n in nodes:
+        db.add(
+            PipelineNode(
+                id=id_map[n.id],
+                pipeline_id=new_id,
+                agent_id=n.agent_id,
+                position=n.position,
+                label=n.label,
+                agent_snapshot=n.agent_snapshot,
+            )
+        )
+    for e in edges:
+        db.add(
+            PipelineEdge(
+                id=uuid.uuid4(),
+                pipeline_id=new_id,
+                type=e.type,
+                source=id_map.get(e.source, e.source),
+                target=id_map.get(e.target, e.target),
+                condition=e.condition,
+                label=e.label,
+                requires_approval=e.requires_approval,
+                approval_channel=e.approval_channel,
+                approval_message=e.approval_message,
+                data_mapping=e.data_mapping,
+                reject_target=e.reject_target,
+            )
+        )
+
+    await db.commit()
+    return await _load_pipeline_response(db, new_id, user)

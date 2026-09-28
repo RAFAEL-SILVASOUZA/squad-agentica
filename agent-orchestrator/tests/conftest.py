@@ -84,3 +84,40 @@ async def session(test_engine) -> AsyncIterator[AsyncSession]:
 
 # Import shared API fixtures so pytest can discover them from integration_api_fixtures
 from tests.integration_api_fixtures import client, owner_id, test_app, test_user  # noqa: F401
+
+
+@pytest_asyncio.fixture
+async def make_agent(client):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+    """Cria um agente mínimo via POST /api/agents (usa o ``client`` visível no módulo)."""
+
+    async def _make(name: str, **overrides):
+        body = {
+            "name": name,
+            "type": "custom",
+            "prompt": "Responda com o campo result.",
+            "actions": ["finalize"],
+            **overrides,
+        }
+        resp = await client.post("/api/agents", json=body)
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def make_git_integration(client):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+    """Cria uma integração git (github por padrão) via POST /api/integrations."""
+
+    async def _make(type: str = "github", **overrides):
+        body = {
+            "type": type,
+            "name": f"git-{uuid.uuid4().hex[:8]}",
+            "config": {"organization": "org"} if type == "azure" else {},
+            **overrides,
+        }
+        resp = await client.post("/api/integrations", json=body)
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    return _make

@@ -348,6 +348,14 @@ class Pipeline(Base):
     # recriado ao editar o grafo; o validador (pe-validator) garante a referência.
     entry_node_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     current_checkpoint: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Repositório git vinculado à pipeline (Task 1-3: tabela integrations).
+    # SET NULL: se a integração for removida, a pipeline mantém o histórico
+    # mas perde o vínculo (o portal reexibe "sem repositório").
+    git_integration_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True
+    )
+    git_repository: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    git_base_branch: Mapped[str | None] = mapped_column(String(200), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created_at()
@@ -465,6 +473,14 @@ class PipelineRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Publicação do PR (Task 5+): preenchidos pelo worker ao final do run
+    # quando a pipeline tem repositório configurado.
+    pr_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    publish_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="none", server_default="none"
+    )
+    publish_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     pipeline: Mapped["Pipeline"] = relationship(back_populates="runs")
     checkpoints: Mapped[list["Checkpoint"]] = relationship(
