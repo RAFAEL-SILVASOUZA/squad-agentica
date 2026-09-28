@@ -39,10 +39,11 @@ function agentTags(agent: Agent): string[] {
   for (const integration of agent.integrations ?? []) {
     tags.push(integration.platform);
   }
-  for (const skill of agent.skills ?? []) {
-    tags.push(skill.skillId);
-  }
-  return tags.slice(0, 3);
+  // A mochila guarda só o id da skill; exibir o UUID não ajuda. Conta.
+  const skills = agent.skills?.length ?? 0;
+  if (skills > 0) tags.push(skills === 1 ? "1 skill" : `${skills} skills`);
+  // Sem repetição (integração repetida gerava key duplicada no React).
+  return Array.from(new Set(tags)).slice(0, 3);
 }
 
 export function AgentCard({ agent, status = "idle" }: AgentCardProps) {

@@ -66,15 +66,16 @@ describe("AgentCard", () => {
     expect(screen.getByText("azure")).toBeInTheDocument();
   });
 
-  it("renders skill tags", () => {
+  it("summarizes skills instead of showing their ids", () => {
     render(
       <AgentCard
         agent={makeAgent({
-          skills: [{ skillId: "code-review", config: {} }],
+          skills: [{ skillId: "25c60d5e-b369-4960-9809-e5e1f77cf756", config: {} }],
         })}
       />
     );
-    expect(screen.getByText("code-review")).toBeInTheDocument();
+    expect(screen.getByText("1 skill")).toBeInTheDocument();
+    expect(screen.queryByText(/25c60d5e/)).not.toBeInTheDocument();
   });
 
   it("caps tags at 3", () => {

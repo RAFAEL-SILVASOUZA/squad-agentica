@@ -1102,15 +1102,13 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
                         borderRadius: "var(--radius-sm)",
                         padding: 8,
                         overflow: "auto",
-                        maxHeight: 120,
+                        maxHeight: 320,
                         margin: 0,
                         whiteSpace: "pre-wrap",
                         wordBreak: "break-word",
                       }}
                     >
-                      {typeof selectedNodeOutput === "string"
-                        ? selectedNodeOutput
-                        : JSON.stringify(selectedNodeOutput, null, 2)}
+                      {formatNodeOutput(selectedNodeOutput)}
                     </pre>
                   </div>
                 )}
@@ -1502,6 +1500,22 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
  * - approval:new
  * - approval:resolved
  */
+
+/**
+ * Saída do nó legível: cada porta com o texto como veio do agente (markdown
+ * com quebras de linha reais), em vez de JSON com "\n" escapado.
+ */
+function formatNodeOutput(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    const entries = Object.entries(output as Record<string, unknown>).filter(([k]) => k !== "_action");
+    return entries
+      .map(([k, v]) => `▸ ${k}\n${typeof v === "string" ? v : JSON.stringify(v, null, 2)}`)
+      .join("\n\n");
+  }
+  return JSON.stringify(output, null, 2);
+}
+
 export function PipelineMonitor(props: PipelineMonitorProps) {
   return (
     <ReactFlowProvider>
