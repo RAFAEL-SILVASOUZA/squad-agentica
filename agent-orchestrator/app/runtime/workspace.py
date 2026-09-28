@@ -54,6 +54,27 @@ def _scrub(text: str) -> str:
     return _CRED.sub(r"\1***@", text)
 
 
+# Teto do texto de diff exposto pela API do run (Task 8, fix round 1): um
+# ``git diff`` sem limite pode ter milhões de caracteres (run que reescreve
+# muitos arquivos), o que travaria o cliente/DevTools ao tentar renderizar a
+# resposta JSON inteira. Constante única — reaproveitada por
+# ``truncate_diff`` (chamada em app/api/workspaces.py).
+DIFF_MAX_CHARS = 500_000
+
+
+def truncate_diff(text: str, max_chars: int = DIFF_MAX_CHARS) -> tuple[str, bool]:
+    """Corta ``text`` em até ``max_chars``, sempre numa quebra de linha (nunca
+    no meio de uma linha do diff). Retorna ``(texto, truncated)``."""
+    if len(text) <= max_chars:
+        return text, False
+    cut = text.rfind("\n", 0, max_chars)
+    if cut <= 0:
+        # Sem quebra de linha antes do limite (linha única enorme): corta
+        # mesmo assim, no limite exato.
+        cut = max_chars
+    return text[:cut], True
+
+
 def slugify(name: str) -> str:
     """Slug ASCII curto (<=40 chars) a partir de um nome livre (ex.: nome da
     pipeline); usado tanto no nome da branch (``slugify_branch``) quanto no
@@ -259,7 +280,11 @@ class WorkspaceManager:
         if not (p / ".git").exists():
             return ""
         await _git(p, "add", "-A", "-N")
-        _, out = await _git(p, "diff")
+        # ``--no-color``: explícito mesmo sem tty (git já desliga cor por
+        # padrão fora de terminal) — evita depender desse comportamento
+        # implícito. Arquivo binário: o git detecta pelo conteúdo e imprime
+        # "Binary files a/... and b/... differ" em vez do conteúdo bruto.
+        _, out = await _git(p, "diff", "--no-color")
         return out
 
     def zip_bytes(self, run_id: str) -> bytes:

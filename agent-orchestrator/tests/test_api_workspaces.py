@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import time
 import zipfile
 
@@ -32,6 +33,7 @@ async def test_files_content_diff_and_zip(full_client, make_run_with_workspace):
     )
     assert bad.status_code == 400
     assert bad.json()["code"] == "invalid_path"
+    assert bad.json()["error"] == "validation error"
 
     z = await full_client.get(f"/api/runs/{run_id}/archive")
     assert z.status_code == 200, z.text
@@ -54,7 +56,55 @@ async def test_diff_empty_without_git_repo(full_client, make_run_with_workspace)
     (path / "a.txt").write_text("x")
     resp = await full_client.get(f"/api/runs/{run_id}/diff")
     assert resp.status_code == 200
-    assert resp.json() == {"diff": ""}
+    assert resp.json() == {"diff": "", "truncated": False}
+
+
+async def test_diff_small_change_is_not_truncated(full_client, make_run_with_git_workspace):
+    run_id, path = await make_run_with_git_workspace()
+    (path / "novo.txt").write_text("ola\n")
+
+    resp = await full_client.get(f"/api/runs/{run_id}/diff")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["truncated"] is False
+    assert "+ola" in data["diff"]
+
+
+async def test_diff_large_change_is_truncated_at_line_boundary(
+    full_client, make_run_with_git_workspace
+):
+    from app.runtime.workspace import DIFF_MAX_CHARS
+
+    run_id, path = await make_run_with_git_workspace()
+    # Diff bem maior que o limite (cada linha nova conta como uma linha do
+    # diff, prefixada com "+"): força o truncamento.
+    (path / "grande.txt").write_text(
+        "\n".join(f"linha numero {i:06d} de conteudo bem grande" for i in range(20_000)) + "\n"
+    )
+
+    resp = await full_client.get(f"/api/runs/{run_id}/diff")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["truncated"] is True
+    assert len(data["diff"]) <= DIFF_MAX_CHARS
+    # Cortado numa quebra de linha: a última linha do texto truncado (se for
+    # uma linha de conteúdo, não um cabeçalho do diff) está completa, nunca
+    # partida no meio.
+    last_line = data["diff"].splitlines()[-1] if data["diff"] else ""
+    if last_line.startswith("+linha numero"):
+        assert re.fullmatch(r"\+linha numero \d{6} de conteudo bem grande", last_line)
+
+
+async def test_diff_binary_file_does_not_dump_bytes(full_client, make_run_with_git_workspace):
+    run_id, path = await make_run_with_git_workspace()
+    (path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x01\x02\x03\x04\x05")
+
+    resp = await full_client.get(f"/api/runs/{run_id}/diff")
+    assert resp.status_code == 200, resp.text
+    diff = resp.json()["diff"]
+    assert "Binary files" in diff
+    assert "\x89PNG" not in diff
+    assert "\x00" not in diff
 
 
 async def test_missing_workspace_responses(full_client, make_run_with_workspace):
@@ -68,7 +118,7 @@ async def test_missing_workspace_responses(full_client, make_run_with_workspace)
     assert files.status_code == 200 and files.json() == {"items": []}
 
     diff = await full_client.get(f"/api/runs/{run_id}/diff")
-    assert diff.status_code == 200 and diff.json() == {"diff": ""}
+    assert diff.status_code == 200 and diff.json() == {"diff": "", "truncated": False}
 
     archive = await full_client.get(f"/api/runs/{run_id}/archive")
     assert archive.status_code == 404

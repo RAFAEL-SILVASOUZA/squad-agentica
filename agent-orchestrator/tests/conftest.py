@@ -200,6 +200,41 @@ async def make_run_with_workspace(session, test_user, tmp_path, monkeypatch):  #
     return _make
 
 
+@pytest_asyncio.fixture
+async def make_run_with_git_workspace(session, test_user, tmp_path, monkeypatch, remote):  # noqa: F811 (nome do parâmetro == nome do fixture, por design)
+    """Como ``make_run_with_workspace``, mas o workspace é um clone real do
+    fixture ``remote`` (repositório bare local) — para testes que precisam de
+    um diff de verdade (ex.: truncamento e arquivo binário em
+    ``GET /api/runs/:runId/diff``, Task 8 fix round 1)."""
+    from datetime import UTC, datetime
+
+    import app.api.workspaces as workspaces_module
+    from app.db.models import Pipeline, PipelineRun
+    from app.runtime.workspace import WorkspaceManager
+
+    ws_root = tmp_path / "workspaces"
+    monkeypatch.setattr(workspaces_module, "WorkspaceManager", lambda: WorkspaceManager(ws_root))
+
+    async def _make(name: str = "Projeto de teste"):
+        pipeline = Pipeline(
+            id=uuid.uuid4(), owner_id=test_user.owner_id, name=name, description="",
+            status="completed", entry_node_id=uuid.uuid4(),
+        )
+        session.add(pipeline)
+        await session.flush()
+        run = PipelineRun(
+            id=uuid.uuid4(), owner_id=test_user.owner_id, pipeline_id=pipeline.id,
+            thread_id=f"{pipeline.id}:r", status="completed", started_at=datetime.now(UTC),
+        )
+        session.add(run)
+        await session.commit()
+        wm = WorkspaceManager(ws_root)
+        path = await wm.clone(str(run.id), remote, "main")
+        return str(run.id), path
+
+    return _make
+
+
 def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 

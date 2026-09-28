@@ -28,7 +28,7 @@ from app.auth.dependencies import get_current_user
 from app.core.errors import AppError
 from app.db.models import Pipeline, User
 from app.db.session import get_db
-from app.runtime.workspace import WorkspaceError, WorkspaceManager, slugify
+from app.runtime.workspace import WorkspaceError, WorkspaceManager, slugify, truncate_diff
 
 router = APIRouter(tags=["run-workspace"])
 
@@ -76,7 +76,7 @@ async def get_file_content(
         return ws.read_file(str(run_id), path)
     except WorkspaceError as e:
         if "fora do workspace" in e.message:
-            raise AppError(400, "bad_request", "invalid_path") from e
+            raise AppError(400, "validation error", "invalid_path") from e
         raise AppError(404, "not_found", "file_not_found") from e
 
 
@@ -90,8 +90,9 @@ async def get_diff(
     ws = WorkspaceManager()
     rid = str(run_id)
     if not ws.path(rid).is_dir():
-        return {"diff": ""}
-    return {"diff": await ws.diff(rid)}
+        return {"diff": "", "truncated": False}
+    text, truncated = truncate_diff(await ws.diff(rid))
+    return {"diff": text, "truncated": truncated}
 
 
 @router.get("/runs/{run_id}/archive")
