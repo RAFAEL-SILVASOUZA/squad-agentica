@@ -6,7 +6,9 @@ real nos testes.
 """
 
 import io
+import os
 import subprocess
+import time
 import zipfile
 
 import pytest
@@ -767,3 +769,69 @@ async def test_changed_files_after_publish_reports_deleted(tmp_path, remote):
     changed = {c["path"]: c["status"] for c in await ws.changed_files("run1")}
     assert changed == {"README.md": "deleted"}
     assert "-" in await ws.diff("run1")
+
+
+def _run(cwd, *args):
+    return subprocess.run(
+        list(args), cwd=cwd, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+async def test_existing_submodule_dir_never_executes_agent_filter(tmp_path, remote):
+    """Um gitlink da base cujo diretório o agente re-clonou no SHA registrado
+    e armou com ``filter.evil.clean``: nem changed_files, nem diff, nem
+    commit_and_push podem rodar o filtro (``git add`` entra no submódulo)."""
+    from app.runtime.workspace import _HARDEN
+
+    ident = ["-c", "user.name=t", "-c", "user.email=t@t"]
+    sub = tmp_path / "sub.git"
+    _run(tmp_path, "git", "init", "--bare", "-b", "main", str(sub))
+    sub_seed = tmp_path / "sub_seed"
+    _run(tmp_path, "git", "clone", str(sub), str(sub_seed))
+    (sub_seed / "f.txt").write_text("v1\n")
+    _run(sub_seed, "git", *ident, "add", ".")
+    _run(sub_seed, "git", *ident, "commit", "-m", "s")
+    _run(sub_seed, "git", "push", "origin", "main")
+    sub_sha = _run(sub_seed, "git", "rev-parse", "HEAD")
+
+    seed = tmp_path / "seed"
+    _run(seed, "git", "update-index", "--add", "--cacheinfo", f"160000,{sub_sha},lib")
+    _run(seed, "git", *ident, "commit", "-m", "submodulo")
+    _run(seed, "git", "push", "origin", "main")
+
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("r1", remote, "main")
+    marker = tmp_path / "PWNED"
+    lib = p / "lib"
+    if lib.exists():
+        import shutil
+        shutil.rmtree(lib)
+    _run(p, "git", "clone", "-q", str(sub), str(lib))
+    _run(lib, "git", "checkout", "-q", sub_sha)
+    _run(lib, "git", "config", "filter.evil.clean", f"sh -c 'touch {marker}; cat'")
+    _run(lib, "git", "config", "filter.evil.required", "false")
+    (lib / ".git" / "info").mkdir(exist_ok=True)
+    (lib / ".git" / "info" / "attributes").write_text("* filter=evil\n")
+    (lib / "f.txt").write_text("v2\n")  # mesmo tamanho: só o conteúdo muda
+    os.utime(lib / "f.txt", (time.time() + 10, time.time() + 10))
+    (p / "novo.txt").write_text("x\n")
+
+    # Controle (ANTES do fluxo protegido): o ``git add -A`` comum, com as
+    # mesmas flags, dispara o filtro — prova que o teste exercita o vetor.
+    _run(
+        p, "git", *_HARDEN, f"--git-dir={ws.git_dir('r1')}", f"--work-tree={p}",
+        "add", "-A",
+    )
+    if not marker.exists():
+        pytest.skip("git desta versão não reproduz o vetor no controle")
+    marker.unlink()
+    _run(p, "git", f"--git-dir={ws.git_dir('r1')}", f"--work-tree={p}", "reset", "-q")
+
+    await ws.changed_files("r1")
+    await ws.diff("r1")
+    assert not marker.exists()
+    assert await ws.commit_and_push("r1", remote, "agent-portal/evil", "m") == "agent-portal/evil"
+    assert not marker.exists()
+    tree = _run(tmp_path, "git", "--git-dir", remote, "ls-tree", "agent-portal/evil")
+    assert f"160000 commit {sub_sha}\tlib" in tree
+    assert "novo.txt" in tree

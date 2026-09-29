@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import unicodedata
 import zipfile
@@ -298,9 +299,14 @@ class WorkspaceManager:
     def _write_info(self, run_id: str, nested: Iterable[str] = ()) -> None:
         info = self.git_dir(run_id) / "info"
         info.mkdir(parents=True, exist_ok=True)
-        (info / "attributes").write_text(_INFO_ATTRIBUTES)
         extra = "".join(f"{_exclude_pattern(n)}\n" for n in nested)
-        (info / "exclude").write_text(_INFO_EXCLUDE + extra)
+        # Atômico (temp + replace): polling concorrente nunca lê arquivo truncado.
+        for name, content in (
+            ("attributes", _INFO_ATTRIBUTES), ("exclude", _INFO_EXCLUDE + extra),
+        ):
+            tmp = info / f".{name}.{os.getpid()}.{threading.get_ident()}.tmp"
+            tmp.write_text(content)
+            os.replace(tmp, info / name)
 
     def _exclude_nested_sync(self, run_id: str) -> list[str]:
         nested = _find_nested_repos(self.path(run_id))
@@ -318,6 +324,23 @@ class WorkspaceManager:
                 "Workspace do run %s tem repositório git aninhado (ignorado): %s",
                 run_id, ", ".join(nested[:10]),
             )
+
+    async def _add_all(
+        self, run_id: str, *flags: str, env: dict[str, str] | None = None
+    ) -> None:
+        """``git add -A`` que NUNCA entra em gitlinks já presentes no índice:
+        o ``add`` roda ``git status`` dentro do diretório de cada submódulo
+        cujo HEAD bate com o SHA registrado, e o repositório ali é controlado
+        pelo agente (filter.*.clean = execução de código). Cada gitlink vira um
+        pathspec de exclusão literal; sem gitlinks, o pathspec é só ``.``."""
+        _, staged = await self._rgit(run_id, "ls-files", "-s", "-z", env=env)
+        excludes = []
+        for entry in staged.split("\x00"):
+            if entry.startswith(_GITLINK_MODE + " "):
+                excludes.append(f":(exclude,top,literal){entry.split(chr(9), 1)[1]}")
+        await self._rgit(
+            run_id, "add", "-A", *flags, "--", ".", *excludes, env=env
+        )
 
     async def _drop_new_gitlinks(self, run_id: str, env: dict[str, str] | None = None) -> None:
         """Defesa em profundidade: todo gitlink do índice que não existe
@@ -435,7 +458,7 @@ class WorkspaceManager:
 
             await asyncio.to_thread(_prepare_index)
             env = {"GIT_INDEX_FILE": tmp_index}
-            await self._rgit(run_id, "add", "-A", "-N", env=env)
+            await self._add_all(run_id, "-N", env=env)
             await self._drop_new_gitlinks(run_id, env=env)
             yield env
         finally:
@@ -662,7 +685,7 @@ class WorkspaceManager:
             author = ["-c", f"user.name={settings.git_author_name}",
                       "-c", f"user.email={settings.git_author_email}"]
             await self._exclude_nested_repos(run_id)
-            await self._rgit(run_id, "add", "-A")
+            await self._add_all(run_id)
             await self._drop_new_gitlinks(run_id)
             await self._rgit(run_id, *author, "commit", "--no-verify", "-m", message)
         _, head_out = await self._rgit(run_id, "rev-parse", "HEAD")
