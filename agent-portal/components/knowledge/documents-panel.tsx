@@ -42,6 +42,8 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
   const [duplicate, setDuplicate] = React.useState<DuplicateInfo | null>(null);
   const [removing, setRemoving] = React.useState<KnowledgeDocument | null>(null);
   const [removeBusy, setRemoveBusy] = React.useState(false);
+  const baseIdRef = React.useRef(baseId);
+  baseIdRef.current = baseId;
   const onCountRef = React.useRef(onCountChange);
   onCountRef.current = onCountChange;
 
@@ -50,6 +52,7 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
     try {
       // Lista paginada (contrato §8): os itens vêm em ``items``.
       const res = await api.list<KnowledgeDocument>(`/api/knowledge/${baseId}/documents`, { page: 1, limit: 100 });
+      if (baseIdRef.current !== baseId) return null; // resposta de outra base
       setDocuments(res.items);
       return res.items.length;
     } catch (e) {
@@ -168,7 +171,7 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
             Nenhum documento ainda. Envie um arquivo para começar.
           </p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
             {documents.map((doc) => (
               <div
                 key={doc.id}

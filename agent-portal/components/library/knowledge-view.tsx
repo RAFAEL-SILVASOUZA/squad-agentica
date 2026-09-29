@@ -62,7 +62,7 @@ export function KnowledgeView() {
   const [error, setError] = React.useState<string | null>(null);
 
   const [selectedBase, setSelectedBase] = React.useState<KnowledgeBaseItem | null>(null);
-  
+
   const [createModalOpen, setCreateModalOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState(EMPTY_CREATE_FORM);
   const [createFormError, setCreateFormError] = React.useState<string | null>(null);
@@ -227,9 +227,8 @@ export function KnowledgeView() {
               description="Escolha uma base de conhecimento na sidebar para ver os documentos."
             />
           ) : (
-            <>
+            <React.Fragment key={selectedBase.id}>
               <KbHeader
-                key={selectedBase.id}
                 base={selectedBase}
                 onUpdated={updateBase}
                 onDeleted={() => {
@@ -242,7 +241,7 @@ export function KnowledgeView() {
                 onCountChange={(count) => updateBase({ ...selectedBase, documentCount: count })}
               />
               <KbChat baseId={selectedBase.id} />
-            </>
+            </React.Fragment>
           )}
         </div>
       </div>

@@ -75,6 +75,8 @@ export function KbChat({ baseId }: KbChatProps) {
   const [deleting, setDeleting] = React.useState<ConversationSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const wasSending = React.useRef(false);
   // Descarta respostas de carregamentos superados (troca rápida de conversa/base).
   const loadSeq = React.useRef(0);
 
@@ -108,6 +110,7 @@ export function KbChat({ baseId }: KbChatProps) {
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setSending(false);
     setActiveId(null);
     setMessages([]);
     setError(null);
@@ -132,6 +135,12 @@ export function KbChat({ baseId }: KbChatProps) {
     };
   }, [fetchList, openConversation]);
 
+  // Devolve o foco ao campo quando o envio termina (ele fica desabilitado).
+  React.useEffect(() => {
+    if (wasSending.current && !sending) inputRef.current?.focus();
+    wasSending.current = sending;
+  }, [sending]);
+
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ block: "end" });
   }, [messages, sending, error]);
@@ -155,35 +164,44 @@ export function KbChat({ baseId }: KbChatProps) {
         setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "user", content: text, sources: [] }]);
         setInput("");
       }
+      // Se o usuário trocar de base/conversa durante o envio (loadSeq muda),
+      // a resposta não pode escrever na visão da outra conversa.
+      const seq = loadSeq.current;
+      const stale = () => seq !== loadSeq.current;
       let cid = activeId;
       try {
         if (!cid) {
           const created = await api.post<{ id: string }>(base, {});
           cid = created.id;
-          setActiveId(cid);
+          if (!stale()) setActiveId(cid);
         }
         const answer = await api.post<ChatMessage>(`${base}/${cid}/messages`, { content: text });
+        if (stale()) return;
         setMessages((prev) => [...prev, { ...answer, sources: answer.sources ?? [] }]);
         try {
-          setConversations(await fetchList());
+          const items = await fetchList();
+          if (!stale()) setConversations(items);
         } catch {
           /* a lista é só informativa */
         }
       } catch (e) {
+        if (stale()) return;
         setError(e instanceof ApiError ? e.message : "Não foi possível obter a resposta.");
         setFailedContent(text);
         if (cid) {
           // A pergunta já foi gravada no servidor: recarrega para exibi-la.
           try {
             const detail = await api.get<ConversationDetail>(`${base}/${cid}`);
+            if (stale()) return;
             setMessages(detail.messages ?? []);
-            setConversations(await fetchList());
+            const items = await fetchList();
+            if (!stale()) setConversations(items);
           } catch {
             /* mantém a pergunta local */
           }
         }
       } finally {
-        setSending(false);
+        if (!stale()) setSending(false);
       }
     },
     [activeId, base, fetchList, sending]
@@ -213,13 +231,14 @@ export function KbChat({ baseId }: KbChatProps) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "stretch" }}>
         {/* Conversas */}
         <div style={{ flex: "1 1 200px", maxWidth: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          <Button size="sm" variant="primary" onClick={newConversation}>
+          <Button size="sm" variant="primary" onClick={newConversation} disabled={sending}>
             <MessageSquarePlus size={14} aria-hidden="true" />
             Nova conversa
           </Button>
           <div
             aria-label="Conversas"
-            style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 180, overflowY: "auto" }}
+            className="kb-conv-list"
+            style={{ display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}
           >
             {conversations.length === 0 && !loading && (
               <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Nenhuma conversa ainda.</p>
@@ -239,6 +258,7 @@ export function KbChat({ baseId }: KbChatProps) {
                 <button
                   type="button"
                   onClick={() => void openConversation(c.id)}
+                  disabled={sending}
                   aria-current={c.id === activeId ? "true" : undefined}
                   style={{
                     flex: 1,
@@ -360,6 +380,7 @@ export function KbChat({ baseId }: KbChatProps) {
 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <textarea
+              ref={inputRef}
               aria-label="Mensagem"
               value={input}
               rows={2}
