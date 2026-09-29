@@ -76,3 +76,41 @@ O passo 5 da Task 13 fica com o controlador e o usuário:
 - registrar prints e resultado aqui, e as pendências em `PENDENCIAS.md`.
 
 Resultado: _pendente_.
+
+## Revisão final — correções (2026-09-29)
+
+Revisão do branch inteiro ("With fixes"). Commits `b9ca9f8`, `c80d71c`, `2f5d500`, `0e0ae36`.
+
+| Achado | Correção |
+|---|---|
+| **C1** agente escrevia `.git/...` no workspace e o orchestrator rodava git ali (fsmonitor, hooks, drivers = execução de código no orchestrator) | Clone com `--separate-git-dir` em `GIT_DIRS_DIR` (`/var/lib/agent-portal/gitdirs`, volume `project-gitdirs` só do orchestrator). Todo git usa `--git-dir`/`--work-tree` explícitos, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_ATTR_NOSYSTEM=1`, `core.hooksPath=/dev/null`, `core.fsmonitor=false`, `core.attributesFile=/dev/null`, `--no-ext-diff --no-textconv`, e `<gitdir>/info/attributes` = `* !filter !diff !merge` (tem precedência sobre o `.gitattributes` do workspace). `info/exclude` tira `.git`, `node_modules/`, `__pycache__/`, `.npm/`, `.cache/` do commit. O arquivo `.git` que o clone deixa no workspace é apagado. Time travel copia o gitdir; remove/purge o apagam. O worker recusa caminho com segmento `.git`. |
+| **I1** I/O de disco no loop de eventos | árvore, leitura, zip e rmtree em `asyncio.to_thread`; listagem com teto de 5000 (`truncated: true`, aviso na aba Arquivos); zip gravado em arquivo temporário e enviado por `FileResponse` (apagado depois), teto de 200 MB → 413 `archive_too_large`. |
+| **I2** purge ignorava o estado do run; workspace sumido virava "sem alterações" | purge pula runs `running`/`paused` (consulta no banco) e usa o mtime mais recente de workspace+gitdir; publicação sem workspace/gitdir falha com "O workspace deste run expirou e foi removido"; o worker não recria workspace de run (`/execute` → 400 `invalid_workspace`, ferramentas → erro claro). |
+| **I3** excluir conexão Git deixava repositório órfão | o delete da integração zera `git_integration_id`, `git_repository` e `git_base_branch` das pipelines; `git_integration_id` nulo = publicação `none`. |
+| **I4** ponte MCP só com o token dos workers | HMAC por run (`MCP_CAPABILITY_SECRET`, ou derivado de `INTEGRATIONS_SECRET_KEY`) sobre `runId\|ownerId\|workspaceDir`, emitido ao despachar o nó, repassado pelo worker; sem ele ou adulterado → 403 `mcp_capability_invalid`. |
+| **I5** paginação | GitHub segue `Link: rel="next"` (só no host da API) até 10 páginas de 100; Azure segue `x-ms-continuationtoken`; o seletor sempre inclui a branch padrão. |
+| Menores | toast de erro quando o execute devolve run `failed`; HOME do shell num diretório temporário fora do workspace; botão "Publicar" para run concluído com repositório e `publishStatus: none`; diff com índice temporário (sem disputa de `index.lock`) e 409 `diff_unavailable`; pipeline excluída durante a publicação não gera 500 (o endpoint responde 404 `run_not_found`); aviso no startup com `GIT_CLONE_BASE_OVERRIDE`; token ausente do gitdir e dos logs depois de clone/push por HTTP autenticado; `.env.example` e compose com as novas variáveis; `revokeObjectURL` ~1 s depois; novos códigos em `CODE_MESSAGES` e `details.message`; relatórios de processo fora do índice do git. |
+
+**Acesso a shell dos agentes (decisão R9):** não há sandbox de shell. O toggle "Acesso a shell" no editor de agentes avisa que ele é para uso **confiável e de um único usuário**: o shell do agente roda no container do worker e enxerga o volume `/workspaces` inteiro (workspaces de outros runs). O repositório git (e o token) não ficam mais nesse volume.
+
+Compatibilidade: workspaces criados antes desta revisão têm o `.git` dentro do workspace e não têm gitdir privado. Para o portal, eles aparecem sem repositório (lista de arquivos sem status, diff vazio, publicar → "expirou"). Os runs antigos do ambiente de desenvolvimento saem na retenção.
+
+### Resultados — modo mock (perfil test ligado)
+
+| Suíte | Resultado |
+|---|---|
+| orchestrator (`pytest`) | **671 passed** (eram 641; +30 novos) |
+| orchestrator `ruff` (arquivos tocados) | ok. `ruff check app tests`: os mesmos 20 erros **preexistentes** |
+| worker (`pytest`, `ruff`) | **57 passed** (eram 48), ruff ok |
+| portal `vitest` / `tsc --noEmit` / `npm run lint` | **60 arquivos / 489 testes passed** / ok / sem avisos |
+| integração (`tests/integration`) | **97 passed, 1 skipped** (skip conhecido). Na 1ª rodada, logo depois de recriar o orchestrator, `test_07::test_tokens_not_logged` falhou: o nginx registrou no error log a URL `/api/ws?token=...` de uma reconexão durante o restart ("Connection refused"). Não é regressão. A rodada seguinte, com o stack estável, passou inteira. |
+| `test_09_git_project.py` | passou: clone, arquivos, push e PR usando o gitdir privado. Depois do run, o workspace não tem `.git` e o `config` do gitdir não contém o token. |
+| E2E | 06: 2 passed · 10: 1 passed |
+
+Testes de segurança novos (`tests/test_runtime_workspace.py`):
+- um `.git` **válido** plantado no workspace, com `core.fsmonitor`, `hooksPath`, `diff.external`, textconv e filter apontando para um script que cria um marcador, mais um `.gitattributes` que pede esses drivers. Controle: um `git status` rodado dentro do workspace, como era antes, executa o script. Com o código novo, `changed_files`, `diff` e `commit_and_push` não criam o marcador, e o `.git` plantado não entra no commit;
+- driver `filter`/`textconv` definido por `-c` na linha de comando: o `info/attributes` anula o pedido do `.gitattributes`. Sem esse arquivo, o driver executa (conferido à parte);
+- o gitdir privado fica fora da raiz dos workspaces;
+- clone e push num servidor git smart-HTTP local com Basic auth (`git http-backend`): o token não aparece em nenhum arquivo do gitdir ou do workspace, nem nos logs.
+
+Ao final o stack voltou ao **modo real**: `LLM_PROVIDER`/`EMBEDDING_PROVIDER=openai` no orchestrator e nos 2 workers, `GITHUB_API_BASE=https://api.github.com`, override vazio e `git-test` removido. `/api/health` e `/login` respondem 200.
