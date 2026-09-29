@@ -41,14 +41,22 @@ describe("IntegrationsView", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByDisplayValue("pat-123")).not.toBeInTheDocument();
   });
-  it("shows the translated message when saving fails with an ApiError", async () => {
-    mocks.post.mockRejectedValue(new ApiError(400, { error: "validation error", code: "secret_key_missing" }));
+  it("falha no save vira painel inline com 'Tentar de novo' e detalhe com o contexto da API", async () => {
+    const saveError = new ApiError(400, { error: "validation error", code: "secret_key_missing" });
+    saveError.method = "POST";
+    saveError.path = "/api/integrations";
+    mocks.post.mockRejectedValue(saveError);
     show();
     fireEvent.click(await screen.findByRole("button", { name: "Nova conexão" }));
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Nova" } });
     fireEvent.change(screen.getByLabelText("Token"), { target: { value: "pat-123" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar conexão" }));
-    expect(await screen.findByText("A chave de criptografia do servidor não está configurada. Contate o administrador.")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Não foi possível salvar a conexão");
+    // O detalhe técnico (HTTP 400 · POST /api/integrations) fica recolhido.
+    fireEvent.click(screen.getByRole("button", { name: "Ver detalhes" }));
+    expect(alert).toHaveTextContent("HTTP 400 · POST /api/integrations");
+    expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
   });
   it("preserves the token when editing without a replacement", async () => {
     show(); fireEvent.click(await screen.findByRole("button", { name: "Editar Meu GitHub" }));

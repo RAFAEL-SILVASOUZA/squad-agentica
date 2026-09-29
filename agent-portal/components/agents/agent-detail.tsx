@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { ErrorPanel } from "@/components/ui/error-panel";
+import { ApiError } from "@/lib/api";
 import type {
   Agent,
   PortDef,
@@ -191,6 +193,8 @@ export function AgentDetail({
   const [integrationSel, setIntegrationSel] = React.useState("");
 
   const [nameError, setNameError] = React.useState<string | undefined>();
+  // Falha no save: bloqueia a ação principal, então fica inline com retry.
+  const [saveError, setSaveError] = React.useState<{ message: string; detail?: string } | null>(null);
 
   // Sincroniza o formulário quando a prop `agent` muda (config_update do
   // chat via resetKey, spec §10). Mantém a identidade dos campos via
@@ -352,13 +356,14 @@ export function AgentDetail({
       integrations,
     };
 
+    setSaveError(null);
     try {
       await onSave(payload);
     } catch (e) {
-      addToast(
-        "error",
-        e instanceof Error ? e.message : "Falha ao salvar o agente."
-      );
+      setSaveError({
+        message: "Não foi possível salvar o agente",
+        detail: e instanceof ApiError ? e.describe() : undefined,
+      });
     }
   };
 
@@ -372,6 +377,17 @@ export function AgentDetail({
         alignItems: "start",
       }}
     >
+      {/* Erro do save: inline com "Tentar de novo" (reexecuta o save) */}
+      {saveError && (
+        <div style={{ gridColumn: "1 / -1" }}>
+          <ErrorPanel
+            title={saveError.message}
+            detail={saveError.detail}
+            onRetry={() => void handleSave()}
+          />
+        </div>
+      )}
+
       {/* Coluna esquerda: identidade + contrato */}
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <Card>

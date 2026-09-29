@@ -125,23 +125,42 @@ export function errorMessageFromBody(status: number, body: unknown): string {
   return extractErrorMessage(status, obj).message;
 }
 
+export interface ApiErrorContext {
+  method?: string;
+  path?: string;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
+  /** Método HTTP da requisição falha (ex.: "POST"), quando há contexto. */
+  method?: string;
+  /** Caminho da requisição falha (ex.: "/api/agents/chat/confirm"), quando há contexto. */
+  path?: string;
   details?: Record<string, unknown>;
   retryAfter?: number;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody, context: ApiErrorContext = {}) {
     const { message, code } = extractErrorMessage(status, body as never);
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.method = context.method;
+    this.path = context.path;
     this.details = body.details;
 
     if (status === 429 && body.details?.retryAfter !== undefined) {
       this.retryAfter = Number(body.details.retryAfter);
     }
+  }
+
+  /** Linha técnica p/ detalhe de erro: "HTTP 404 · POST /api/agents/chat/confirm". */
+  describe(): string {
+    if (this.method && this.path) {
+      return `HTTP ${this.status} · ${this.method} ${this.path}`;
+    }
+    return `HTTP ${this.status}`;
   }
 }
 
@@ -258,7 +277,11 @@ async function send(path: string, opts: RequestOptions = {}, retried = false): P
     invalidateToken();
     if (!retried) return send(path, opts, true);
     redirectToLogin();
-    throw new ApiError(401, { error: "unauthorized", code: "not_authenticated" });
+    throw new ApiError(
+      401,
+      { error: "unauthorized", code: "not_authenticated" },
+      { method, path }
+    );
   }
 
   if (!res.ok) {
@@ -271,7 +294,7 @@ async function send(path: string, opts: RequestOptions = {}, retried = false): P
         code: "unknown",
       };
     }
-    throw new ApiError(res.status, errorBody);
+    throw new ApiError(res.status, errorBody, { method, path });
   }
 
   return res;

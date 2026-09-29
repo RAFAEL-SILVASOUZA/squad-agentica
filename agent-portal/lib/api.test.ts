@@ -104,6 +104,23 @@ describe("api", () => {
     }
   });
 
+  it("popula method, path e describe() no ApiError", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, { accessToken: "test-token" }))
+      .mockResolvedValueOnce(mockResponse(404, { error: "not_found", code: "not_found" }));
+
+    try {
+      await api.post("/api/agents/chat/confirm", {});
+      throw new Error("deveria ter lançado");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError);
+      const apiErr = e as ApiError;
+      expect(apiErr.method).toBe("POST");
+      expect(apiErr.path).toBe("/api/agents/chat/confirm");
+      expect(apiErr.describe()).toContain("HTTP 404 · POST /api/agents/chat/confirm");
+    }
+  });
+
   it("extracts retryAfter from 429 response", async () => {
     mockFetch
       .mockResolvedValueOnce(mockResponse(200, { accessToken: "test-token" }))

@@ -6,6 +6,7 @@ import type { GitProvider, Integration } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { ErrorPanel } from "@/components/ui/error-panel";
 
 export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
   provider: GitProvider;
@@ -18,6 +19,8 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
   const [token, setToken] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  // Falha no save da conexão: bloqueia a ação principal, então fica inline com retry.
+  const [saveError, setSaveError] = React.useState<{ message: string; detail?: string } | null>(null);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -28,6 +31,7 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
     }
     setBusy(true);
     setError("");
+    setSaveError(null);
     const config = { token: token.trim() || "***", ...(provider === "azure" ? { organization: organization.trim() } : {}) };
     try {
       if (connection) await api.put(`/api/integrations/${connection.id}`, { name: name.trim(), config });
@@ -35,7 +39,10 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
       setToken("");
       onSaved();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Não foi possível salvar a conexão. Confira os dados e tente novamente.");
+      setSaveError({
+        message: "Não foi possível salvar a conexão",
+        detail: e instanceof ApiError ? e.describe() : undefined,
+      });
     } finally { setBusy(false); }
   }
 
@@ -46,6 +53,13 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
       <Input label="Token" type="password" autoComplete="new-password" value={token} onChange={(e) => setToken(e.target.value)} required={!connection} disabled={busy}
         hint={`${provider === "github" ? "PAT com escopo repo" : "Code: Read & Write"}${connection ? ". Deixe vazio para manter o token atual." : ""}`} />
       {error && <p role="alert" style={{ color: "var(--error)" }}>{error}</p>}
+      {saveError && (
+        <ErrorPanel
+          title={saveError.message}
+          detail={saveError.detail}
+          onRetry={() => void save(new Event("submit") as unknown as React.FormEvent)}
+        />
+      )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Button type="button" onClick={onClose} disabled={busy}>Cancelar</Button>
         <Button type="submit" variant="primary" loading={busy}>Salvar conexão</Button>

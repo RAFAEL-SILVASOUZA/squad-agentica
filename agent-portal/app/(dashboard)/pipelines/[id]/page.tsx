@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
+import { ErrorPanel } from "@/components/ui/error-panel";
 import { ValidationList } from "@/components/flow/validation-list";
 import { RunInputsModal } from "@/components/flow/run-inputs-modal";
 import { PipelineHeader } from "@/components/pipelines/pipeline-header";
@@ -283,11 +284,16 @@ export default function PipelineDetailPage() {
   );
   const [runInputsOpen, setRunInputsOpen] = React.useState(false);
   const [errorsOpen, setErrorsOpen] = React.useState(false);
+  // Falha ao executar: bloqueia a ação principal, então fica inline com retry.
+  const [executeError, setExecuteError] = React.useState<{ message: string; detail?: string } | null>(null);
+  const runInputsRef = React.useRef<Record<string, string>>({});
 
 
   const handleExecute = React.useCallback(async (runInputs: Record<string, string>) => {
     if (hasErrors || executing || !pipeline) return;
     setExecuting(true);
+    setExecuteError(null);
+    runInputsRef.current = runInputs;
     try {
       // Salva o grafo antes de executar (estado local pode estar a frente)
       if (workNodes.length > 0) {
@@ -307,21 +313,24 @@ export default function PipelineDetailPage() {
       setRunInputsOpen(false);
       router.push(`/pipelines/${pipelineId}/run?tab=resultado`);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 409) {
-          addToast("error", "Este pipeline já está em execução.");
-        } else if (err.status === 400) {
-          addToast("error", "Grafo inválido. Corrija os erros de validação antes de executar.");
-        } else {
-          addToast("error", err.message || "Falha ao executar o pipeline");
-        }
-      } else {
-        addToast("error", "Falha ao executar o pipeline");
+      if (err instanceof ApiError && err.status === 409) {
+        // Estado, não falha: a pipeline já está em execução, dá pra ver no monitor.
+        addToast("error", "Este pipeline já está em execução.");
+        return;
       }
+      setExecuteError({
+        message: "Não foi possível executar a pipeline",
+        detail: err instanceof ApiError ? err.describe() : undefined,
+      });
     } finally {
       setExecuting(false);
     }
   }, [hasErrors, executing, pipeline, workNodes, workEdges, pipelineId, router, addToast]);
+
+  // Retry do ErrorPanel: reexecuta a mesma ação com os mesmos inputs.
+  const handleExecuteRetry = React.useCallback(() => {
+    void handleExecute(runInputsRef.current);
+  }, [handleExecute]);
 
   const handleExecuteClick = () => {
     if (hasErrors || executing || !pipeline) return;
@@ -544,6 +553,17 @@ export default function PipelineDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Erro da execução: inline com "Tentar de novo" (reexecuta o pipeline) */}
+      {executeError && (
+        <div style={{ marginBottom: 12 }}>
+          <ErrorPanel
+            title={executeError.message}
+            detail={executeError.detail}
+            onRetry={() => void handleExecuteRetry()}
+          />
+        </div>
+      )}
 
       {/* Flow Editor + EdgePanel */}
       <FlowEditor

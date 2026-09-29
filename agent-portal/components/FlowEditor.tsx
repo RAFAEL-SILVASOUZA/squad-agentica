@@ -32,7 +32,9 @@ import { AgentNode, type AgentNodeData } from "./flow/agent-node";
 import { PipelineEdgeComponent, type PipelineEdgeData } from "./flow/pipeline-edge";
 import { AgentPalette } from "./flow/agent-palette";
 import { Button } from "./ui/button";
+import { ErrorPanel } from "./ui/error-panel";
 import { useToast } from "./ui/toast";
+import { ApiError } from "@/lib/api";
 import type { Agent, Pipeline, PipelineNode, PipelineEdge } from "@/lib/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -185,6 +187,8 @@ function FlowEditorInner({
   // Save state
   const [saving, setSaving] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
+  // Erro que bloqueia o save: painel inline com retry (não toast).
+  const [saveError, setSaveError] = React.useState<{ message: string; detail?: string } | null>(null);
 
 
 
@@ -413,6 +417,7 @@ function FlowEditorInner({
   const handleSave = React.useCallback(async () => {
     if (disabled || !dirty) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const pipelineNodes = flowNodesToPipelineNodes(nodes);
       const pipelineEdges = flowEdgesToPipelineEdges(edges);
@@ -420,8 +425,9 @@ function FlowEditorInner({
       setDirty(false);
       addToast("success", "Pipeline salvo");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Falha ao salvar o pipeline";
-      addToast("error", message);
+      const message = err instanceof Error ? err.message : "Falha ao salvar a pipeline";
+      const detail = err instanceof ApiError ? err.describe() : undefined;
+      setSaveError({ message, detail });
     } finally {
       setSaving(false);
     }
@@ -647,6 +653,17 @@ function FlowEditorInner({
           </Button>
         </div>
       </div>
+
+      {/* Erro do save: bloqueia a ação principal, então fica inline com retry */}
+      {saveError && (
+        <div style={{ position: "absolute", top: 56, left: 12, right: 12, zIndex: 10 }}>
+          <ErrorPanel
+            title="Não foi possível salvar a pipeline"
+            detail={saveError.detail}
+            onRetry={() => void handleSave()}
+          />
+        </div>
+      )}
 
       {/* Legend */}
       <div

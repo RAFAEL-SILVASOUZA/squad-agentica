@@ -33,11 +33,17 @@ vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {
     status: number;
     code: string;
+    method?: string;
+    path?: string;
     details?: Record<string, unknown>;
     constructor(status: number, body: { error: string; code: string }) {
       super(body.error);
       this.status = status;
       this.code = body.code;
+    }
+    describe() {
+      if (this.method && this.path) return `HTTP ${this.status} · ${this.method} ${this.path}`;
+      return `HTTP ${this.status}`;
     }
   },
 }));
@@ -337,6 +343,49 @@ describe("PipelineDetailPage", () => {
 
       await waitFor(() => {
         expect(mockAddToast).toHaveBeenCalledWith("error", expect.stringMatching(/já está em execução/i));
+      });
+      expect(mockPush).not.toHaveBeenCalledWith(expect.stringContaining("/pipelines/pipe-1/run"));
+    });
+
+    it("falha ao executar vira painel inline com 'Tentar de novo' que reexecuta", async () => {
+      const { ApiError } = await import("@/lib/api");
+      const execError = new ApiError(500, { error: "internal error", code: "internal_error" });
+      execError.method = "POST";
+      execError.path = "/api/pipelines/pipe-1/execute";
+      mockGet.mockResolvedValue(mockPipeline);
+      mockList.mockResolvedValue({ items: mockAgents, total: 1, page: 1, limit: 100 });
+      mockPut.mockResolvedValue(mockPipeline);
+      mockPost.mockImplementation(async (path: string) => {
+        if (path === "/api/pipelines/validate") return { valid: true, errors: [] };
+        throw execError;
+      });
+
+      render(<PipelineDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Grafo válido")).toBeInTheDocument();
+      }, { timeout: 3000 });
+
+      await userEvent.click(screen.getByRole("button", { name: /executar pipeline/i }));
+
+      // Erro que bloqueia a ação principal: painel inline (role=alert), não toast.
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Não foi possível executar a pipeline");
+      expect(mockPush).not.toHaveBeenCalledWith(expect.stringContaining("/pipelines/pipe-1/run"));
+
+      // "Tentar de novo" re-executa a mesma ação (nova tentativa de execute)
+      const callsBefore = mockPost.mock.calls.filter(
+        (c) => (c[0] as string).endsWith("/execute")
+      ).length;
+      expect(callsBefore).toBe(1);
+
+      await userEvent.click(screen.getByRole("button", { name: /tentar de novo/i }));
+
+      await waitFor(() => {
+        const calls = mockPost.mock.calls.filter(
+          (c) => (c[0] as string).endsWith("/execute")
+        ).length;
+        expect(calls).toBe(2);
       });
       expect(mockPush).not.toHaveBeenCalledWith(expect.stringContaining("/pipelines/pipe-1/run"));
     });

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { ErrorPanel } from "@/components/ui/error-panel";
 import { api, ApiError } from "@/lib/api";
 import type { KnowledgeDocument } from "./types";
 
@@ -42,6 +43,9 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
   const [duplicate, setDuplicate] = React.useState<DuplicateInfo | null>(null);
   const [removing, setRemoving] = React.useState<KnowledgeDocument | null>(null);
   const [removeBusy, setRemoveBusy] = React.useState(false);
+  // Falha no upload: bloqueia a ação principal, então fica inline com retry.
+  const [uploadError, setUploadError] = React.useState<{ message: string; detail?: string } | null>(null);
+  const uploadRetryRef = React.useRef<{ file: File; replaceId?: string } | null>(null);
   const baseIdRef = React.useRef(baseId);
   baseIdRef.current = baseId;
   const onCountRef = React.useRef(onCountChange);
@@ -91,7 +95,11 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
             return;
           }
         }
-        addToast("error", e instanceof ApiError ? e.message : "Erro ao enviar documento");
+        setUploadError({
+          message: "Não foi possível enviar o documento",
+          detail: e instanceof ApiError ? e.describe() : undefined,
+        });
+        uploadRetryRef.current = { file, replaceId };
       } finally {
         clearInterval(interval);
         setUploading(false);
@@ -159,6 +167,20 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
             </Button>
           </div>
         </div>
+
+        {/* Erro do upload: inline com "Tentar de novo" (reenvia o mesmo arquivo) */}
+        {uploadError && (
+          <div style={{ marginBottom: 12 }}>
+            <ErrorPanel
+              title={uploadError.message}
+              detail={uploadError.detail}
+              onRetry={() => {
+                const r = uploadRetryRef.current;
+                if (r) void upload(r.file, r.replaceId);
+              }}
+            />
+          </div>
+        )}
 
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
