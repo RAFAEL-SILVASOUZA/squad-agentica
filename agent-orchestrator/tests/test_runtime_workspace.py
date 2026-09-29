@@ -279,7 +279,8 @@ async def test_retry_after_push_failure_publishes_committed_changes(tmp_path, re
     (p / "f.txt").write_text("x")
     with pytest.raises(WorkspaceError):
         await ws.commit_and_push("run1", "https://127.0.0.1:9/o/r.git", "agent-portal/x", "m")
-    assert await ws.changed_files("run1") == []
+    # Commitado mas não publicado: continua listado contra a base.
+    assert await ws.changed_files("run1") == [{"path": "f.txt", "status": "added"}]
     assert await ws.commit_and_push("run1", remote, "agent-portal/x", "m") == "agent-portal/x"
     assert "agent-portal/x" in _remote_branches(remote)
 
@@ -734,3 +735,35 @@ async def test_credentialed_http_clone_leaves_no_token_in_gitdir_or_logs(
             if f.is_file():
                 assert token.encode() not in f.read_bytes(), f"token em {f}"
     assert token not in caplog.text
+
+
+async def test_changed_files_and_diff_after_publish_compare_against_base(tmp_path, remote):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "README.md").write_text("# alterado\n")
+    (p / "novo.txt").write_text("novo\n")
+    await ws.commit_and_push("run1", remote, "agent-portal/base", "m")
+
+    changed = {c["path"]: c["status"] for c in await ws.changed_files("run1")}
+    assert changed["README.md"] == "modified"
+    assert changed["novo.txt"] == "added"
+    diff = await ws.diff("run1")
+    assert "+# alterado" in diff and "+novo" in diff
+
+    # Alteração não commitada depois de publicar também aparece.
+    (p / "depois.txt").write_text("extra\n")
+    (p / "novo.txt").unlink()
+    changed = {c["path"]: c["status"] for c in await ws.changed_files("run1")}
+    assert changed["depois.txt"] == "added"
+    assert "novo.txt" not in changed  # criado e removido desde a base
+    assert "+extra" in await ws.diff("run1")
+
+
+async def test_changed_files_after_publish_reports_deleted(tmp_path, remote):
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("run1", remote, "main")
+    (p / "README.md").unlink()
+    await ws.commit_and_push("run1", remote, "agent-portal/del", "m")
+    changed = {c["path"]: c["status"] for c in await ws.changed_files("run1")}
+    assert changed == {"README.md": "deleted"}
+    assert "-" in await ws.diff("run1")

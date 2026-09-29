@@ -23,6 +23,7 @@ dubious ownership in repository" do git >= 2.35.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -408,6 +409,41 @@ class WorkspaceManager:
         )
         return out.strip() if code == 0 and out.strip() else None
 
+    def _marker_base(self, run_id: str) -> str | None:
+        """SHA da base só se o marcador do clone existe (legado: None)."""
+        marker = self.git_dir(run_id) / _BASE_FILE
+        if marker.is_file():
+            return marker.read_text().strip() or None
+        return None
+
+    @contextlib.asynccontextmanager
+    async def _temp_index(self, run_id: str):
+        """Índice TEMPORÁRIO (cópia do índice do run) com ``add -N`` aplicado:
+        arquivos novos aparecem no diff sem mexer no índice real — diff e
+        publicação concorrentes não disputam o ``index.lock``. Rende o env."""
+        gd = self.git_dir(run_id)
+        fd, tmp_index = tempfile.mkstemp(prefix="agent-portal-index-")
+        os.close(fd)
+        try:
+            real_index = gd / "index"
+
+            def _prepare_index() -> None:
+                if real_index.is_file():
+                    shutil.copyfile(real_index, tmp_index)
+                else:
+                    os.unlink(tmp_index)
+
+            await asyncio.to_thread(_prepare_index)
+            env = {"GIT_INDEX_FILE": tmp_index}
+            await self._rgit(run_id, "add", "-A", "-N", env=env)
+            await self._drop_new_gitlinks(run_id, env=env)
+            yield env
+        finally:
+            try:
+                os.unlink(tmp_index)
+            except OSError:
+                pass
+
     async def changed_files(self, run_id: str) -> list[dict]:
         if not self.has_repo(run_id):
             # Sem repositório: tudo é "added". A varredura do disco roda em
@@ -417,6 +453,34 @@ class WorkspaceManager:
                 lambda: [f.relative_to(base).as_posix() for f in self._iter_files(run_id)]
             )
             return [{"path": p, "status": "added"} for p in paths]
+        await self._exclude_nested_repos(run_id)
+        base_sha = self._marker_base(run_id)
+        if base_sha:
+            # Contra a BASE (não o HEAD): após publicar, o HEAD é o commit novo
+            # e ``status`` ficaria vazio. Commits desde a base + árvore suja.
+            async with self._temp_index(run_id) as env:
+                _, out = await self._rgit(
+                    run_id, "-c", "core.quotePath=false", "diff", "--name-status",
+                    "-z", "--no-renames", "--no-ext-diff", "--no-textconv",
+                    "--ignore-submodules=all", base_sha, env=env,
+                )
+            parts = out.split("\x00")
+            result = []
+            for j in range(0, len(parts) - 1, 2):
+                code, name = parts[j], parts[j + 1]
+                if not code:
+                    continue
+                status = (
+                    "added" if code[0] == "A"
+                    else "deleted" if code[0] == "D" else "modified"
+                )
+                result.append({"path": name, "status": status})
+            return result
+        return await self._status_vs_head(run_id)
+
+    async def _status_vs_head(self, run_id: str) -> list[dict]:
+        """Árvore suja em relação ao HEAD (``status``); é o que decide se há
+        algo a commitar em ``commit_and_push``, e o legado sem marcador."""
         await self._exclude_nested_repos(run_id)
         # ``-z`` + ``core.quotePath=false``: sem isso, nomes não-ASCII saem
         # escapados em octal ("especifica\303\247\303\243o.md") e renames
@@ -531,40 +595,21 @@ class WorkspaceManager:
     async def diff(self, run_id: str) -> str:
         if not self.has_repo(run_id):
             return ""
-        # Índice TEMPORÁRIO (cópia do índice do run): o ``add -N`` que faz
-        # arquivos novos aparecerem no diff não mexe no índice real — diff e
-        # publicação concorrentes não disputam o ``index.lock``.
-        gd = self.git_dir(run_id)
         await self._exclude_nested_repos(run_id)
-        fd, tmp_index = tempfile.mkstemp(prefix="agent-portal-index-")
-        os.close(fd)
-        try:
-            real_index = gd / "index"
-
-            def _prepare_index() -> None:
-                if real_index.is_file():
-                    shutil.copyfile(real_index, tmp_index)
-                else:
-                    os.unlink(tmp_index)
-
-            await asyncio.to_thread(_prepare_index)
-            env = {"GIT_INDEX_FILE": tmp_index}
-            await self._rgit(run_id, "add", "-A", "-N", env=env)
-            await self._drop_new_gitlinks(run_id, env=env)
+        # Contra a base gravada no clone (senão, após publicar, o diff some);
+        # sem marcador (legado) mantém o HEAD.
+        base_sha = self._marker_base(run_id)
+        async with self._temp_index(run_id) as env:
             # ``--no-color``: explícito mesmo sem tty. ``--no-ext-diff`` e
             # ``--no-textconv``: nenhum programa externo roda (C1). Arquivo
             # binário: o git detecta pelo conteúdo e imprime "Binary files
             # a/... and b/... differ" em vez do conteúdo bruto.
-            _, out = await self._rgit(
-                run_id, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
-                "--ignore-submodules=all", env=env,
-            )
+            args = ["diff", "--no-color", "--no-ext-diff", "--no-textconv",
+                    "--ignore-submodules=all"]
+            if base_sha:
+                args.append(base_sha)
+            _, out = await self._rgit(run_id, *args, env=env)
             return out
-        finally:
-            try:
-                os.unlink(tmp_index)
-            except OSError:
-                pass
 
     def zip_to_file(
         self, run_id: str, dest: Path | str, max_bytes: int = ARCHIVE_MAX_BYTES
@@ -611,7 +656,7 @@ class WorkspaceManager:
         # push/PR — a árvore fica limpa, mas o HEAD está à frente da base e
         # ainda há o que publicar. Commit só se a árvore está suja; publica
         # se HEAD != base.
-        dirty = bool(await self.changed_files(run_id))
+        dirty = bool(await self._status_vs_head(run_id))
         base_sha = await self._base_sha(run_id)
         if dirty:
             author = ["-c", f"user.name={settings.git_author_name}",
