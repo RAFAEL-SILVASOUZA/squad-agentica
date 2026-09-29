@@ -248,7 +248,7 @@ const codeBlock: React.CSSProperties = {
 
 /**
  * Aba "Arquivos do projeto": árvore do workspace do run com o status de cada
- * arquivo (adicionado/modificado/removido), visualização de texto, diff e
+ * arquivo (novo/alterado/removido), visualização de texto, diff e
  * download do .zip. Binários e arquivos grandes não são exibidos.
  */
 export function FilesTab({ runId, refreshKey }: FilesTabProps) {
