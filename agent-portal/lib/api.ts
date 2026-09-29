@@ -37,6 +37,8 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_file_type: "Tipo de arquivo não suportado.",
   file_too_large: "Arquivo grande demais.",
   ingest_error: "Falha ao processar o documento.",
+  duplicate_document: "Este arquivo já existe nesta base.",
+  llm_error: "O modelo não conseguiu responder agora. Tente de novo.",
   storage_error: "Falha no armazenamento de arquivos. Tente novamente.",
   github_error: "Falha ao consultar o GitHub.",
   run_not_completed: "A execução ainda não terminou; publique depois que ela concluir.",

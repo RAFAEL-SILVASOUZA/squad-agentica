@@ -74,7 +74,7 @@ describe("KnowledgeView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockList.mockResolvedValue({ items: [], total: 0, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([]);
+    mockGet.mockResolvedValue({ items: [] });
   });
 
   it("renders loading skeletons on initial load", () => {
@@ -183,7 +183,7 @@ describe("KnowledgeView", () => {
 
   it("uploads a document", async () => {
     mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([makeDoc()]);
+    mockGet.mockResolvedValue({ items: [] });
     mockPost.mockResolvedValue(undefined);
     renderView();
     await waitFor(() => {
@@ -207,50 +207,21 @@ describe("KnowledgeView", () => {
     });
   });
 
-  it("runs a query and shows results", async () => {
+  it("não mostra mais a consulta de teste e exibe o chat da base", async () => {
     mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([makeDoc()]);
-    mockPost.mockResolvedValue({ chunks: [
-      { content: "Resultado da busca", score: 0.95, source: "manual.pdf" },
-    ] });
-    renderView();
-    await waitFor(() => {
-      expect(screen.getByText("Base de documentação")).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByText("Base de documentação"));
-
-    const queryInput = document.getElementById("knowledge-query") as HTMLInputElement;
-    expect(queryInput).not.toBeNull();
-
-    fireEvent.change(queryInput, { target: { value: "Como funciona?" } });
-    fireEvent.click(screen.getByRole("button", { name: /buscar/i }));
-
-    await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith("/api/knowledge/query", {
-        knowledgeBaseIds: ["kb-1"],
-        query: "Como funciona?",
-      });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("Resultado da busca")).toBeInTheDocument();
-    });
-  });
-
-  it("shows an empty state when the query finds nothing", async () => {
-    mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([makeDoc()]);
-    mockPost.mockResolvedValue({ chunks: [] });
     renderView();
     fireEvent.click(await screen.findByText("Base de documentação"));
-    const queryInput = document.getElementById("knowledge-query") as HTMLInputElement;
-    fireEvent.change(queryInput, { target: { value: "nada" } });
-    fireEvent.click(screen.getByRole("button", { name: /buscar/i }));
-    expect(await screen.findByText(/Nenhum trecho acima do limiar/)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Mensagem")).toBeInTheDocument();
+    expect(document.getElementById("knowledge-query")).toBeNull();
+    expect(screen.queryByText("Consulta de teste")).not.toBeInTheDocument();
   });
 
   it("increments the base document count after an upload", async () => {
-    mockList.mockResolvedValue({ items: [makeBase({ documentCount: 0 })], total: 1, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([]);
+    mockList.mockImplementation(async (path: string) =>
+      path.endsWith("/documents")
+        ? { items: [{ id: "d1", name: "a.md", status: "ready", size: 1, chunkCount: 1, createdAt: "" }], total: 1, page: 1, limit: 100 }
+        : { items: [makeBase({ documentCount: 0 })], total: 1, page: 1, limit: 100 }
+    );
     mockPost.mockResolvedValue(undefined);
     renderView();
     fireEvent.click(await screen.findByText("Base de documentação"));
@@ -261,7 +232,7 @@ describe("KnowledgeView", () => {
 
   it("asks confirmation and deletes a base", async () => {
     mockList.mockResolvedValue({ items: [makeBase()], total: 1, page: 1, limit: 100 });
-    mockGet.mockResolvedValue([makeDoc()]);
+    mockGet.mockResolvedValue({ items: [] });
     mockDelete.mockResolvedValue(undefined);
     renderView();
     await waitFor(() => {
@@ -270,9 +241,9 @@ describe("KnowledgeView", () => {
     fireEvent.click(screen.getByText("Base de documentação"));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /excluir/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /excluir base/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /excluir/i }));
+    fireEvent.click(screen.getByRole("button", { name: /excluir base/i }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();

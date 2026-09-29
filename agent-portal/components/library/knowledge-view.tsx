@@ -1,64 +1,29 @@
 "use client";
 
 import * as React from "react";
-import {
-  FileText,
-  Plus,
-  Trash2,
-  RefreshCw,
-  AlertTriangle,
-  Upload,
-  Search,
-  CheckCircle2,
-  XCircle,
-  Clock,
-} from "lucide-react";
+import { FileText, Plus, RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
+import { KbHeader } from "@/components/knowledge/kb-header";
+import { DocumentsPanel } from "@/components/knowledge/documents-panel";
+import { KbChat } from "@/components/knowledge/kb-chat";
+import type { KnowledgeBaseItem } from "@/components/knowledge/types";
 
 /**
  * KnowledgeView (fe-library, protótipo view-KNOWLEDGE).
  * - Sidebar de bases de conhecimento (GET /api/knowledge).
  * - Criar base com escopo (POST /api/knowledge).
- * - Upload de documentos com progresso e status de ingestão (POST /api/knowledge/{id}/upload).
- * - Consulta de teste com resultados e score (POST /api/knowledge/query).
- * - Excluir base com confirmação.
+ * - Painel da base composto por KbHeader (editar/excluir), DocumentsPanel
+ *   (upload/remover/duplicados) e KbChat (conversas com fontes).
  * - Estados: loading (skeleton), vazio (EmptyState + CTA), erro (retry).
  */
-
-interface KnowledgeBaseItem {
-  id: string;
-  name: string;
-  description: string | null;
-  scope: string;
-  source: string;
-  documentCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface KnowledgeDocument {
-  id: string;
-  name: string;
-  status: string;
-  size: number;
-  chunkCount: number;
-  createdAt: string;
-}
-
-interface QueryResult {
-  content: string;
-  score: number;
-  source: string;
-}
 
 const SCOPE_OPTIONS = [
   { value: "global", label: "Global" },
@@ -73,13 +38,6 @@ const SOURCE_OPTIONS = [
   { value: "url", label: "URL" },
   { value: "vector-db", label: "Vector DB" },
 ];
-
-const DOC_STATUS_LABELS: Record<string, string> = {
-  processing: "Processando",
-  ready: "Pronto",
-  failed: "Falhou",
-};
-
 
 // E15: grid fixo "240px 1fr" estourava a largura em telas estreitas (390px).
 // Sidebar de 240px ao lado do painel; abaixo de ~580px os dois empilham.
@@ -104,27 +62,11 @@ export function KnowledgeView() {
   const [error, setError] = React.useState<string | null>(null);
 
   const [selectedBase, setSelectedBase] = React.useState<KnowledgeBaseItem | null>(null);
-  const [documents, setDocuments] = React.useState<KnowledgeDocument[]>([]);
-  const [docsLoading, setDocsLoading] = React.useState(false);
-
+  
   const [createModalOpen, setCreateModalOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState(EMPTY_CREATE_FORM);
   const [createFormError, setCreateFormError] = React.useState<string | null>(null);
   const [createBusy, setCreateBusy] = React.useState(false);
-
-  const [deleting, setDeleting] = React.useState<KnowledgeBaseItem | null>(null);
-  const [deleteBusy, setDeleteBusy] = React.useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
-
-  const [uploading, setUploading] = React.useState(false);
-  const [uploadProgress, setUploadProgress] = React.useState(0);
-
-  const [query, setQuery] = React.useState("");
-  const [queryResults, setQueryResults] = React.useState<QueryResult[]>([]);
-  // Distingue "ainda não buscou" de "buscou e não achou" (estado vazio).
-  const [queryDone, setQueryDone] = React.useState(false);
-  const [queryBusy, setQueryBusy] = React.useState(false);
-  const [queryError, setQueryError] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -139,35 +81,9 @@ export function KnowledgeView() {
     }
   }, []);
 
-  const loadDocuments = React.useCallback(async (baseId: string) => {
-    setDocsLoading(true);
-    try {
-      // GET /api/knowledge/{id}/documents é PAGINADO (contrato §8): a lista
-      // vem em ``res.items``, não como array direto (E9: documents.map is not
-      // a function ao tratar a resposta como array).
-      const res = await api.list<KnowledgeDocument>(`/api/knowledge/${baseId}/documents`, {
-        page: 1,
-        limit: 100,
-      });
-      setDocuments(res.items);
-    } catch (e) {
-      addToast("error", e instanceof Error ? e.message : "Erro ao carregar documentos");
-    } finally {
-      setDocsLoading(false);
-    }
-  }, [addToast]);
-
   React.useEffect(() => {
     void load();
   }, [load]);
-
-  React.useEffect(() => {
-    if (selectedBase) {
-      void loadDocuments(selectedBase.id);
-    } else {
-      setDocuments([]);
-    }
-  }, [selectedBase, loadDocuments]);
 
   const handleCreate = React.useCallback(async () => {
     setCreateFormError(null);
@@ -208,84 +124,10 @@ export function KnowledgeView() {
     }
   }, [createForm, addToast, load]);
 
-  const handleDelete = React.useCallback(async () => {
-    if (!deleting) return;
-    setDeleteBusy(true);
-    try {
-      await api.delete(`/api/knowledge/${deleting.id}`);
-      addToast("info", "Base de conhecimento excluída");
-      if (selectedBase?.id === deleting.id) {
-        setSelectedBase(null);
-      }
-      setDeleting(null);
-      setDeleteModalOpen(false);
-      await load();
-    } catch (e) {
-      addToast("error", e instanceof Error ? e.message : "Erro ao excluir base");
-    } finally {
-      setDeleteBusy(false);
-    }
-  }, [deleting, selectedBase, addToast, load]);
-
-  const handleUpload = React.useCallback(async (file: File) => {
-    if (!selectedBase) return;
-    setUploading(true);
-    setUploadProgress(0);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    // Simula progresso (o backend não suporta upload com progresso via fetch)
-    const interval = setInterval(() => {
-      setUploadProgress((p) => Math.min(p + 10, 90));
-    }, 200);
-    try {
-
-      // E10: NUNCA fixar Content-Type manualmente em FormData — o browser
-      // precisa inserir o próprio boundary em ``multipart/form-data``. Fixar
-      // o header sem boundary gerava 400 no parse multipart do backend.
-      await api.post(`/api/knowledge/${selectedBase.id}/upload`, formData);
-
-      setUploadProgress(100);
-      addToast("success", "Documento enviado para ingestão");
-      // O contador da sidebar vem da listagem de bases; sem isto ficava em
-      // "0 documentos" até recarregar a página.
-      setBases((prev) =>
-        prev.map((b) =>
-          b.id === selectedBase.id ? { ...b, documentCount: b.documentCount + 1 } : b
-        )
-      );
-      await loadDocuments(selectedBase.id);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Erro ao enviar documento";
-      addToast("error", msg || "Erro ao enviar documento");
-    } finally {
-      clearInterval(interval);
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  }, [selectedBase, addToast, loadDocuments]);
-
-  const handleQuery = React.useCallback(async () => {
-    if (!selectedBase || !query.trim()) return;
-    setQueryBusy(true);
-    setQueryError(null);
-    setQueryResults([]);
-    setQueryDone(false);
-
-    try {
-      const res = await api.post<{ chunks: QueryResult[] }>("/api/knowledge/query", {
-        knowledgeBaseIds: [selectedBase.id],
-        query: query.trim(),
-      });
-      setQueryResults(res.chunks);
-      setQueryDone(true);
-    } catch (e) {
-      setQueryError(e instanceof Error ? e.message : "Erro na consulta");
-    } finally {
-      setQueryBusy(false);
-    }
-  }, [selectedBase, query]);
+  const updateBase = React.useCallback((next: KnowledgeBaseItem) => {
+    setBases((prev) => prev.map((b) => (b.id === next.id ? { ...b, ...next } : b)));
+    setSelectedBase((prev) => (prev && prev.id === next.id ? { ...prev, ...next } : prev));
+  }, []);
 
   // ─── Content ──────────────────────────────────────────────────────────────
   let content: React.ReactNode;
@@ -386,173 +228,20 @@ export function KnowledgeView() {
             />
           ) : (
             <>
-              {/* Header da base */}
-              <Card>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text)", margin: 0 }}>
-                      {selectedBase.name}
-                    </h2>
-                    <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "4px 0 0" }}>
-                      {selectedBase.description || "Sem descrição"}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setDeleting(selectedBase);
-                      setDeleteModalOpen(true);
-                    }}
-                    style={{ background: "var(--error-strong)", borderColor: "var(--error-strong)", color: "#fff" }}
-                  >
-                    <Trash2 size={13} aria-hidden="true" />
-                    Excluir
-                  </Button>
-                </div>
-              </Card>
-
-              {/* Upload */}
-              <Card>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", margin: "0 0 12px" }}>
-                  Enviar documento
-                </h3>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  <input
-                    type="file"
-                    id="knowledge-upload"
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void handleUpload(file);
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={() => document.getElementById("knowledge-upload")?.click()}
-                    disabled={uploading}
-                  >
-                    <Upload size={13} aria-hidden="true" />
-                    {uploading ? "Enviando..." : "Selecionar arquivo"}
-                  </Button>
-                  {uploading && (
-                    <div style={{ flex: 1, height: "6px", background: "var(--bg-elevated)", borderRadius: "3px" }}>
-                      <div
-                        style={{
-                          width: `${uploadProgress}%`,
-                          height: "100%",
-                          background: "var(--accent)",
-                          borderRadius: "3px",
-                          transition: "width 0.2s ease",
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </Card>
-
-              {/* Documentos */}
-              <Card>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", margin: "0 0 12px" }}>
-                  Documentos ({documents.length})
-                </h3>
-                {docsLoading ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {[0, 1].map((i) => (
-                      <Skeleton key={i} width="100%" height={40} />
-                    ))}
-                  </div>
-                ) : documents.length === 0 ? (
-                  <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>
-                    Nenhum documento ainda. Envie um arquivo para começar.
-                  </p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {documents.map((doc) => (
-                      <div
-                        key={doc.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "10px 12px",
-                          background: "var(--bg-elevated)",
-                          borderRadius: "var(--radius-sm)",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          {doc.status === "processing" ? (
-                            <Clock size={14} aria-hidden="true" style={{ color: "var(--warning)" }} />
-                          ) : doc.status === "ready" ? (
-                            <CheckCircle2 size={14} aria-hidden="true" style={{ color: "var(--success)" }} />
-                          ) : (
-                            <XCircle size={14} aria-hidden="true" style={{ color: "var(--error)" }} />
-                          )}
-                          <span style={{ fontSize: "13px", color: "var(--text)" }}>{doc.name}</span>
-                        </div>
-                        <Badge
-                          status={doc.status === "ready" ? "success" : doc.status === "processing" ? "warning" : "error"}
-                          label={DOC_STATUS_LABELS[doc.status] ?? doc.status}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-
-              {/* Consulta de teste */}
-              <Card>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", margin: "0 0 12px" }}>
-                  Consulta de teste
-                </h3>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <Input
-                    id="knowledge-query"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleQuery();
-                    }}
-                    placeholder="Digite uma pergunta para testar a busca..."
-                    disabled={queryBusy}
-                  />
-                  <Button size="sm" variant="primary" onClick={() => void handleQuery()} loading={queryBusy}>
-                    <Search size={13} aria-hidden="true" />
-                    Buscar
-                  </Button>
-                </div>
-                {queryError && (
-                  <p role="alert" style={{ fontSize: "12px", color: "var(--error)", margin: "8px 0 0" }}>
-                    {queryError}
-                  </p>
-                )}
-                {queryDone && queryResults.length === 0 && (
-                  <p role="status" style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0 0" }}>
-                    Nenhum trecho acima do limiar de similaridade da base. Reformule a pergunta ou reduza o limiar.
-                  </p>
-                )}
-                {queryResults.length > 0 && (
-                  <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {queryResults.map((result, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          padding: "10px 12px",
-                          background: "var(--bg-elevated)",
-                          borderRadius: "var(--radius-sm)",
-                          border: "1px solid var(--border-subtle)",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{result.source}</span>
-                          <Badge status="neutral" label={`Score: ${result.score.toFixed(2)}`} />
-                        </div>
-                        <p style={{ fontSize: "13px", color: "var(--text)", margin: 0 }}>{result.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-
+              <KbHeader
+                key={selectedBase.id}
+                base={selectedBase}
+                onUpdated={updateBase}
+                onDeleted={() => {
+                  setSelectedBase(null);
+                  void load();
+                }}
+              />
+              <DocumentsPanel
+                baseId={selectedBase.id}
+                onCountChange={(count) => updateBase({ ...selectedBase, documentCount: count })}
+              />
+              <KbChat baseId={selectedBase.id} />
             </>
           )}
         </div>
@@ -651,33 +340,6 @@ export function KnowledgeView() {
             </p>
           )}
         </div>
-      </Modal>
-
-      {/* Modal confirmar exclusão */}
-      <Modal
-        open={deleteModalOpen}
-        onClose={() => setDeleteModalOpen(false)}
-        title="Excluir base de conhecimento"
-        footer={
-          <>
-            <Button size="sm" onClick={() => setDeleting(null)} disabled={deleteBusy}>
-              Cancelar
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void handleDelete()}
-              loading={deleteBusy}
-              style={{ background: "var(--error-strong)", borderColor: "var(--error-strong)", color: "#fff" }}
-            >
-              <Trash2 size={13} aria-hidden="true" />
-              Excluir
-            </Button>
-          </>
-        }
-      >
-        <p style={{ fontSize: "13px", color: "var(--text)", margin: 0 }}>
-          Excluir a base <strong>{deleting?.name}</strong>? Todos os documentos serão removidos.
-        </p>
       </Modal>
     </div>
   );
