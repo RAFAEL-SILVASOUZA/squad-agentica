@@ -110,6 +110,11 @@ services:
       ADMIN_NAME: ${ADMIN_NAME:-Administrador}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80}
       INTEGRATIONS_SECRET_KEY: ${INTEGRATIONS_SECRET_KEY:-}
+      # GitHub: base da API (real por padrão). SÓ EM TESTE: apontar para o
+      # fake do serviço git-test (http://git-test:8080) e sobrescrever a URL
+      # de clone para o git daemon (git://git-test) — ver serviço git-test.
+      GITHUB_API_BASE: ${GITHUB_API_BASE:-https://api.github.com}
+      GIT_CLONE_BASE_OVERRIDE: ${GIT_CLONE_BASE_OVERRIDE:-}
       # Workspace por run (clone do repositório), compartilhado com o worker.
       WORKSPACES_DIR: /workspaces
       PORTAL_BASE_URL: ${PORTAL_BASE_URL:-http://localhost}
@@ -227,7 +232,34 @@ services:
       retries: 10
       start_period: 10s
 
+  git-test:
+    # SÓ TESTE (perfil "test"; não sobe no `up` normal): git daemon com os
+    # repositórios bare em /srv/git (git://git-test/<dono>/<nome>.git, push
+    # liberado) + GitHub fake em :8080 (tests/integration/fake_git_api.py).
+    # Usa a imagem do orchestrator (já tem git-daemon e python; alpine/git não
+    # traz o git-daemon). Suba com:
+    #   docker compose -p squad-agentica --profile test up -d git-test
+    # e aponte o orchestrator para ele com GITHUB_API_BASE=http://git-test:8080
+    # GIT_CLONE_BASE_OVERRIDE=git://git-test (ver qa-projeto-git.md).
+    profiles: ["test"]
+    build:
+      context: ./agent-orchestrator
+      dockerfile: Dockerfile
+    container_name: agent-portal-git-test
+    entrypoint: ["sh", "-c"]
+    command:
+      - mkdir -p /srv/git && git daemon --reuseaddr --export-all --enable=receive-pack --base-path=/srv/git --detach /srv/git && exec python /qa/fake_git_api.py
+    volumes:
+      - git-test-repos:/srv/git
+      - ./tests/integration/fake_git_api.py:/qa/fake_git_api.py:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   garage-data:
   project-workspaces:
+  git-test-repos:

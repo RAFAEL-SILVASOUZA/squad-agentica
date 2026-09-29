@@ -1,5 +1,15 @@
 # PENDENCIAS (pendências de fase — fora do escopo dos nós FE desta revisão)
 
+## Atualização Projeto Git e usabilidade (Task 13) — 2026-09-29
+
+- **Resolvido — GitHub fake contra o stack:** o perfil `test` do compose (serviço `git-test`: git daemon + `tests/integration/fake_git_api.py`) e `GIT_CLONE_BASE_OVERRIDE` cobrem o fluxo ponta a ponta. Testes: `test_09_git_project.py` e o E2E `10-integrations.spec.ts`. Fora do perfil, os dois são pulados. O antigo `test_github_with_mocked_api` continua `skip` e aponta para o test_09. Detalhes em `qa-projeto-git.md`.
+- **Aberto — validação real com PAT** (GitHub/Azure DevOps, pipeline Analista → Desenvolvedor → Revisor com o Qwen): pendente, com o usuário (Task 13, passo 5).
+- **Aberto (baixa) — Azure DevOps sem teste ponta a ponta automatizado:** o fake só imita o GitHub. O Azure fica coberto pelos testes unitários (`test_git_providers.py`) e pela validação real.
+- **Aviso — suíte de integração no Windows:** use `QA_BASE_URL=http://127.0.0.1`. Com `localhost`, o WebSocket demora cerca de 10 s para abrir (tentativa IPv6) e os testes de WS estouram o tempo. O docstring do `conftest.py` ainda recomenda `localhost`.
+- **Aviso — `npm run build` no host** escreve no mesmo `.next` do `next dev` (bind mount). Pare o `portal`, rode o build, apague o `.next` e religue o portal.
+- **Comportamento de teste — agente mock grava `result.md`** em todo run com workspace (é o que prova arquivos → PR sem LLM real). Runs mock sem repositório passam a mostrar esse arquivo na aba Arquivos.
+- **Débito de lint preexistente (ampliado):** além dos arquivos já listados abaixo, `ruff` acusa E402 em `agent-orchestrator/tests/conftest.py` (import das fixtures compartilhadas após código de módulo). São 20 erros no total, nenhum em arquivo tocado pela Task 13.
+
 ## Atualização QA Fix + QA Fix Médias e Baixas — 2026-09-27
 
 - **B1 resolvido:** CRUD/validate de pipelines implementado e coberto por integração e E2E.

@@ -305,3 +305,64 @@ export function ofChannel(
     .filter((f) => (pipelineId ? f.data?.pipelineId === pipelineId : true))
     .map((f) => f.data);
 }
+
+// ---------------------------------------------------------------------------
+// Repositório Git local (serviço git-test, perfil "test" do compose)
+// ---------------------------------------------------------------------------
+
+const GIT_TEST_CONTAINER = "agent-portal-git-test";
+const ORCH_CONTAINER = "agent-portal-orchestrator";
+
+async function dockerOut(args: string[]): Promise<string> {
+  const { stdout } = await pexecFile("docker", args, { timeout: 60_000 });
+  return stdout;
+}
+
+/**
+ * git daemon + GitHub fake (tests/integration/fake_git_api.py). Só existe
+ * quando o stack sobe com o perfil "test" e o orchestrator aponta para ele
+ * (GITHUB_API_BASE=http://git-test:8080, GIT_CLONE_BASE_OVERRIDE=git://git-test).
+ */
+export const GitTest = {
+  token: "qa-token-e2e",
+  repo: "qa/projeto",
+
+  /** Motivo para pular (ou null quando o ambiente de teste está de pé). */
+  async unavailableReason(): Promise<string | null> {
+    try {
+      const running = (await dockerOut(["inspect", "-f", "{{.State.Running}}", GIT_TEST_CONTAINER])).trim();
+      if (running !== "true") return "serviço git-test (perfil test) fora do ar";
+      const env = (await dockerOut(["exec", ORCH_CONTAINER, "printenv", "GIT_CLONE_BASE_OVERRIDE"])).trim();
+      if (!env.startsWith("git://git-test")) return "orchestrator sem GIT_CLONE_BASE_OVERRIDE=git://git-test";
+      return null;
+    } catch {
+      return "serviço git-test (perfil test) fora do ar";
+    }
+  },
+
+  /** (Re)cria o repositório bare com um commit inicial em main. */
+  async initRepo(): Promise<void> {
+    const repo = `/srv/git/${this.repo}.git`;
+    const script = [
+      "set -e",
+      `rm -rf ${repo}`,
+      `git init -q --bare -b main ${repo}`,
+      'tmp=$(mktemp -d); cd "$tmp"',
+      "git init -q -b main",
+      "echo '# projeto de teste' > README.md",
+      "git add README.md",
+      "git -c user.name=qa -c user.email=qa@example.com commit -qm init",
+      `git push -q ${repo} main`,
+      'rm -rf "$tmp"',
+    ].join("\n");
+    await dockerOut(["exec", GIT_TEST_CONTAINER, "sh", "-c", script]);
+  },
+
+  async branches(): Promise<string[]> {
+    const out = await dockerOut([
+      "exec", GIT_TEST_CONTAINER, "git", "--git-dir", `/srv/git/${this.repo}.git`,
+      "for-each-ref", "refs/heads", "--format=%(refname:short)",
+    ]);
+    return out.split(/\s+/).filter(Boolean);
+  },
+};

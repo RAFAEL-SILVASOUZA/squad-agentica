@@ -107,6 +107,30 @@ def test_provider_for_github(monkeypatch):
     assert isinstance(provider, GitHubProvider)
 
 
+def test_github_clone_base_override_is_test_only_and_off_by_default():
+    gh = GitHubProvider("ghp_x")
+    assert gh.clone_url("o/r") == "https://x-access-token:ghp_x@github.com/o/r.git"
+    local = GitHubProvider("ghp_x", clone_base="git://git-test/")
+    # Remoto local de teste (git daemon): sem credencial na URL.
+    assert local.clone_url("qa/projeto") == "git://git-test/qa/projeto.git"
+
+
+def test_provider_for_github_uses_clone_base_override(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.core.config import Settings, settings
+    from app.core.secrets import encrypt_secret
+
+    monkeypatch.setattr(settings, "integrations_secret_key", Fernet.generate_key().decode())
+    # Desligado por padrão (o perfil de teste o liga por ambiente).
+    assert Settings.model_fields["git_clone_base_override"].default == ""
+    monkeypatch.setattr(settings, "git_clone_base_override", "git://git-test")
+    integration = SimpleNamespace(
+        type="github", config={"token_encrypted": encrypt_secret("ghp_test")}
+    )
+    assert provider_for(integration).clone_url("qa/p") == "git://git-test/qa/p.git"
+
+
 def test_provider_for_azure(monkeypatch):
     from cryptography.fernet import Fernet
 

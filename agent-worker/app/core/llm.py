@@ -73,15 +73,40 @@ class MockLLMClient:
             }
             return {"content": "", "tool_calls": [tool_call]}
 
+        output = f"MOCK_LLM: echo of: {last_user[:200]}"
+
+        # Com workspace de run (e write_file disponível), grava as saídas em
+        # result.md pela tool normal — uma vez só: depois do resultado da
+        # tool, segue para a resposta final. Permite provar arquivos -> commit
+        # -> PR sem LLM real (Task 13).
+        tool_names = {(t.get("function") or {}).get("name") for t in tools or []}
+        already_wrote = any(m.get("role") == "tool" for m in messages)
+        if "write_file" in tool_names and not already_wrote and _in_run_workspace():
+            tool_call = {
+                "id": "call_mock_write_result",
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "arguments": json.dumps(
+                        {"path": "result.md", "content": f"# Resultado\n\n{output}\n"},
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+            return {"content": "", "tool_calls": [tool_call]}
+
         # Default: devolve JSON com output + action.
-        content = json.dumps(
-            {
-                "output": f"MOCK_LLM: echo of: {last_user[:200]}",
-                "_action": "follow",
-            },
-            ensure_ascii=False,
-        )
+        content = json.dumps({"output": output, "_action": "follow"}, ensure_ascii=False)
         return {"content": content, "tool_calls": None}
+
+
+def _in_run_workspace() -> bool:
+    """True quando o contexto atual tem um workspace de run (dentro de WORKSPACES_DIR)."""
+    from app import workspace_guard
+
+    root = workspace_guard.WORKSPACES_ROOT.resolve()
+    current = workspace_guard.current_workspace.get().resolve()
+    return root in current.parents
 
 
 # Servidores locais compativeis com OpenAI aceitam qualquer chave; o SDK exige

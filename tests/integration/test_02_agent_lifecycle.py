@@ -279,5 +279,7 @@ def test_github_with_mocked_api():
     ``agent-orchestrator/tests/test_integrations_github_mock.py``. Contra o stack
     compartilhado continua pulado: exigiria subir o orchestrator com
     ``GITHUB_API_BASE`` de um servidor fake alcancavel pela rede do compose.
+    Com o perfil ``test`` (servico git-test) o fluxo ponta a ponta e coberto
+    por ``test_09_git_project.py``.
     """
-    pytest.skip("requer stack com GITHUB_API_BASE apontando para um GitHub fake (coberto no unit test)")
+    pytest.skip("requer stack com GITHUB_API_BASE apontando para um GitHub fake (ver test_09_git_project.py)")

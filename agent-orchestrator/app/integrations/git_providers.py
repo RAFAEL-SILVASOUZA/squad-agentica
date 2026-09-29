@@ -63,10 +63,13 @@ class GitHubProvider:
         token: str,
         api_base: str = "https://api.github.com",
         transport: httpx.AsyncBaseTransport | None = None,
+        clone_base: str = "",
     ) -> None:
         self._token = token
         self._api = api_base.rstrip("/")
         self._transport = transport
+        # Remoto local de teste (GIT_CLONE_BASE_OVERRIDE); vazio = GitHub real.
+        self._clone_base = clone_base.rstrip("/")
         if "api.github.com" in self._api:
             web = "https://github.com"
         else:
@@ -97,6 +100,8 @@ class GitHubProvider:
         return [b["name"] for b in r.json()]
 
     def clone_url(self, repo: str) -> str:
+        if self._clone_base:
+            return f"{self._clone_base}/{repo}.git"
         host = self._web.split("://", 1)[1]
         return f"https://x-access-token:{quote(self._token, safe='')}@{host}/{repo}.git"
 
@@ -216,7 +221,10 @@ def provider_for(
         else integration.type
     )
     if kind == "github":
-        return GitHubProvider(token, settings.github_api_base, transport)
+        return GitHubProvider(
+            token, settings.github_api_base, transport,
+            clone_base=settings.git_clone_base_override,
+        )
     if kind == "azure":
         org = (integration.config or {}).get("organization", "")
         if not org:

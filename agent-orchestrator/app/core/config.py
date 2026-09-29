@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # --- GitHub (integração, PAT com escopo repo:read) ---
     github_token: str = ""
     github_api_base: str = "https://api.github.com"
+    # SÓ PARA TESTE (perfil "test" do compose): quando definido, o clone/push
+    # do GitHub usa ``<override>/<repo>.git`` (ex.: git://git-test) em vez do
+    # host derivado de GITHUB_API_BASE. Vazio em qualquer ambiente real.
+    git_clone_base_override: str = ""
 
     # --- Integrações (criptografia dos tokens armazenados; Fernet) ---
     integrations_secret_key: str = ""
