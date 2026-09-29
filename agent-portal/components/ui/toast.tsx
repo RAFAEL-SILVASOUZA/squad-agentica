@@ -7,7 +7,7 @@ import { CheckCircle2, XCircle, Info, AlertTriangle, X } from "lucide-react";
 /**
  * Toast (design system §2.16).
  * Container fixo bottom-right. Tipos: success | error | info | warning.
- * Auto-dismiss em 3s.
+ * Auto-dismiss em 3s; erro em 8s, com aria-live assertive e detalhe recolhido.
  */
 export type ToastType = "success" | "error" | "info" | "warning";
 
@@ -15,11 +15,20 @@ export interface ToastItem {
   id: string;
   type: ToastType;
   message: string;
+  /** Detalhe técnico opcional, recolhido atrás de "Ver detalhes". */
+  detail?: string;
 }
+
+export interface ToastOptions {
+  detail?: string;
+}
+
+const ERROR_DURATION_MS = 8000;
+const DEFAULT_DURATION_MS = 3000;
 
 interface ToastContextValue {
   toasts: ToastItem[];
-  addToast: (type: ToastType, message: string) => void;
+  addToast: (type: ToastType, message: string, options?: ToastOptions) => void;
   removeToast: (id: string) => void;
 }
 
@@ -47,6 +56,51 @@ const TOAST_BORDERS: Record<ToastType, string> = {
   warning: "var(--warning)",
 };
 
+/** Detalhe técnico do erro, recolhido atrás de "Ver detalhes". */
+function ToastDetail({ detail }: { detail: string }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          background: "none",
+          border: "none",
+          color: "var(--text-secondary)",
+          cursor: "pointer",
+          padding: 0,
+          fontSize: "12px",
+          fontFamily: "var(--font)",
+          textDecoration: "underline",
+        }}
+      >
+        {open ? "Ocultar detalhes" : "Ver detalhes"}
+      </button>
+      {/* display:none mantém o texto fora do foco; sem ele leitores de tela
+          o perderiam ao trocar o estado */}
+      <pre
+        className="mono"
+        hidden={!open}
+        style={{
+          margin: 0,
+          padding: "6px 8px",
+          borderRadius: "var(--radius-sm)",
+          background: "var(--bg-hover)",
+          border: "1px solid var(--border)",
+          color: "var(--text-secondary)",
+          overflowX: "auto",
+          fontSize: "12px",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {detail}
+      </pre>
+    </div>
+  );
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
 
@@ -65,11 +119,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addToast = React.useCallback(
-    (type: ToastType, message: string) => {
+    (type: ToastType, message: string, options?: ToastOptions) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setToasts((prev) => [...prev, { id, type, message }]);
+      setToasts((prev) => [...prev, { id, type, message, detail: options?.detail }]);
 
-      setTimeout(() => removeToast(id), 3000);
+      // Erro fica 8s para dar tempo de ler e recuperar; os demais 3s.
+      const duration = type === "error" ? ERROR_DURATION_MS : DEFAULT_DURATION_MS;
+      setTimeout(() => removeToast(id), duration);
     },
     [removeToast]
   );
@@ -85,7 +141,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {mounted &&
         createPortal(
           <div
-            aria-live="polite"
+            // Erro é assertivo (bloqueia ação do usuário); o resto, polido.
+            aria-live={toasts.some((t) => t.type === "error") ? "assertive" : "polite"}
             style={{
               position: "fixed",
               bottom: 20,
@@ -100,7 +157,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             {toasts.map((toast) => (
               <div
                 key={toast.id}
-                role="status"
+                role={toast.type === "error" ? "alert" : "status"}
                 style={{
                   pointerEvents: "auto",
                   display: "flex",
@@ -119,7 +176,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 }}
               >
                 {TOAST_ICONS[toast.type]}
-                <span style={{ flex: 1 }}>{toast.message}</span>
+                <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {toast.message}
+                  {toast.detail ? (
+                    <ToastDetail detail={toast.detail} />
+                  ) : null}
+                </span>
                 <button
                   onClick={() => removeToast(toast.id)}
                   aria-label="Fechar notificação"

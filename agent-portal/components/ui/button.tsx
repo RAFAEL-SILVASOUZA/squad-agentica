@@ -65,6 +65,7 @@ export function Button({
       style={{ ...base, ...sizeStyles, ...variantStyles, ...style }}
       disabled={isDisabled}
       aria-disabled={isDisabled}
+      aria-busy={loading}
       {...rest}
     >
       {loading ? (

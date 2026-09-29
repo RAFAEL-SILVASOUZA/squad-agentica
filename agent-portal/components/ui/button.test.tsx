@@ -54,4 +54,23 @@ describe("Button", () => {
     const btn = screen.getByRole("button", { name: /loading/i });
     expect(btn).toHaveAttribute("aria-disabled", "true");
   });
+
+  it("expose aria-busy=true quando loading", () => {
+    render(<Button loading>Salvando</Button>);
+    const btn = screen.getByRole("button", { name: /salvando/i });
+    expect(btn).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("não chama onClick quando loading", () => {
+    const onClick = vi.fn();
+    render(
+      <Button loading onClick={onClick}>
+        Processando
+      </Button>
+    );
+    const btn = screen.getByRole("button", { name: /processando/i });
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });

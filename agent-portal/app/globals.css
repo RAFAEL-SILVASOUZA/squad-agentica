@@ -14,6 +14,8 @@
   --radius-sm: 6px;
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'Cascadia Code', 'Fira Code', monospace;
+  /* Valores técnicos (modelo, timeout, IDs, logs) em monospace 12-13px */
+  --font-mono-size: 12px;
   --transition: 0.2s ease;
 
   /* Escala de espaçamento (derivada dos valores do protótipo) */
@@ -54,8 +56,9 @@
   --border: #2A2A2E;
   --border-subtle: #222226;
   --text: #F0F0F2;
-  --text-secondary: #9A9AA0;
-  --text-muted: #6A6A72;
+  /* Contraste AA (>=4.5:1) sobre --bg/--bg-card, verificado em app/contrast.test.ts */
+  --text-secondary: #A8A8AE;
+  --text-muted: #8E8E96;
   --success: #34D399;
   --warning: #FBBF24;
   --error: #F87171;
@@ -78,8 +81,9 @@
   --border: #E2E2E6;
   --border-subtle: #EEEEF0;
   --text: #1A1A1E;
+  /* Contraste AA (>=4.5:1) sobre --bg/--bg-card, verificado em app/contrast.test.ts */
   --text-secondary: #4B5563;
-  --text-muted: #6B7280;
+  --text-muted: #5B6270;
   --success: #059669;
   --warning: #D97706;
   --error: #DC2626;
@@ -221,4 +225,18 @@ a {
 .kb-conv-list { max-height: 180px; }
 @media (min-width: 760px) {
   .kb-conv-list { max-height: 60vh; }
+}
+
+/* Valores técnicos (modelo, timeout, IDs, logs) em monospace 12-13px */
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--font-mono-size);
+}
+
+/* Alvos de toque >= 44px em telas pequenas (acessibilidade mobile) */
+@media (max-width: 768px) {
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
