@@ -601,4 +601,98 @@ Escalas: impacto (alto/médio/baixo) = quão bloqueante/visível para o usuário
 
 ---
 
+## Anexo A — Notas de pesquisa das referências
+
+Padrões verificados em fontes primárias (docs oficiais) e teardowns públicos, usados como base das comparações das seções 1–9. Itens marcados *(verificar)* não puderam ser confirmados em fonte primária.
+
+### A.1 Editores de fluxo (base da seção 6)
+
+**n8n** (docs + análise de UI publicada):
+- Layout de 3 zonas: paleta de nós à esquerda (com busca), canvas central, painel de propriedades à direita que **só aparece com nó selecionado** — o padrão que a seção 6 propõe.
+- Zoom fixado na parte inferior central do canvas; toolbars ancoradas nas bordas, arrastáveis independentemente.
+- Execução ao vivo pinta o nó (estado rodando, erro em vermelho com a mensagem no painel); histórico de execuções em drawer **dentro** do editor, sem sair do canvas.
+- Validação inline no painel (credencial faltando, expressão inválida) em vez de bloquear no salvar.
+- Legenda de atalhos de teclado atrás de um "?" na UI.
+- Crítica recorrente (Reddit): canvas "wall of nodes" — sem agrupamento/sub-flow visível, workflows grandes ficam espalhados.
+
+**Retool Workflows** (docs.retool.com):
+- Página inicial com toggle **Grid/Table**; a Table mostra gatilhos e resumo "last 10 runs: X succeeded / Y failed" por workflow — exatamente o tipo de dado de status que a lista de pipelines do portal (seção 6) não exibe.
+- Modelos de publicação: autosave, mas apenas a release **publicada** roda por schedule/webhook — separação rascunho/publicado explícita (o portal mostra "Rascunho" na criação, mas a lista depois mostra o status do run no lugar do status da pipeline).
+- Erros: bloco global de error handler + conector "On Error" local por bloco.
+
+**Langflow**:
+- Mesmo canvas React Flow, configuração em painel lateral; força: saídas intermediárias renderizadas em cada nó/aresta (debug visual).
+- Fraqueza mais citada: canvas não escala past ~20 nós; erros chegam como stack trace Python, não como orientação amigável.
+
+### A.2 Monitores de execução e logs (base da seção 6)
+
+**GitHub Actions** (docs.github.com):
+- Run = grafo de dependência no topo + sidebar esquerda de jobs com status e contagem de passos; clicar num job troca o painel principal (não navega para outra página).
+- Log de job: passos em seções colapsáveis, **passo falho auto-expandido**, cada linha com número que gera URL deep-linkável.
+- Menu do log: "View raw logs" (download), "Copy raw log", "Filter output", expandir/recolher tudo — o escape hatch para texto puro que a seção 10 (logs) propõe.
+- "Explain error": botão abre chat de IA que percorre a falha e propõe correção.
+- Crítica documentada (discussão oficial do GitHub, 32 upvotes, aberta): o grafo de jobs ocupa ~¼ da tela em laptop, rouba o scroll (zoom sobre o grafo), texto ilegível em zoom-out, arestas atravessam nós — "o grafo mente". **Implicação direta para o portal: o grafo do monitor ("Ver grafo") deve ser opcional/recolhível e nunca cobrir logs/resultado.**
+- Crítica de logs (HN, 75 pontos): renderização virtualizada ruim para logs grandes; "ir para o fim" impossível durante build; atalhos Ctrl+F/C/A/C sequestrados pela busca in-page. **Implicação: a aba Logs do portal precisa de "ver cru"/copiar e de ir para o fim.**
+
+**LangSmith** (docs.langchain.com):
+- Linhas da tabela abrem **painel lateral** (não nova página), com abas Trajectory / Turns / Details e atalhos de teclado (T/D); o contexto da thread continua visível.
+- Trajectory renderiza por bloco (resposta do modelo, chamada de tool, resultado da tool) com metadados de tokens/custo/duração; tool calls paralelos agrupados num único bloco expansível.
+- Filtros profundos salváveis como views nomeadas; ações por run: compartilhar link, enviar para fila de anotação.
+- **Implicação: a aba Resultado do portal (bloco de texto puro, seção 6, item 6) deveria ser a timeline de eventos por nó com duração e input/output, como a Trajectory — que é o que o item 17 da priorização pede.**
+
+**Vercel** (docs + design guidance publicado):
+- Lista de deploys: ícone de status (verde/vermelho/spinner) + branch + commit + autor + duração + ambiente; filtros (branch, status, ambiente, período) acima da lista.
+- Logs de build **streaming ao vivo** na página do deploy.
+- Diretriz de design pública: paleta monocromática primeiro; **cor só quando agrega significado a estado/ação/dado, e sempre pareada com uma pista não-cor**; monospace (Geist Mono) restrito a IDs, comandos, paths, timestamps; espaçamento em vez de bordas para agrupar. A seção 10 (hierarquia/estados) adota as duas primeiras.
+
+### A.3 Chat com fontes (base da seção 5)
+
+**Perplexity** (teardown de UI, jun/2026):
+- **Stack de citações em 6 camadas**: (1) chips de domínio inline por claim ("foxsports +2"); (2) bloco colapsado de "passos de pesquisa" acima da resposta, justificando latência; (3) linha resumo "N fontes" na barra de ações da resposta, mesma elevação de copiar/compartilhar; (4) popover do chip com título, trecho e paginação 1/N; (5) sidebar de fontes com a resposta ainda visível; (6) aba Links como vista de auditoria completa (favicon, URL, título, trecho, thumbnail).
+- **"Wrong sources" como chip de feedback de primeira classe**, separado de "Inaccurate" — falha de citação tratada como modo de falha próprio. **Implicação: o chat do Knowledge deveria permitir marcar uma citação individual como errada, não só a resposta inteira (reforço do item 2 da priorização).**
+- "Check sources" ao selecionar texto: verificação local do trecho sem reexecutar.
+- Crítica (Reddit): links de citação inexistentes/halucinar é a queixa recorrente; as 3 portas para o detalhe da fonte (popover/sidebar/aba) confundem usuário novo.
+
+**ChatGPT com arquivos**:
+- Chips de publisher/domain na resposta; painel Sources lateral com favicon, domínio, título e trecho; Deep Research mostra estado de carregamento com **passos intermediários** (planejando, buscando, lendo) antes do relatório citado. **Implicação: o estado de retrieval do chat do Knowledge (seção 5, item 5) segue exatamente este padrão de "passos visíveis".**
+
+**Notion AI**:
+- Citações como links clicáveis para a **página específica** consultada; Research Mode roda em background e devolve relatório com cada claim linkada à fonte; @-menção para escopar contexto.
+
+### A.4 Listas e configurações (base das seções 2, 4, 7, 8, 10)
+
+**Linear**:
+- Keyboard-first: atalhos de tecla única (C criar, S status, A atribuir) + **Cmd/Ctrl+K command palette** abrindo em <50ms, navegação sem mouse.
+- Listas densas de 1 linha: status, avatar, prioridade, labels e data no mesmo registro; a densidade é citada como diferencial contra o Jira.
+- Local-first: operações de UI em 50–100ms; busca-as-you-type imediata.
+- **Implicação: o item 13 da priorização (busca global ⌘K) é o padrão esperado em ferramentas dev-facing.**
+
+**GitHub (repo/settings)**:
+- Status de CI consistente (check verde, X vermelho, spinner, traço neutro) com rollup de checks no PR.
+- O Refined GitHub (extensão com milhares de estrelas) existe justamente para tapar densidade, atalhos e estados vazios — dado útil: até produto bem-querido acumula workarounds client-side do usuário.
+- *(verificar: layout atual do danger zone nas settings por recurso.)*
+
+**Vercel (lists/settings)**:
+- Environment variables em tabela com colunas por ambiente, **valor mascarado com reveal por valor** e data de última modificação — o padrão que a seção 8 propõe para conexões de integração (token mascarado + status + usos).
+- Notifications center agrega eventos de deploy/domínio/integrações no dashboard.
+
+### A.5 Boas práticas transversais (síntese usada na seção 10)
+
+1. Painel direito contextual para configuração + paleta à esquerda + canvas central: convergem n8n, Langflow e Retool.
+2. Inspeção de run em painel lateral/abas **dentro** da vista da lista, nunca navegando fora (LangSmith, GitHub Actions, Vercel).
+3. Drill-down em 3 níveis: lista de runs (status+tempo+duração) → resumo do run (status por passo) → log do passo (todos os monitores pesquisados).
+4. Item falho **auto-expandido** e visualmente distinto; sucesso discreto (GitHub Actions, n8n, Retool).
+5. Ícone de status sempre pareado com texto/forma, nunca cor sozinha (diretriz pública do Vercel; GitHub e Linear praticam).
+6. Linhas densas de 1 linha ganham de cards em telas operacionais (Linear, Retool table view).
+7. Command palette é espinha dorsal de navegação em ferramentas keyboard-first (Linear).
+8. Visualizador de log precisa de escape hatch para texto puro: download/copy cru + ir para o fim (GitHub, Vercel).
+9. Em respostas de IA, mostrar o retrieval antes da afirmação (passos intermediários visíveis) — table stakes (Perplexity, ChatGPT, Notion).
+10. Citações em várias profundidades: marcador inline por claim → contagem na barra de ações → popover rápido → navegador de fontes completo (stack do Perplexity como modelo).
+11. Fonte errada é modo de falha próprio: permitir sinalizar a citação individual (Perplexity "Wrong sources").
+12. Grafos devem ser honestos e opcionais: a crítica mais votada de todas as referências é o grafo do GitHub Actions bloqueando annotations/artifacts/summary e desenhando arestas atravessando nós. Se o grafo não for a tarefa primária, deve ser recolhível e nunca cobrir o conteúdo.
+
+**Fontes principais**: docs.retool.com/workflows/quickstart; docs.langchain.com/langsmith/view-traces e /filter-traces-in-application; docs.github.com (Actions quickstart, run logs, troubleshooting, theme settings); github.com/orgs/community/discussions/18035; news.ycombinator.com/item?id=26582263; vercel.com/docs (deployments, managing-deployments, logs, errors) + design guidance publicado (ui-skills.com mirror); aiuxplayground.com (teardowns Perplexity/ChatGPT); notion.com/help + eesel.ai (Notion AI, mai/2026); rockb Langflow review (mai/2026); n8n.spot (UI deep dive); tech-insider.org e workflowautomation.net (Linear, abr/2026); linear.app/changelog.
+
+---
+
 *Documento gerado em 2026-09-29. Screenshots em `screenshots/` (mesma pasta). Não foram alterados código, dependências, containers nem `.codex/`.*
