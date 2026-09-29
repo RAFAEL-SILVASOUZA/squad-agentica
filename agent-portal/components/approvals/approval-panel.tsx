@@ -34,6 +34,7 @@ import type {
  */
 interface ApprovalRequestWithNode extends ApprovalRequest {
   nodeId?: string;
+  runId?: string | null;
 }
 
 /**
@@ -61,6 +62,68 @@ interface ApprovalCardState {
   expanded: boolean;
   argument: string;
   responding: boolean;
+}
+
+/** Botão de decisão com uma dica curta embaixo. */
+function ActionWithHint({ hint, children }: { hint: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+      {children}
+      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{hint}</span>
+    </div>
+  );
+}
+
+interface RunFile {
+  path: string;
+  status: "added" | "modified" | "deleted" | null;
+}
+
+const FILE_STATUS_LABEL: Record<string, string> = { added: "novo", modified: "alterado", deleted: "removido" };
+
+/**
+ * Arquivos que o run alterou no repositório (o aprovador revisa o código, não
+ * só o texto). Some quando não há alteração ou a consulta falha.
+ */
+function ChangedFiles({ runId, pipelineId }: { runId: string; pipelineId: string }) {
+  const [files, setFiles] = React.useState<RunFile[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ items?: RunFile[] }>(`/api/runs/${runId}/files`)
+      .then((res) => {
+        if (!cancelled) setFiles((res?.items ?? []).filter((f) => f.status != null));
+      })
+      .catch(() => {
+        if (!cancelled) setFiles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
+
+  if (files.length === 0) return null;
+  return (
+    <div style={{ marginTop: "10px" }}>
+      <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
+        Arquivos alterados
+      </div>
+      <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: "12px", fontFamily: "var(--font-mono)" }}>
+        {files.map((f) => (
+          <li key={f.path} style={{ display: "flex", gap: 8 }}>
+            <span style={{ color: "var(--text-muted)", minWidth: 56 }}>{FILE_STATUS_LABEL[f.status as string]}</span>
+            <span>{f.path}</span>
+          </li>
+        ))}
+      </ul>
+      <Link
+        href={`/pipelines/${pipelineId}/run?tab=arquivos`}
+        style={{ fontSize: "11px", color: "var(--accent)" }}
+      >
+        Ver arquivos no monitor
+      </Link>
+    </div>
+  );
 }
 
 function timeSince(iso: string | null | undefined): string {
@@ -518,6 +581,8 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                 </div>
               )}
 
+              {approval.runId && <ChangedFiles runId={approval.runId} pipelineId={approval.pipelineId} />}
+
               {/* Expanded: argument textarea */}
               {expanded && (
                 <div style={{ marginTop: "12px" }}>
@@ -574,6 +639,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                 </>
               ) : (
                 <>
+                  <ActionWithHint hint="Segue para o próximo agente">
                   <Button
                     size="sm"
                     onClick={() => void handleRespond(approval.id, "approved", null)}
@@ -588,6 +654,8 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                     <CheckCircle2 size={13} aria-hidden="true" />
                     Aprovar
                   </Button>
+                  </ActionWithHint>
+                  <ActionWithHint hint="Segue com o seu feedback">
                   <Button
                     size="sm"
                     onClick={() => toggleExpand(approval.id)}
@@ -596,6 +664,8 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                     <MessageSquare size={13} aria-hidden="true" />
                     Argumentar
                   </Button>
+                  </ActionWithHint>
+                  <ActionWithHint hint="O agente anterior refaz">
                   <Button
                     size="sm"
                     onClick={() => void handleRespond(approval.id, "rejected", null)}
@@ -610,6 +680,7 @@ export function ApprovalPanel({ onPendingCountChange }: ApprovalPanelProps) {
                     <XCircle size={13} aria-hidden="true" />
                     Rejeitar
                   </Button>
+                  </ActionWithHint>
                   <Button
                     size="sm"
                     onClick={() => void handleCancel(approval.id)}

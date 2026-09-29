@@ -147,6 +147,52 @@ describe("ApprovalPanel", () => {
     expect(screen.queryByText("Nenhuma aprovação pendente")).not.toBeInTheDocument();
   });
 
+  it("lists the changed files of the run and links to the Files tab", async () => {
+    const approval = { ...makeApproval(), runId: "run-9" };
+    mockList.mockResolvedValue({ items: [approval], total: 1, page: 1, limit: 20 });
+    mockGet.mockResolvedValue({
+      items: [
+        { path: "src/a.ts", size: 10, binary: false, status: "modified" },
+        { path: "README.md", size: 5, binary: false, status: null },
+        { path: "src/b.ts", size: 3, binary: false, status: "added" },
+      ],
+    });
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Arquivos alterados")).toBeInTheDocument();
+    });
+    expect(mockGet).toHaveBeenCalledWith("/api/runs/run-9/files");
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByText("src/b.ts")).toBeInTheDocument();
+    expect(screen.queryByText("README.md")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Ver arquivos/ })).toHaveAttribute(
+      "href",
+      "/pipelines/pipe-1/run?tab=arquivos"
+    );
+  });
+
+  it("omits the changed files section when the request fails", async () => {
+    const approval = { ...makeApproval(), runId: "run-9" };
+    mockList.mockResolvedValue({ items: [approval], total: 1, page: 1, limit: 20 });
+    mockGet.mockRejectedValue(new Error("boom"));
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Aprovar deploy para produção?")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Arquivos alterados")).not.toBeInTheDocument();
+  });
+
+  it("shows a short hint under each action", async () => {
+    mockList.mockResolvedValue({ items: [makeApproval()], total: 1, page: 1, limit: 20 });
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Aprovar deploy para produção?")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Segue para o próximo agente")).toBeInTheDocument();
+    expect(screen.getByText("Segue com o seu feedback")).toBeInTheDocument();
+    expect(screen.getByText("O agente anterior refaz")).toBeInTheDocument();
+  });
+
   it("renders empty state when no pending approvals", async () => {
     renderPanel();
     await waitFor(() => {

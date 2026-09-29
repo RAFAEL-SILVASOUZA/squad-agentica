@@ -61,6 +61,13 @@ describe("AgentNode", () => {
     expect(screen.getByText("Backend Developer")).toBeInTheDocument();
   });
 
+  it("shows the full agent name in the title and does not cut it to one line", () => {
+    renderNode({ ...mockData, label: "Redator de Especificações Técnicas" });
+    const name = screen.getByText("Redator de Especificações Técnicas");
+    expect(name).toHaveAttribute("title", "Redator de Especificações Técnicas");
+    expect(name.style.webkitLineClamp).toBe("2");
+  });
+
   it("renders input ports", () => {
     renderNode(mockData);
     expect(screen.getByTestId("handle-target-task")).toBeInTheDocument();

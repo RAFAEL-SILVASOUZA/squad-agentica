@@ -248,6 +248,12 @@ export function EdgePanel({
           ]}
         />
 
+        {isData && (
+          <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>
+            Dados: leva a saída escolhida para a entrada do próximo agente e já define a ordem
+          </p>
+        )}
+
         {/* FLOW: condicao */}
         {!isData && (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -510,7 +516,7 @@ export function EdgePanel({
         >
           <Toggle
             label="Requer aprovação"
-            description="Insere um nó de aprovação (HITL) nesta transição"
+            description="Pausa aqui até alguém aprovar"
             checked={edge.requiresApproval}
             disabled={disabled}
             onChange={handleRequiresApproval}

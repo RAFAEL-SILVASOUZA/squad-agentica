@@ -131,6 +131,27 @@ async def client(test_app):
 # ---------------------------------------------------------------------------
 
 
+class TestEffectiveModel:
+    async def test_effective_model_reflects_llm_model(self, client: AsyncClient, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "llm_model", "Qwen3.8-27B-Q8_0")
+        created = await client.post("/api/agents", json={"name": "Modelo A", "model": "gpt-4o"})
+        assert created.json()["model"] == "gpt-4o"
+        assert created.json()["effectiveModel"] == "Qwen3.8-27B-Q8_0"
+        got = await client.get(f"/api/agents/{created.json()['id']}")
+        assert got.json()["effectiveModel"] == "Qwen3.8-27B-Q8_0"
+
+    async def test_effective_model_falls_back_to_agent_model(
+        self, client: AsyncClient, monkeypatch
+    ):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "llm_model", "")
+        created = await client.post("/api/agents", json={"name": "Modelo B", "model": "gpt-4o"})
+        assert created.json()["effectiveModel"] == "gpt-4o"
+
+
 class TestCreateAgent:
     async def test_create_agent_success(self, client: AsyncClient, mock_storage: MockAgentStorage):
         response = await client.post(

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.service import AgentService
 from app.auth.dependencies import get_current_user
+from app.core.config import settings
 from app.core.errors import AppError
 from app.db.models import User
 from app.db.session import get_db
@@ -97,6 +98,8 @@ class AgentResponse(BaseModel):
     outputs: list[dict[str, Any]]
     actions: list[str]
     model: str
+    # Modelo realmente usado: LLM_MODEL do servidor sobrepoe o do agente.
+    effectiveModel: str
     maxIterations: int
     timeout: int
     shellAccess: bool
@@ -137,6 +140,7 @@ def _agent_to_response(agent) -> AgentResponse:
         outputs=agent.outputs,
         actions=agent.actions,
         model=agent.model,
+        effectiveModel=settings.llm_model or agent.model,
         maxIterations=agent.max_iterations,
         timeout=agent.timeout,
         shellAccess=agent.shell_access,

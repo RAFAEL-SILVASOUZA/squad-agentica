@@ -9,6 +9,7 @@ export interface PortDef {
   name: string;
   type: string;
   required: boolean;
+  description?: string;
 }
 
 export type FlowAction = "follow" | "return" | "finalize";
@@ -55,6 +56,8 @@ export interface Agent {
   outputs: PortDef[];
   actions: FlowAction[];
   model: string;
+  /** Modelo realmente usado (LLM_MODEL do servidor, quando definido). */
+  effectiveModel?: string;
   maxIterations: number;
   timeout: number;
   shellAccess: boolean;

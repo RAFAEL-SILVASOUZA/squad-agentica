@@ -36,7 +36,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
     <div
       className="flow-node"
       style={{
-        width: 160,
+        width: 280,
         background: "var(--bg-elevated)",
         border: `1px solid ${borderColor}`,
         borderRadius: "var(--radius)",
@@ -93,15 +93,18 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
         >
           <Bot size={16} aria-hidden="true" />
         </div>
-        <div style={{ overflow: "hidden" }}>
+        <div style={{ overflow: "hidden", minWidth: 0 }}>
           <div
+            title={label || agentSnapshot.name}
             style={{
               fontSize: 12,
               fontWeight: 600,
               color: "var(--text)",
-              whiteSpace: "nowrap",
               overflow: "hidden",
-              textOverflow: "ellipsis",
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 2,
+              wordBreak: "break-word",
             }}
           >
             {label || agentSnapshot.name}

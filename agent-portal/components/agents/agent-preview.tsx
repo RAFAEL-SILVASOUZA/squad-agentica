@@ -253,7 +253,16 @@ export function AgentPreview({ config, streaming = false }: AgentPreviewProps) {
       {/* Identidade / execução */}
       {(config.model || config.maxIterations !== undefined || config.timeout !== undefined) && (
         <Section icon={Cpu} title="Execução">
-          {config.model && <Item label="Modelo" value={config.model} />}
+          {config.model && (
+            <Item
+              label="Modelo"
+              value={
+                config.effectiveModel && config.effectiveModel !== config.model
+                  ? `${config.effectiveModel} (definido pelo servidor)`
+                  : config.model
+              }
+            />
+          )}
           {config.maxIterations !== undefined && (
             <Item label="Max iterações" value={config.maxIterations} />
           )}

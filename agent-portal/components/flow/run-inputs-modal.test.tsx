@@ -18,6 +18,40 @@ describe("RunInputsModal", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("ideia");
   });
 
+  it("shows the repository that will be used", () => {
+    render(
+      <RunInputsModal
+        open
+        agentName="Redator"
+        inputs={[]}
+        repository={{ integrationId: "i", fullName: "o/r", baseBranch: "develop" }}
+        onCancel={() => {}}
+        onSubmit={() => {}}
+      />
+    );
+    expect(screen.getByText("Repositório: o/r (develop)")).toBeInTheDocument();
+  });
+
+  it("tells the result can be downloaded when there is no repository", () => {
+    render(
+      <RunInputsModal open agentName="Redator" inputs={[]} repository={null} onCancel={() => {}} onSubmit={() => {}} />
+    );
+    expect(screen.getByText("Sem repositório: baixe o resultado em .zip")).toBeInTheDocument();
+  });
+
+  it("shows the input description when the agent has one", () => {
+    render(
+      <RunInputsModal
+        open
+        agentName="Redator"
+        inputs={[{ name: "ideia", type: "document", required: true, description: "A ideia do produto" }]}
+        onCancel={() => {}}
+        onSubmit={() => {}}
+      />
+    );
+    expect(screen.getByText(/A ideia do produto/)).toBeInTheDocument();
+  });
+
   it("submits only the filled values, trimmed", () => {
     const onSubmit = vi.fn();
     render(

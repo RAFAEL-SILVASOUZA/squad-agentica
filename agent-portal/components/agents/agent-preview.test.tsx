@@ -53,6 +53,17 @@ describe("AgentPreview", () => {
     expect(screen.getByText("seguir · devolver · finalizar")).toBeInTheDocument();
   });
 
+  it("shows the server-defined model when it differs from the agent model", () => {
+    render(<AgentPreview config={makeConfig({ effectiveModel: "Qwen3.8-27B-Q8_0" })} />);
+    expect(screen.getByText("Qwen3.8-27B-Q8_0 (definido pelo servidor)")).toBeInTheDocument();
+  });
+
+  it("shows only the agent model when effectiveModel is equal", () => {
+    render(<AgentPreview config={makeConfig({ effectiveModel: "gpt-4o" })} />);
+    expect(screen.getByText("gpt-4o")).toBeInTheDocument();
+    expect(screen.queryByText(/definido pelo servidor/)).not.toBeInTheDocument();
+  });
+
   it("renders backpack chips", () => {
     render(<AgentPreview config={makeConfig()} />);
     expect(screen.getByText("code-gen")).toBeInTheDocument();

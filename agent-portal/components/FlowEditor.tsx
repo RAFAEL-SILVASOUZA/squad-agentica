@@ -373,8 +373,17 @@ function FlowEditorInner({
       updateEdge: (edge: PipelineEdge) => {
         handleEdgeChange(edge);
       },
+      focusTarget: ({ nodeId, edgeId }: { nodeId?: string; edgeId?: string }) => {
+        const edge = edgeId ? edges.find((e) => e.id === edgeId) : undefined;
+        const nodeIds = nodeId ? [nodeId] : edge ? [edge.source, edge.target] : [];
+        if (nodeIds.length === 0) return;
+        // Seleciona o alvo (o EdgePanel abre via onSelectionChange) e centraliza.
+        setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === nodeId })));
+        setEdges((eds) => eds.map((e) => ({ ...e, selected: e.id === edgeId })));
+        void fitView({ nodes: nodeIds.map((id) => ({ id })), padding: 0.4, maxZoom: 1.2, duration: 300 });
+      },
     }),
-    [handleEdgeChange]
+    [handleEdgeChange, edges, setNodes, setEdges, fitView]
   );
 
   // Highlight edges with validation errors (fe-flow-edges)
@@ -776,6 +785,8 @@ function FlowEditorInner({
 export interface FlowEditorHandle {
   /** Atualiza uma aresta no canvas (chamado pelo EdgePanel via pagina). */
   updateEdge: (edge: PipelineEdge) => void;
+  /** Seleciona um nó ou aresta e centraliza o canvas nele. */
+  focusTarget: (target: { nodeId?: string; edgeId?: string }) => void;
 }
 
 /**

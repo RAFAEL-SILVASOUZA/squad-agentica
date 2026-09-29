@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
+import { ValidationList } from "@/components/flow/validation-list";
 import { RunInputsModal } from "@/components/flow/run-inputs-modal";
 import { PipelineHeader } from "@/components/pipelines/pipeline-header";
 
@@ -281,6 +282,7 @@ export default function PipelineDetailPage() {
     [workNodes, entryNodeId]
   );
   const [runInputsOpen, setRunInputsOpen] = React.useState(false);
+  const [errorsOpen, setErrorsOpen] = React.useState(false);
 
 
   const handleExecute = React.useCallback(async (runInputs: Record<string, string>) => {
@@ -449,20 +451,55 @@ export default function PipelineDetailPage() {
             </span>
           )}
           {validation.status === "done" && hasErrors && (
-            <span
-              role="status"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--error)",
-              }}
-            >
-              <AlertTriangle size={13} aria-hidden="true" />
-              {errors.length} {errors.length === 1 ? "erro de validação" : "erros de validação"}
-            </span>
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                aria-expanded={errorsOpen}
+                aria-haspopup="true"
+                onClick={() => setErrorsOpen((o) => !o)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "var(--error)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                <AlertTriangle size={13} aria-hidden="true" />
+                {errors.length} {errors.length === 1 ? "erro de validação" : "erros de validação"}
+              </button>
+              {errorsOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    right: 0,
+                    zIndex: 20,
+                    width: 340,
+                    maxHeight: 320,
+                    overflowY: "auto",
+                    padding: 6,
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    boxShadow: "var(--shadow-md, 0 4px 16px rgba(0,0,0,0.2))",
+                  }}
+                >
+                  <ValidationList
+                    errors={errors}
+                    onSelect={(target) => {
+                      flowEditorRef.current?.focusTarget(target);
+                      setErrorsOpen(false);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           )}
           {validation.status === "done" && !hasErrors && workNodes.length > 0 && (
             <span
@@ -537,6 +574,7 @@ export default function PipelineDetailPage() {
           open={runInputsOpen}
           agentName={entryNode.agentSnapshot.name}
           inputs={entryNode.agentSnapshot.inputs}
+          repository={pipeline.repository ?? null}
           busy={executing}
           onCancel={() => setRunInputsOpen(false)}
           onSubmit={(values) => void handleExecute(values)}

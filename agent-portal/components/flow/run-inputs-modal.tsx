@@ -5,7 +5,7 @@ import { Play } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { PortDef } from "@/lib/types";
+import type { PipelineRepository, PortDef } from "@/lib/types";
 
 /**
  * Pede os valores das entradas do agente de entrada antes de executar.
@@ -16,6 +16,8 @@ export interface RunInputsModalProps {
   open: boolean;
   agentName: string;
   inputs: PortDef[];
+  /** Repositório do pipeline (null = sem repositório, resultado em .zip). */
+  repository?: PipelineRepository | null;
   busy?: boolean;
   onCancel: () => void;
   onSubmit: (values: Record<string, string>) => void;
@@ -25,6 +27,7 @@ export function RunInputsModal({
   open,
   agentName,
   inputs,
+  repository,
   busy = false,
   onCancel,
   onSubmit,
@@ -74,12 +77,19 @@ export function RunInputsModal({
         <p style={{ margin: 0, fontSize: "13px", color: "var(--text-secondary)" }}>
           Entradas de <strong>{agentName}</strong>, o primeiro agente do pipeline.
         </p>
+        {repository !== undefined && (
+          <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+            {repository
+              ? `Repositório: ${repository.fullName} (${repository.baseBranch})`
+              : "Sem repositório: baixe o resultado em .zip"}
+          </p>
+        )}
         {inputs.map((port) => (
           <Textarea
             key={port.name}
             id={`run-input-${port.name}`}
             label={`${port.name}${port.required ? " *" : ""}`}
-            hint={`Tipo: ${port.type}`}
+            hint={port.description ? `${port.description} · Tipo: ${port.type}` : `Tipo: ${port.type}`}
             rows={4}
             value={values[port.name] ?? ""}
             onChange={(e) => setValues((v) => ({ ...v, [port.name]: e.target.value }))}
