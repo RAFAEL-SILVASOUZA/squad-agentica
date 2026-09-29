@@ -22,7 +22,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -121,13 +121,13 @@ async def agent_chat_create(
     """
     _check_rate_limit(str(user.id))
 
-    # Resolve or creates the draft.
+    # Resolve or creates the draft (persistido no banco, Task 3).
     if body.draftId:
-        draft = draft_store.get(body.draftId, str(user.id))
+        draft = await draft_store.get(db, body.draftId, str(user.id))
         if draft is None:
             raise AppError(404, "not_found", "draft_not_found")
     else:
-        draft = draft_store.create(str(user.id))
+        draft = await draft_store.create(db, str(user.id))
 
     # Build messages for the LLM.
     system_prompt = build_system_prompt("create")
@@ -150,6 +150,13 @@ async def agent_chat_create(
 
     # Store the assistant message.
     draft.add_message("assistant", text)
+
+    # Persiste o draft (messages + config) no banco; sem isso, um restart do
+    # processo perderia a conversa. Falha de persistência não quebra o stream.
+    try:
+        await draft_store.save(db, draft)
+    except Exception:  # pragma: no cover - defensivo (logs, não propaga)
+        logger.exception("agent_chat: falha ao persistir draft %s", draft.draft_id)
 
     # Build the SSE stream.
     async def event_stream():
@@ -179,6 +186,41 @@ async def agent_chat_create(
     )
 
 
+@router.post("/chat/restore")
+async def agent_chat_restore(
+    body: dict[str, Any],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Restaura um rascunho a partir da config (e mensagens) da tela.
+
+    Usado quando o draft expirou no servidor (404 draft_not_found no
+    confirm): o portal recria o rascunho com o que ainda está visível.
+    Registrado ANTES de ``/{agent_id}/chat`` (o FastAPI resolve na ordem de
+    definição; o literal "chat" perderia para o parâmetro).
+
+    Body: { config: {...}, messages?: [{role, content}] }
+    Response: 201 {draftId}
+    """
+    _check_rate_limit(str(user.id))
+
+    config = body.get("config")
+    if not isinstance(config, dict):
+        raise AppError(400, "validation error", "missing_config")
+
+    messages = body.get("messages") or []
+    draft = await draft_store.create(db, str(user.id), config=config)
+    for m in messages:
+        if isinstance(m, dict) and m.get("content"):
+            draft.add_message(
+                m.get("role") if m.get("role") in ("user", "assistant") else "user",
+                str(m.get("content")),
+            )
+    await draft_store.save(db, draft)
+
+    return JSONResponse(status_code=201, content={"draftId": draft.draft_id})
+
+
 @router.post("/{agent_id}/chat")
 async def agent_chat_edit(
     agent_id: uuid.UUID,
@@ -197,14 +239,14 @@ async def agent_chat_edit(
     service = AgentService()
     agent = await service.get_agent(db, user.id, agent_id)
 
-    # Resolve or create the draft.
+    # Resolve or create the draft (persistido no banco, Task 3).
     if body.draftId:
-        draft = draft_store.get(body.draftId, str(user.id))
+        draft = await draft_store.get(db, body.draftId, str(user.id))
         if draft is None:
             raise AppError(404, "not_found", "draft_not_found")
     else:
         # Create a new draft seeded with the current agent config.
-        draft = draft_store.create(str(user.id))
+        draft = await draft_store.create(db, str(user.id))
         draft.config = _agent_to_config_dict(agent)
 
     # Build messages for the LLM.
@@ -229,6 +271,12 @@ async def agent_chat_edit(
 
     # Store the assistant message.
     draft.add_message("assistant", text)
+
+    # Persiste o draft no banco (ver rota de construção).
+    try:
+        await draft_store.save(db, draft)
+    except Exception:  # pragma: no cover - defensivo (logs, não propaga)
+        logger.exception("agent_chat: falha ao persistir draft %s", draft.draft_id)
 
     # Build the SSE stream.
     async def event_stream():
@@ -258,6 +306,37 @@ async def agent_chat_edit(
     )
 
 
+@router.post("/chat/restore")
+@router.post("/validate")
+async def agent_validate(
+    body: dict[str, Any],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Valida a config do agente para o preview do portal (Task 3).
+
+    Reusa o validador de contrato (app/agents/validator.py) + a regra de
+    mínimo de utilizabilidade do confirm (nome; saídas). Não altera o draft.
+
+    Body: config do agente (mesmos campos do preview).
+    Response: 200 {valid: bool, missing: string[], errors: string[]}
+    """
+    if not isinstance(body, dict):
+        raise AppError(400, "validation error", "invalid_body")
+
+    missing: list[str] = []
+    if not str(body.get("name") or "").strip():
+        missing.append("name")
+    if not body.get("outputs"):
+        missing.append("outputs")
+
+    # Contrato (ports/actions): mesmo validador do confirm (400 invalid_graph).
+    errors = validate_config(body)
+    valid = not missing and not errors
+
+    return {"valid": valid, "missing": missing, "errors": errors}
+
+
 @router.post("/chat/confirm")
 async def agent_chat_confirm(
     body: dict[str, Any],
@@ -273,7 +352,7 @@ async def agent_chat_confirm(
     if not draft_id:
         raise AppError(400, "validation error", "missing_draft_id")
 
-    draft = draft_store.get(draft_id, str(user.id))
+    draft = await draft_store.get(db, draft_id, str(user.id))
     if draft is None:
         raise AppError(404, "not_found", "draft_not_found")
 
@@ -306,7 +385,7 @@ async def agent_chat_confirm(
     agent = await service.create_agent(db, user.id, data)
 
     # Delete the draft after successful save.
-    draft_store.delete(draft.draft_id)
+    await draft_store.delete(db, draft.draft_id)
 
     return {
         "id": str(agent.id),

@@ -15,6 +15,7 @@ import {
   Shield,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { api } from "@/lib/api";
 import type { LucideIcon } from "lucide-react";
 import type {
   Agent,
@@ -38,11 +39,46 @@ import type {
  * Sem emojis; ícones via lucide-react.
  */
 
+export interface AgentValidationState {
+  valid: boolean;
+  missing: string[];
+  errors: string[];
+}
+
 export interface AgentPreviewProps {
   /** Configuração parcial do draft (o que o chat já preencheu). */
   config: Partial<Agent>;
   /** true enquanto o assistente está respondendo. */
   streaming?: boolean;
+  /** Chamado com o resultado de POST /api/agents/validate (debounce 500 ms). */
+  onValidate?: (state: AgentValidationState) => void;
+}
+
+// Rótulos pt-BR dos campos obrigatórios no "Falta: ..." do preview.
+const MISSING_LABEL: Record<string, string> = {
+  name: "nome",
+  prompt: "prompt",
+  outputs: "saídas",
+};
+
+/** Debounce da validação do preview (spec Task 3): 500 ms. */
+const VALIDATE_DEBOUNCE_MS = 500;
+
+function hasAnyConfigValue(config: Partial<Agent>): boolean {
+  return Boolean(
+    config.name ||
+    config.type ||
+    config.description ||
+    config.model ||
+    (config.skills && config.skills.length > 0) ||
+    (config.tools && config.tools.length > 0) ||
+    (config.mcpServers && config.mcpServers.length > 0) ||
+    (config.knowledge && config.knowledge.length > 0) ||
+    (config.integrations && config.integrations.length > 0) ||
+    (config.inputs && config.inputs.length > 0) ||
+    (config.outputs && config.outputs.length > 0) ||
+    (config.actions && config.actions.length > 0)
+  );
 }
 
 const ACTION_LABEL: Record<FlowAction, string> = {
@@ -142,20 +178,76 @@ function Section({
   );
 }
 
-export function AgentPreview({ config, streaming = false }: AgentPreviewProps) {
-  const hasAny =
-    config.name ||
-    config.type ||
-    config.description ||
-    config.model ||
-    (config.skills && config.skills.length > 0) ||
-    (config.tools && config.tools.length > 0) ||
-    (config.mcpServers && config.mcpServers.length > 0) ||
-    (config.knowledge && config.knowledge.length > 0) ||
-    (config.integrations && config.integrations.length > 0) ||
-    (config.inputs && config.inputs.length > 0) ||
-    (config.outputs && config.outputs.length > 0) ||
-    (config.actions && config.actions.length > 0);
+export function AgentPreview({
+  config,
+  streaming = false,
+  onValidate,
+}: AgentPreviewProps) {
+  const hasAny = hasAnyConfigValue(config);
+
+  // Validação em tempo real: POST /api/agents/validate com debounce de
+  // 500 ms a cada mudança de config. O estado é propagado para a página
+  // (habilita/desabilita o botão Salvar) e exibido no próprio preview.
+  const [validation, setValidation] = React.useState<AgentValidationState | null>(null);
+  const configKey = React.useMemo(() => JSON.stringify(config), [config]);
+
+  React.useEffect(() => {
+    if (!hasAny) {
+      setValidation(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.post<AgentValidationState>("/api/agents/validate", config);
+        if (!cancelled) {
+          setValidation(result);
+          onValidate?.(result);
+        }
+      } catch {
+        // Sem validação não bloqueia o preview (o Salvar já exige nome).
+      }
+    }, VALIDATE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // configKey deriva de config; onValidate estável via useCallback no parent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configKey]);
+
+  // Rodeia o conteúdo com a linha de status de validação (Task 3).
+  const validationLine = hasAny && validation ? (
+    validation.valid ? (
+      <div
+        data-testid="agent-validation"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          marginTop: "10px",
+          fontSize: "12px",
+          color: "var(--success)",
+        }}
+      >
+        ✓ pronto para salvar
+      </div>
+    ) : (
+      <div
+        data-testid="agent-validation"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          marginTop: "10px",
+          fontSize: "12px",
+          color: "var(--warning)",
+        }}
+      >
+        Falta: {validation.missing.map((m) => MISSING_LABEL[m] ?? m).join(", ")}
+      </div>
+    )
+  ) : null;
 
   if (!hasAny) {
     return (
@@ -181,6 +273,20 @@ export function AgentPreview({ config, streaming = false }: AgentPreviewProps) {
     );
   }
 
+  return (
+    <Card>
+      <PreviewBody config={config} streaming={streaming} />
+      {validationLine}
+    </Card>
+  );
+}
+
+/**
+ * Corpo do preview: resumo do draft (identidade, execução, mochila e
+ * contrato). Separado para manter o componente principal focado no estado
+ * de validação (Task 3).
+ */
+function PreviewBody({ config }: { config: Partial<Agent>; streaming?: boolean }): React.ReactElement {
   const skills: SkillRef[] = config.skills ?? [];
   const tools: ToolRef[] = config.tools ?? [];
   const mcpServers: MCPServerRef[] = config.mcpServers ?? [];
@@ -191,7 +297,7 @@ export function AgentPreview({ config, streaming = false }: AgentPreviewProps) {
   const actions: FlowAction[] = config.actions ?? [];
 
   return (
-    <Card>
+    <>
       <div
         style={{
           display: "flex",
@@ -406,6 +512,6 @@ export function AgentPreview({ config, streaming = false }: AgentPreviewProps) {
           )}
         </Section>
       )}
-    </Card>
+    </>
   );
 }

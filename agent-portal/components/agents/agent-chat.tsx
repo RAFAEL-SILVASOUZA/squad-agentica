@@ -63,6 +63,8 @@ export function AgentChat({
   );
   const [input, setInput] = React.useState("");
   const [streaming, setStreaming] = React.useState(false);
+  // true entre o envio e o 1º token do SSE: mostra "digitando…" (Task 3).
+  const [waitingFirstToken, setWaitingFirstToken] = React.useState(false);
   const [rateLimitedUntil, setRateLimitedUntil] = React.useState<number | null>(null);
   const [cooldown, setCooldown] = React.useState(0);
 
@@ -97,6 +99,7 @@ export function AgentChat({
 
   const appendAssistant = React.useCallback(
     (text: string) => {
+      setWaitingFirstToken(false);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === "assistant") {
@@ -118,6 +121,7 @@ export function AgentChat({
       { id: nextId(), role: "user", content: text },
     ]);
     setStreaming(true);
+    setWaitingFirstToken(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -155,6 +159,7 @@ export function AgentChat({
       }
     } finally {
       setStreaming(false);
+      setWaitingFirstToken(false);
       abortRef.current = null;
     }
   }, [
@@ -269,32 +274,66 @@ export function AgentChat({
             {msg.role === "assistant" ? renderInlineMarkdown(msg.content) : msg.content}
           </div>
         ))}
-        {streaming && (
-          <div
-            style={{
-              alignSelf: "flex-start",
-              fontSize: "11px",
-              color: "var(--text-muted)",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            <span
-              aria-hidden="true"
+        {streaming &&
+          (waitingFirstToken ? (
+            /* "digitando…" com 3 pontos animados: entre o envio e o 1º
+               token do SSE (Task 3). aria-live polite para leitores de tela. */
+            <div
+              role="status"
+              aria-live="polite"
               style={{
-                width: 10,
-                height: 10,
-                border: "2px solid var(--text-muted)",
-                borderTopColor: "transparent",
-                borderRadius: "50%",
-                display: "inline-block",
-                animation: "spin 1s linear infinite",
+                alignSelf: "flex-start",
+                fontSize: "11px",
+                color: "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
               }}
-            />
-            Assistente respondendo…
-          </div>
-        )}
+            >
+              digitando…
+              <span aria-hidden="true" style={{ display: "inline-flex", gap: "3px" }}>
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    data-dot
+                    style={{
+                      width: 4,
+                      height: 4,
+                      borderRadius: "50%",
+                      background: "var(--text-muted)",
+                      display: "inline-block",
+                      animation: `typing-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                    }}
+                  />
+                ))}
+              </span>
+            </div>
+          ) : (
+            <div
+              style={{
+                alignSelf: "flex-start",
+                fontSize: "11px",
+                color: "var(--text-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 10,
+                  height: 10,
+                  border: "2px solid var(--text-muted)",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  display: "inline-block",
+                  animation: "spin 1s linear infinite",
+                }}
+              />
+              Assistente respondendo…
+            </div>
+          ))}
       </div>
 
       {/* Aviso de validação */}

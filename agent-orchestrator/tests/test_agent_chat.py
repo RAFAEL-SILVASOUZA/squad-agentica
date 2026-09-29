@@ -183,8 +183,6 @@ async def test_app(
         service = AgentService(storage=mock_storage)
         mock_service_fn.return_value = service
         mock_service_cls.return_value = service
-        # Clean draft store before each test.
-        draft_store.cleanup()
         yield app
 
 
@@ -413,7 +411,7 @@ class TestConfirmation:
         draft_id = [e for e in events if e["type"] == "done"][0]["data"]["draftId"]
 
         # Directly test the draft_store isolation.
-        draft = draft_store.get(draft_id, str(second_user.id))
+        draft = await draft_store.get(session, draft_id, str(second_user.id))
         assert draft is None  # Owner isolation: second user can't access.
 
 

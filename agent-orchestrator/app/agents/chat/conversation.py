@@ -1,16 +1,28 @@
-"""Chat conversation state: in-memory draft sessions for agent construction.
+"""Chat conversation state: persistent draft sessions for agent construction.
 
-Dono: be-agent-chat (FASE 4). Spec 10.1: sessão efêmera (draft) com draftId.
-V1: in-memory (single-user). V2: Redis.
+Dono: be-agent-chat (FASE 4). Spec 10.1: sessão do draft com draftId.
+V1 era in-memory; a partir da Task 3 (redesign de usabilidade) o draft é
+persistido no banco (tabela ``agent_drafts``): sobrevive a restart do
+processo e pode ser restaurado a partir da config da tela (rota restore).
+
+Isolamento por dono: ``get`` valida o owner; draft alheio retorna None
+(a rota responde 404 ``draft_not_found``, nunca a config de outro usuário).
+
+TTL de 24h: ``purge_expired_drafts`` roda no loop periódico de ``main.py``.
 """
 
 from __future__ import annotations
 
-import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+from sqlalchemy import delete, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import AgentDraft as AgentDraftRow
 
 
 @dataclass
@@ -24,7 +36,11 @@ class ChatMessage:
 
 @dataclass
 class AgentDraft:
-    """Draft do agente em construção (acumulado ao longo do chat)."""
+    """Draft do agente em construção (acumulado ao longo do chat).
+
+    Objeto em memória espelhado na tabela ``agent_drafts``. O id é o
+    ``draftId`` exposto na API.
+    """
 
     draft_id: str
     owner_id: str
@@ -41,51 +57,113 @@ class AgentDraft:
         """Converte as mensagens do chat para o formato OpenAI-style."""
         return [{"role": m.role, "content": m.content} for m in self.messages]
 
+    @classmethod
+    def from_row(cls, row: AgentDraftRow) -> AgentDraft:
+        """Hidrata o draft em memória a partir da linha do banco."""
+        messages = [
+            ChatMessage(
+                role=m.get("role", "user"),
+                content=m.get("content", ""),
+                timestamp=float(m.get("timestamp") or 0.0),
+            )
+            for m in (row.messages or [])
+            if isinstance(m, dict)
+        ]
+        return cls(
+            draft_id=str(row.id),
+            owner_id=str(row.owner_id),
+            messages=messages,
+            config=dict(row.config or {}),
+        )
+
+
+# TTL do rascunho: 24h (ruling da Task 3).
+DRAFT_TTL_HOURS = 24
+
+
+async def purge_expired_drafts(db: AsyncSession, ttl_hours: int = DRAFT_TTL_HOURS) -> int:
+    """Remove drafts com ``updated_at`` mais antigo que o TTL.
+
+    Roda no loop periódico de ``main.py``. Retorna quantas linhas removeu.
+    """
+    cutoff = datetime.now(UTC) - timedelta(hours=ttl_hours)
+    result = await db.execute(
+        delete(AgentDraftRow).where(AgentDraftRow.updated_at < cutoff)
+    )
+    await db.commit()
+    return int(result.rowcount or 0)
+
 
 class DraftStore:
-    """In-memory store de drafts de chat. Thread-safe."""
+    """Store assíncrono de drafts de chat, apoiado no banco (agent_drafts)."""
 
-    def __init__(self, ttl_seconds: int = 3600) -> None:
-        self._ttl = ttl_seconds
-        self._lock = threading.Lock()
-        self._drafts: dict[str, AgentDraft] = {}
+    async def create(
+        self, db: AsyncSession, owner_id: str, config: dict[str, Any] | None = None
+    ) -> AgentDraft:
+        """Cria um novo draft no banco e retorna o objeto em memória."""
+        row = AgentDraftRow(
+            id=uuid.uuid4(),
+            owner_id=uuid.UUID(owner_id),
+            messages=[],
+            config=config or {},
+        )
+        db.add(row)
+        await db.flush()
+        return AgentDraft.from_row(row)
 
-    def create(self, owner_id: str) -> AgentDraft:
-        """Cria um novo draft e retorna."""
-        draft_id = str(uuid.uuid4())
-        draft = AgentDraft(draft_id=draft_id, owner_id=owner_id)
-        with self._lock:
-            self._drafts[draft_id] = draft
-        return draft
+    async def get(
+        self, db: AsyncSession, draft_id: str, owner_id: str
+    ) -> AgentDraft | None:
+        """Busca um draft por id, validando o dono.
 
-    def get(self, draft_id: str, owner_id: str) -> AgentDraft | None:
-        """Busca um draft por id, validando owner.
-
-        Retorna None se não existir ou for de outro owner.
+        Retorna None se não existir ou for de outro owner (isolamento:
+        a rota responde 404, nunca a config de outro usuário).
         """
-        with self._lock:
-            draft = self._drafts.get(draft_id)
-            if draft is None:
-                return None
-            # TTL check.
-            if time.time() - draft.updated_at > self._ttl:
-                del self._drafts[draft_id]
-                return None
-            # Owner isolation.
-            if draft.owner_id != owner_id:
-                return None
-            return draft
+        try:
+            uid = uuid.UUID(draft_id)
+            oid = uuid.UUID(owner_id)
+        except (ValueError, TypeError, AttributeError):
+            return None
+        row = (
+            await db.execute(
+                select(AgentDraftRow).where(
+                    AgentDraftRow.id == uid,
+                    AgentDraftRow.owner_id == oid,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return AgentDraft.from_row(row)
 
-    def delete(self, draft_id: str) -> None:
+    async def save(self, db: AsyncSession, draft: AgentDraft) -> None:
+        """Persiste o estado atual do draft (messages + config).
+
+        Toca ``updated_at`` (renova o TTL).
+        """
+        await db.execute(
+            update(AgentDraftRow)
+            .where(
+                AgentDraftRow.id == uuid.UUID(draft.draft_id),
+                AgentDraftRow.owner_id == uuid.UUID(draft.owner_id),
+            )
+            .values(
+                messages=[m.__dict__ for m in draft.messages],
+                config=dict(draft.config),
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+
+    async def delete(self, db: AsyncSession, draft_id: str) -> None:
         """Remove um draft (após confirmação/salvamento)."""
-        with self._lock:
-            self._drafts.pop(draft_id, None)
+        try:
+            uid = uuid.UUID(draft_id)
+        except (ValueError, TypeError):
+            return
+        await db.execute(delete(AgentDraftRow).where(AgentDraftRow.id == uid))
+        await db.commit()
 
-    def cleanup(self) -> None:
-        """Remove todos os drafts (para testes)."""
-        with self._lock:
-            self._drafts.clear()
 
-
-# Module-level singleton.
+# Module-level singleton (stateless: o estado vive no banco).
 draft_store = DraftStore()

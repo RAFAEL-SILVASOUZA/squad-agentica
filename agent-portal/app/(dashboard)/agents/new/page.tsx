@@ -7,10 +7,22 @@ import { ArrowLeft, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorPanel } from "@/components/ui/error-panel";
 import { useToast } from "@/components/ui/toast";
 import { AgentChat, AgentPreview } from "@/components/agents";
-import { api } from "@/lib/api";
-import { confirmAgentDraft } from "@/lib/agent-chat";
+import type { AgentValidationState } from "@/components/agents/agent-preview";
+import { api, ApiError } from "@/lib/api";
+import { confirmAgentDraft, restoreAgentDraft } from "@/lib/agent-chat";
+
+/** Chave do draftId no sessionStorage (retomada da tela, Task 3). */
+const DRAFT_SESSION_KEY = "agent-draft-id";
+
+interface SaveError {
+  message: string;
+  detail: string;
+  /** 404 draft_not_found: o rascunho expirou no servidor. */
+  draftExpired: boolean;
+}
 import type {
   Agent,
   Skill,
@@ -25,9 +37,14 @@ import type {
  * - Chat de construção (SSE) à esquerda; preview do draft à direita.
  * - "Salvar" confirma o draft (POST /api/agents/chat/confirm) e navega
  *   para /agents/{id}. Confirmação antes de salvar (botão explícito).
+ * - Task 3: o draftId é persistido em sessionStorage (agent-draft-id) e o
+ *   draft é retomado ao montar; o preview valida a config em tempo real
+ *   (POST /api/agents/validate, debounce 500 ms); o Salvar é desabilitado
+ *   enquanto valid=false. Em 404 draft_not_found o ErrorPanel oferece
+ *   "Recriar a partir do que está na tela" (restore + confirm).
  *
  * Portal nasce vazio (contrato §0): sem seed ilustrativo.
- * Estados: loading (skeleton da mochila), erro (toast + retry).
+ * Estados: loading (skeleton da mochila), erro (ErrorPanel + retry).
  */
 
 interface BackpackOptions {
@@ -56,11 +73,39 @@ export default function NewAgentPage() {
   const router = useRouter();
   const { addToast } = useToast();
 
-  const [draftId, setDraftId] = React.useState<string | null>(null);
+  // draftId retomado do sessionStorage (Task 3): sobrevive ao reload da tela
+  // enquanto o draft existir no servidor (TTL 24h).
+  const [draftId, setDraftId] = React.useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage.getItem(DRAFT_SESSION_KEY);
+  });
   const [config, setConfig] = React.useState<Partial<Agent>>({});
   const [saving, setSaving] = React.useState(false);
+  const [restoring, setRestoring] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<SaveError | null>(null);
+  const [validation, setValidation] = React.useState<AgentValidationState | null>(null);
+  const [streaming, setStreaming] = React.useState(false);
   const [options, setOptions] = React.useState<BackpackOptions | null>(null);
   const [optionsError, setOptionsError] = React.useState(false);
+
+  // Persiste o draftId em sessionStorage (Task 3).
+  const handleDraftId = React.useCallback((id: string) => {
+    setDraftId(id);
+    try {
+      window.sessionStorage.setItem(DRAFT_SESSION_KEY, id);
+    } catch {
+      // Sem sessionStorage (modo privado) o fluxo continua sem retomada.
+    }
+  }, []);
+
+  // O preview valida a config com debounce de 500 ms (Task 3).
+  const handleValidate = React.useCallback((state: AgentValidationState) => {
+    setValidation(state);
+  }, []);
+
+  const handleStreamingChange = React.useCallback((isStreaming: boolean) => {
+    setStreaming(isStreaming);
+  }, []);
 
   const loadOptions = React.useCallback(async () => {
     setOptionsError(false);
@@ -83,31 +128,67 @@ export default function NewAgentPage() {
     setConfig((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  // E2: rascunho utilizável = tem NOME (espelha a regra do backend em
-  // /api/agents/chat/confirm: 400 incomplete_draft sem nome). Sem isso, o
-  // confirm criava "Unnamed Agent" no banco.
-  const draftUsable = Boolean(
-    draftId && String(config.name ?? "").trim().length > 0
+  // Task 3: validação do preview controla o botão Salvar (valid=false →
+  // desabilitado). Sem draft ainda, o botão já está desabilitado por draftId.
+  const saveBlocked = validation !== null && !validation.valid;
+
+  const doConfirm = React.useCallback(
+    async (id: string) => {
+      setSaving(true);
+      try {
+        const agent = await confirmAgentDraft(id);
+        try {
+          window.sessionStorage.removeItem(DRAFT_SESSION_KEY);
+        } catch {
+          // sem sessionStorage: ignora.
+        }
+        addToast("success", `Agente "${agent.name}" criado.`);
+        router.push(`/agents/${agent.id}`);
+      } catch (e) {
+        // Task 3: o erro do confirm carrega status + code do envelope
+        // (confirmAgentDraft em lib/agent-chat.ts). 404 + code
+        // "draft_not_found" significa que o rascunho expirou no servidor.
+        const er = e as (Error & { status?: number; code?: string }) | null;
+        const draftExpired =
+          er !== null && er.status === 404 && er.code === "draft_not_found";
+        const detail =
+          e instanceof ApiError ? e.describe() : "";
+        setSaveError({
+          message: er instanceof Error ? er.message : "Falha ao salvar o agente.",
+          detail,
+          draftExpired,
+        });
+        setSaving(false);
+      }
+    },
+    [addToast, router]
   );
 
   const handleSave = React.useCallback(async () => {
-    if (!draftId) {
-      addToast("warning", "Converse com o assistente antes de salvar.");
-      return;
-    }
-    setSaving(true);
+    if (!draftId || restoring) return;
+    setSaveError(null);
+    await doConfirm(draftId);
+  }, [draftId, restoring, doConfirm]);
+
+  // Recuperação do draft expirado (404 draft_not_found): recria o rascunho
+  // a partir da config que ainda está na tela e confirma em seguida.
+  const handleRestoreAndConfirm = React.useCallback(async () => {
+    setRestoring(true);
+    setSaveError(null);
     try {
-      const agent = await confirmAgentDraft(draftId);
-      addToast("success", `Agente "${agent.name}" criado.`);
-      router.push(`/agents/${agent.id}`);
+      const restored = await restoreAgentDraft(config as Record<string, unknown>);
+      handleDraftId(restored.draftId);
+      await doConfirm(restored.draftId);
     } catch (e) {
-      addToast(
-        "error",
-        e instanceof Error ? e.message : "Falha ao salvar o agente."
-      );
-      setSaving(false);
+      setSaveError({
+        message: e instanceof Error ? e.message : "Falha ao recriar o rascunho.",
+        detail: e instanceof ApiError ? e.describe() : "",
+        draftExpired: false,
+      });
+    } finally {
+      setRestoring(false);
     }
-  }, [draftId, addToast, router]);
+  }, [config, doConfirm, handleDraftId]);
 
   return (
     <div>
@@ -154,16 +235,34 @@ export default function NewAgentPage() {
         <Button
           variant="primary"
           onClick={() => void handleSave()}
-          loading={saving}
-          // E2: sem draft utilizável (nome + prompt no config), salvar é
-          // inútil: o backend recusa (400 incomplete_draft). O botão só
-          // habilita quando o rascunho está utilizável.
-          disabled={!draftId || !draftUsable}
+          loading={saving || restoring}
+          // E2: sem draft utilizável (nome no config), salvar é inútil: o
+          // backend recusa (400 incomplete_draft). Task 3: o botão também
+          // desabilita enquanto a validação do preview diz valid=false.
+          disabled={!draftId || saveBlocked || saving}
         >
           <CheckCircle2 size={14} aria-hidden="true" />
           Salvar agente
         </Button>
       </div>
+
+      {/* Erro de salvamento (Task 3): inline com recuperação */}
+      {saveError && (
+        <div style={{ marginBottom: "16px" }}>
+          <ErrorPanel
+            title={
+              saveError.draftExpired
+                ? "O rascunho expirou no servidor"
+                : `Não foi possível salvar o agente: ${saveError.message}`
+            }
+            detail={saveError.detail || undefined}
+            onRetry={
+              saveError.draftExpired ? handleRestoreAndConfirm : () => void handleSave()
+            }
+            retryLabel={saveError.draftExpired ? "Recriar a partir do que está na tela" : "Tentar de novo"}
+          />
+        </div>
+      )}
 
       {/* Aviso de erro ao carregar a mochila */}
       {optionsError && (
@@ -200,8 +299,9 @@ export default function NewAgentPage() {
         <AgentChat
           chatPath="/api/agents/chat"
           draftId={draftId}
-          onDraftId={setDraftId}
+          onDraftId={handleDraftId}
           onConfigUpdate={handleConfigUpdate}
+          onStreamingChange={handleStreamingChange}
           initialAssistantMessage="Olá! Descreva o agente que você quer criar: o que ele faz, quais skills e integrações precisa, e qual contrato de fluxo (entradas, saídas, ações)."
         />
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -217,17 +317,11 @@ export default function NewAgentPage() {
           >
             Preview do agente
           </h2>
-          <AgentPreview config={config} />
+          <AgentPreview config={config} streaming={streaming} onValidate={handleValidate} />
           {!draftId && (
             <EmptyState
               title="Ainda sem rascunho"
               description="Envie uma mensagem no chat para o assistente gerar o rascunho do agente. O botão Salvar habilita após o primeiro rascunho."
-            />
-          )}
-          {draftId && !draftUsable && (
-            <EmptyState
-              title="Rascunho incompleto"
-              description="O assistente ainda não definiu o nome do agente. Continue a conversa (ex.: 'o agente se chama X e deve fazer Y') para habilitar o botão Salvar."
             />
           )}
         </div>

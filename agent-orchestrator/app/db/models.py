@@ -897,3 +897,34 @@ class RivvnConnection(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RivvnConnection {self.contract_status} {self.status}>"
+
+
+# ---------------------------------------------------------------------------
+# AgentDraft (Task 3: rascunho do agente persistente). Sessão do chat de
+# construção/edição persistida no banco: sobrevive a restart do processo e
+# permite restaurar um rascunho expirado a partir da config da tela. TTL de
+# 24h (purge periódico em main.py).
+# ---------------------------------------------------------------------------
+
+
+class AgentDraft(Base):
+    __tablename__ = "agent_drafts"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = _owner_fk()
+    # Mensagens do chat: [{"role": str, "content": str, "timestamp": float}].
+    messages: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    # Config acumulada do agente (mesmos campos do config do draft do chat).
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = _created_at()
+    # Índice no purge periódico (filtro por updated_at < cutoff).
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<AgentDraft {self.id}>"

@@ -169,6 +169,20 @@ a {
   }
 }
 
+/* "digitando…": 3 pontos animados (chat de construção de agentes, Task 3). */
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
 /* Markdown (components/ui/markdown.tsx): saída dos agentes e chat. */
 .markdown {
   font-size: var(--text-lg);

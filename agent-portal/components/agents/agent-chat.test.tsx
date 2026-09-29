@@ -143,4 +143,43 @@ describe("AgentChat", () => {
     expect(sendBtn).toBeDisabled();
     expect(sendMock).not.toHaveBeenCalled();
   });
+
+  it('mostra "digitando…" (aria-live polite) entre o envio e o primeiro token', async () => {
+    let release: (() => void) | null = null;
+    const releaseRef: { fn: (() => void) | null } = { fn: null };
+    sendMock.mockImplementation(
+      (_p: string, _m: string, _d: string | null, cb: any) => {
+        // Segura o stream: nenhum token ainda chegou.
+        return new Promise((resolve) => {
+          const doRelease = () => {
+            cb.onText("resposta");
+            cb.onDone("d-9");
+            resolve({ rateLimited: false, draftId: "d-9" });
+          };
+          releaseRef.fn = doRelease;
+          release = doRelease;
+        });
+      }
+    );
+
+    renderChat();
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "oi" } });
+    fireEvent.click(screen.getByRole("button", { name: /enviar/i }));
+
+    // Entre o envio e o 1º token: "digitando…" visível com aria-live polite
+    // e 3 pontos animados.
+    const typing = await screen.findByText("digitando…");
+    expect(typing).toHaveAttribute("aria-live", "polite");
+    const dots = typing.parentElement
+      ? Array.from(typing.parentElement.querySelectorAll("[data-dot]")).length
+      : 0;
+    expect(dots).toBe(3);
+
+    // Liberado o 1º token: o indicador some.
+    releaseRef.fn?.();
+    await waitFor(() => {
+      expect(screen.queryByText("digitando…")).not.toBeInTheDocument();
+    });
+  });
 });

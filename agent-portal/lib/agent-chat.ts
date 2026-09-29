@@ -183,6 +183,39 @@ export async function sendAgentChat(
 }
 
 /**
+ * Restaura um rascunho a partir da config da tela (POST /api/agents/chat/restore).
+ * Usado quando o draft expirou no servidor (404 draft_not_found no confirm):
+ * recria o rascunho com o que ainda está visível e devolve o novo draftId.
+ */
+export async function restoreAgentDraft(
+  config: Record<string, unknown>,
+  messages?: Array<{ role: string; content: string }>
+): Promise<{ draftId: string }> {
+  const token = await getToken();
+  const res = await fetch("/api/agents/chat/restore", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ config, messages }),
+    credentials: "same-origin",
+  });
+
+  if (!res.ok) {
+    let errorBody: unknown = {};
+    try {
+      errorBody = await res.json();
+    } catch {
+      // ignora
+    }
+    throw new Error(errorMessageFromBody(res.status, errorBody));
+  }
+
+  return (await res.json()) as { draftId: string };
+}
+
+/**
  * Confirma o draft e salva o agente (POST /api/agents/chat/confirm).
  * Retorna o agente criado (id, name, ...).
  */
@@ -206,7 +239,16 @@ export async function confirmAgentDraft(draftId: string): Promise<Agent> {
       // ignora
     }
     // E1: mensagem pt-BR do envelope (ex.: agent_name_exists), não o "conflict" cru.
-    throw new Error(errorMessageFromBody(res.status, errorBody));
+    const err = new Error(errorMessageFromBody(res.status, errorBody)) as Error & {
+      status?: number;
+      code?: string;
+    };
+    // Task 3: expõe status + code do envelope no erro para a UI decidir a
+    // recuperação (ex.: 404 + code "draft_not_found" → rascunho expirou).
+    err.status = res.status;
+    const body = errorBody as { code?: unknown } | null;
+    if (body && typeof body.code === "string") err.code = body.code;
+    throw err;
   }
 
   return (await res.json()) as Agent;

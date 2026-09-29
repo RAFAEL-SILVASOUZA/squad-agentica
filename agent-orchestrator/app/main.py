@@ -62,11 +62,36 @@ async def _run_workspace_purge() -> int:
     return removed
 
 
+async def _run_draft_purge() -> int:
+    """Roda uma rodada de ``purge_expired_drafts`` (rascunhos do chat de agentes).
+
+    Usa o mesmo loop periódico do purge de workspaces (Task 3): TTL de 24h,
+    uma limpeza por rodada. Falha de banco não derruba o loop (log e segue).
+    """
+    from app.agents.chat.conversation import purge_expired_drafts
+    from app.db.session import async_session_factory
+
+    try:
+        async with async_session_factory() as session:
+            removed = await purge_expired_drafts(session)
+        if removed:
+            logger.info("agent_drafts_purge: %d draft(s) expirado(s) removido(s)", removed)
+        return removed
+    except Exception:  # pragma: no cover - defensivo: não derruba o loop
+        logger.exception("agent_drafts_purge: falha ao limpar drafts expirados")
+        return 0
+
+
 async def _purge_loop() -> None:
-    """Roda a limpeza no startup e depois a cada 24h, até ser cancelada."""
+    """Roda a limpeza no startup e depois a cada 24h, até ser cancelada.
+
+    Cada rodada limpa workspaces expirados E drafts do chat de agentes
+    expirados (TTL 24h, Task 3).
+    """
     try:
         while True:
             await _run_workspace_purge()
+            await _run_draft_purge()
             await asyncio.sleep(_PURGE_INTERVAL_SECONDS)
     except asyncio.CancelledError:
         pass
