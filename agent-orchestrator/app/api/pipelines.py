@@ -18,6 +18,7 @@ Convenções (contrato §8): envelope de erro, camelCase, paginação
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -902,7 +903,8 @@ async def delete_pipeline(
     )
     await db.delete(pipeline)
     await db.commit()
-    WorkspaceManager().remove_many([str(r) for r in run_ids])
+    # rmtree de cada workspace/gitdir em thread: nunca no loop de eventos.
+    await asyncio.to_thread(WorkspaceManager().remove_many, [str(r) for r in run_ids])
 
 
 @router.post("/pipelines/{pipeline_id}/duplicate", status_code=201)

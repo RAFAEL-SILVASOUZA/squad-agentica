@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     # --- Workspaces (Task 5: clone/alterações/commit/push por run) ---
     workspaces_dir: str = "/workspaces"
     workspace_retention_days: int = 7
+    # Revisão final C1: o repositório git (``--separate-git-dir``) de cada run
+    # fica AQUI, só no orchestrator (volume nomeado próprio), nunca no volume
+    # compartilhado com o worker — um agente não consegue plantar
+    # ``.git/config`` (fsmonitor, hooks, drivers) que o orchestrator executaria.
+    git_dirs_dir: str = "/var/lib/agent-portal/gitdirs"
+    # Revisão final I4: segredo HMAC da capacidade por run que o worker
+    # apresenta à ponte MCP (/internal/mcp). Vazio = derivado de
+    # INTEGRATIONS_SECRET_KEY (ou WORKER_TOKEN, em último caso).
+    mcp_capability_secret: str = ""
     git_author_name: str = "Agent Portal"
     git_author_email: str = "agent-portal@localhost"
     # URL pública do portal (link do run no corpo do PR).
@@ -119,7 +128,18 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.git_clone_base_override:
+        # Revisão final: override de clone é SÓ para teste; em qualquer outro
+        # ambiente ele desvia clone/push para outro servidor git.
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "ATENÇÃO: GIT_CLONE_BASE_OVERRIDE=%s está definido — clone/push do "
+            "GitHub vão para esse servidor (uso exclusivo de teste).",
+            s.git_clone_base_override,
+        )
+    return s
 
 
 # Module-level singleton for convenience.

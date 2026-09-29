@@ -76,9 +76,14 @@ def test_execute_rejects_workspace_outside_root(workspace_dir):
     assert resp.json()["code"] == "invalid_workspace"
 
 
-def test_execute_passes_resolved_workspace(monkeypatch):
+def test_execute_passes_resolved_workspace(monkeypatch, tmp_path):
     from app import main as worker_main
+    from app import workspace_guard
 
+    root = tmp_path / "workspaces"
+    (root / "r2").mkdir(parents=True)
+    monkeypatch.setattr(worker_main, "WORKSPACES_ROOT", root)
+    monkeypatch.setattr(workspace_guard, "WORKSPACES_ROOT", root)
     captured = {}
 
     async def fake_execute_agent(**kwargs):
@@ -91,8 +96,84 @@ def test_execute_passes_resolved_workspace(monkeypatch):
     resp = client.post(
         "/execute",
         json={"agentId": "a", "nodeId": "n", "inputs": {}, "timeout": 30,
-              "workspaceDir": "/workspaces/r1/../r2"},
+              "workspaceDir": f"{root}/r1/../r2", "runId": "r2", "mcpCapability": "cap"},
         headers={"X-Worker-Token": WORKER_TOKEN},
     )
     assert resp.status_code == 200, resp.text
-    assert captured["workspace_dir"] == "/workspaces/r2"
+    assert captured["workspace_dir"] == str((root / "r2").resolve())
+    # Capacidade MCP do run repassada ao executor do agente (revisão final I4).
+    assert captured["mcp_capability"] == "cap" and captured["run_id"] == "r2"
+
+
+# --- Revisão final: .git reservado, workspace de run inexistente, HOME ---
+
+
+@pytest.mark.parametrize(
+    "raw", [".git/config", ".git", "sub/.git/hooks/pre-commit", "./.git/HEAD", "a/../.git/x"]
+)
+def test_dotgit_segments_are_refused(ws, raw):
+    with pytest.raises(WorkspaceEscapeError) as exc:
+        resolve_in_workspace(raw)
+    assert ".git" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_write_to_dotgit_config_is_a_tool_error(ws):
+    res = await worker.execute_tool(
+        "write_file", {"path": ".git/config", "content": "[core]\n\tfsmonitor = /tmp/x\n"}
+    )
+    assert "error" in res and ".git" in res["error"]
+    assert not (ws / ".git").exists()
+    # Nome parecido (não é segmento .git) continua permitido.
+    assert (await worker.execute_tool("write_file", {"path": ".gitignore", "content": "x"}))[
+        "success"
+    ]
+
+
+@pytest.fixture
+def run_root(tmp_path, monkeypatch):
+    from app import main as worker_main
+    from app import workspace_guard
+
+    root = tmp_path / "workspaces"
+    root.mkdir()
+    monkeypatch.setattr(worker_main, "WORKSPACES_ROOT", root)
+    monkeypatch.setattr(workspace_guard, "WORKSPACES_ROOT", root)
+    return root
+
+
+@pytest.mark.asyncio
+async def test_missing_run_workspace_is_never_created(run_root):
+    gone = run_root / "run-expirado"
+    token = current_workspace.set(gone)
+    try:
+        res = await worker.execute_tool("write_file", {"path": "a.txt", "content": "x"})
+        assert "error" in res and "não existe mais" in res["error"]
+        shell = await worker.execute_tool("shell", {"command": "echo oi"})
+        assert "error" in shell and "não existe mais" in shell["error"]
+    finally:
+        current_workspace.reset(token)
+    assert not gone.exists()
+
+
+def test_execute_rejects_missing_run_workspace(run_root):
+    client = TestClient(app)
+    resp = client.post(
+        "/execute",
+        json={"agentId": "a", "nodeId": "n", "inputs": {}, "timeout": 30,
+              "workspaceDir": str(run_root / "run-expirado")},
+        headers={"X-Worker-Token": WORKER_TOKEN},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "invalid_workspace"
+    assert not (run_root / "run-expirado").exists()
+
+
+@pytest.mark.asyncio
+async def test_shell_home_is_outside_workspace(ws):
+    res = await worker.execute_tool("shell", {"command": 'echo "$HOME"; touch "$HOME/.cache-x"'})
+    home = res["stdout"].strip()
+    assert home and not home.startswith(str(ws))
+    assert not (ws / ".cache-x").exists()
+    # Diretório temporário removido depois do comando.
+    assert not os.path.exists(home)

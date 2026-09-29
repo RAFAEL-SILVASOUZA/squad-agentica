@@ -117,10 +117,18 @@ services:
       GIT_CLONE_BASE_OVERRIDE: ${GIT_CLONE_BASE_OVERRIDE:-}
       # Workspace por run (clone do repositório), compartilhado com o worker.
       WORKSPACES_DIR: /workspaces
+      WORKSPACE_RETENTION_DAYS: ${WORKSPACE_RETENTION_DAYS:-7}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-Agent Portal}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-agent-portal@localhost}
+      # Repositório git de cada run (--separate-git-dir): SÓ no orchestrator,
+      # volume próprio (project-gitdirs), fora do volume do worker.
+      GIT_DIRS_DIR: /var/lib/agent-portal/gitdirs
+      MCP_CAPABILITY_SECRET: ${MCP_CAPABILITY_SECRET:-}
       PORTAL_BASE_URL: ${PORTAL_BASE_URL:-http://localhost}
     volumes:
       - ./agent-orchestrator:/app:ro
       - project-workspaces:/workspaces
+      - project-gitdirs:/var/lib/agent-portal/gitdirs
     depends_on:
       postgres:
         condition: service_healthy
@@ -262,4 +270,6 @@ volumes:
   postgres-data:
   garage-data:
   project-workspaces:
+  # Só o orchestrator monta (repositórios git privados dos runs).
+  project-gitdirs:
   git-test-repos:

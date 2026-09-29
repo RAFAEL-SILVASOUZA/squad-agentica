@@ -41,10 +41,22 @@ async def _run_workspace_purge() -> int:
     roda em thread separada (``asyncio.to_thread``) para não travar o loop de
     eventos do orchestrator enquanto outros requests estão em andamento.
     """
+    from sqlalchemy import select
+
+    from app.db.models import PipelineRun
+    from app.db.session import async_session_factory
     from app.runtime.workspace import WorkspaceManager
 
+    # Revisão final I2: runs em andamento (running/paused) nunca são
+    # purgados, por mais antigo que seja o último arquivo do workspace.
+    async with async_session_factory() as session:
+        active = {
+            str(r) for r in (await session.execute(
+                select(PipelineRun.id).where(PipelineRun.status.in_(["running", "paused"]))
+            )).scalars().all()
+        }
     removed = await asyncio.to_thread(
-        WorkspaceManager().purge_older_than, settings.workspace_retention_days
+        WorkspaceManager().purge_older_than, settings.workspace_retention_days, active
     )
     logger.info("workspace_purge: %d workspace(s) removido(s)", removed)
     return removed

@@ -707,9 +707,9 @@ async def resume_from_checkpoint(
     try:
         if source_dir.is_dir():
             try:
-                await asyncio.to_thread(
-                    shutil.copytree, source_dir, ws.path(run_id), symlinks=True
-                )
+                # Workspace E gitdir privado (C1): o novo run ganha a própria
+                # cópia do repositório, nunca compartilhada com o de origem.
+                await asyncio.to_thread(ws.copy, str(checkpoint.run_id), run_id)
             except (OSError, shutil.Error) as e:
                 raise WorkspaceError(
                     "não foi possível copiar o workspace do run de origem"
@@ -778,4 +778,8 @@ async def publish_run_endpoint(
     status = run.status.value if hasattr(run.status, "value") else run.status
     if status != "completed":
         raise AppError(409, "conflict", "run_not_completed")
-    return await publish_run(str(run.id), db=db)
+    result = await publish_run(str(run.id), db=db)
+    if not result:
+        # Pipeline (e o run, em cascata) excluída durante a publicação.
+        raise AppError(404, "not_found", "run_not_found")
+    return result

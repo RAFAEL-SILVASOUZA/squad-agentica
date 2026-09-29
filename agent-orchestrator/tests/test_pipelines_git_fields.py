@@ -161,6 +161,7 @@ async def test_delete_pipeline_removes_run_workspaces(
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "git_dirs_dir", str(tmp_path.parent / f"{tmp_path.name}-gd"))
 
     body = {"name": "Com workspace", "nodes": [], "edges": []}
     created = await full_client.post("/api/pipelines", json=body)
@@ -177,10 +178,31 @@ async def test_delete_pipeline_removes_run_workspaces(
     session.add(run)
     await session.commit()
 
-    ws = WorkspaceManager(tmp_path)
+    ws = WorkspaceManager()
     ws.create_empty(str(run.id))
+    ws.git_dir(str(run.id)).mkdir(parents=True)
     assert ws.path(str(run.id)).exists()
 
     r = await full_client.delete(f"/api/pipelines/{pid}")
     assert r.status_code == 204
     assert not ws.path(str(run.id)).exists()
+    # O repositório git privado do run também sai (revisão final C1).
+    assert not ws.git_dir(str(run.id)).exists()
+
+
+async def test_deleting_git_connection_clears_pipeline_repository(
+    full_client, make_git_integration
+):
+    """Revisão final I3: excluir a conexão Git limpa repositório e branch base
+    das pipelines que a usavam (não só o FK)."""
+    integ = await make_git_integration()
+    created = await full_client.post("/api/pipelines", json={
+        "name": "Usa conexão", "nodes": [], "edges": [],
+        "repository": {"integrationId": integ["id"], "fullName": "o/r", "baseBranch": "main"},
+    })
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+
+    assert (await full_client.delete(f"/api/integrations/{integ['id']}")).status_code == 204
+    fetched = (await full_client.get(f"/api/pipelines/{pid}")).json()
+    assert fetched["repository"] is None

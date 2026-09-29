@@ -18,7 +18,12 @@ from app.db.models import Checkpoint, Integration, Pipeline, PipelineNode, Pipel
 from app.db.session import async_session_factory
 from app.integrations.git_providers import GitProviderError, provider_for
 from app.runtime.websocket import publish as ws_publish
-from app.runtime.workspace import WorkspaceError, WorkspaceManager, slugify_branch
+from app.runtime.workspace import (
+    EXPIRED_MESSAGE,
+    WorkspaceError,
+    WorkspaceManager,
+    slugify_branch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +122,21 @@ async def _run_inputs_and_outputs(
     return dict(inputs), outputs
 
 
+async def _commit_or_gone(db: AsyncSession, run: PipelineRun) -> bool:
+    """Grava o resultado da publicação. A pipeline (e, em cascata, o run)
+    pode ter sido excluída enquanto o push/PR rodava: aí o UPDATE não acha a
+    linha — desfaz e devolve False em vez de derrubar a requisição (500)."""
+    run_id = str(run.id)  # antes do rollback, que expira os atributos
+    try:
+        await db.commit()
+        await db.refresh(run)
+        return True
+    except Exception as e:  # noqa: BLE001 — StaleDataError/InvalidRequestError etc.
+        await db.rollback()
+        logger.warning("Run %s sumiu durante a publicação (%s)", run_id, type(e).__name__)
+        return False
+
+
 async def _publish(
     db: AsyncSession,
     run_id: str,
@@ -137,22 +157,36 @@ async def _publish(
                 Integration.owner_id == run.owner_id,
             )
         )).scalar_one_or_none()
-    if pipeline is None or not pipeline.git_repository or not pipeline.git_base_branch:
+    if (
+        pipeline is None
+        or not pipeline.git_integration_id
+        or not pipeline.git_repository
+        or not pipeline.git_base_branch
+    ):
+        # Sem repositório (ou a conexão Git foi removida: git_integration_id
+        # NULL) não há o que publicar.
         run.publish_status = "none"
-        await db.commit()
+        if not await _commit_or_gone(db, run):
+            return {}
         return _run_to_dict(run)
 
+    ws = manager or WorkspaceManager()
     try:
         if integration is None:
-            # Repositório configurado, mas a conexão foi removida (FK SET NULL)
-            # ou não é do dono: mesma mensagem do caminho de clone.
+            # Conexão Git que não é do dono do run: mesma mensagem do clone.
             raise GitProviderError("conexão Git da pipeline não encontrada")
+        provider = provider_factory(integration)
+        rid = str(run.id)
+        if not ws.path(rid).is_dir() or not ws.has_repo(rid):
+            # Revisão final I2: workspace (ou o repositório privado) purgado
+            # pela retenção — nunca "sem alterações" silencioso.
+            raise WorkspaceError(EXPIRED_MESSAGE)
         inputs, outputs = await _run_inputs_and_outputs(db, run)
         run_url = f"{settings.portal_base_url.rstrip('/')}/pipelines/{pipeline.id}/run"
         result = await publish_workspace(
-            manager or WorkspaceManager(),
-            provider_factory(integration),
-            run_id=str(run.id),
+            ws,
+            provider,
+            run_id=rid,
             repo=pipeline.git_repository,
             base=pipeline.git_base_branch,
             pipeline_name=pipeline.name,
@@ -174,8 +208,8 @@ async def _publish(
         logger.warning("Publicação do run %s falhou: %s", run.id, run.publish_error)
     else:
         run.publish_error = None
-    await db.commit()
-    await db.refresh(run)
+    if not await _commit_or_gone(db, run):
+        return {}
 
     # Status agregado (nodeId="") para o monitor recarregar o run com o PR.
     status = run.status.value if hasattr(run.status, "value") else run.status

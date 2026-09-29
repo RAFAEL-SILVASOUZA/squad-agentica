@@ -8,11 +8,11 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.db.models import Integration
+from app.db.models import Integration, Pipeline
 
 
 class IntegrationRegistry:
@@ -176,8 +176,18 @@ class IntegrationRegistry:
         return integration
 
     async def delete(self, integration_id: uuid.UUID, owner_id: uuid.UUID) -> None:
-        """Remove uma integração."""
+        """Remove uma integração.
+
+        Conexão Git: as pipelines que a usavam perdem também o repositório e a
+        branch base (revisão final I3) — sem isso o FK SET NULL deixava um
+        repositório "órfão" configurado, que o run não consegue clonar.
+        """
         integration = await self.get(integration_id, owner_id)
+        await self._db.execute(
+            update(Pipeline)
+            .where(Pipeline.git_integration_id == integration.id)
+            .values(git_integration_id=None, git_repository=None, git_base_branch=None)
+        )
         await self._db.delete(integration)
         await self._db.commit()
 

@@ -64,6 +64,9 @@ class ExecuteRequest(BaseModel):
     workspaceDir: str | None = Field(
         default=None, description="Workspace do run (spec 14.1), confina as ferramentas"
     )
+    # Capacidade MCP do run (emitida pelo orchestrator; só repassada à ponte).
+    runId: str | None = None
+    mcpCapability: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +133,21 @@ async def execute(request: Request) -> JSONResponse:
                 status_code=400,
                 content={"error": "invalid workspace", "code": "invalid_workspace"},
             )
+        # O worker nunca cria o workspace de um run: se ele não existe (run
+        # expirado/removido), é erro — recriar vazio "perderia" o trabalho.
+        if not resolved_workspace.is_dir():
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid workspace",
+                    "code": "invalid_workspace",
+                    "details": {
+                        "message": (
+                            "O workspace deste run não existe mais (expirou ou foi removido)."
+                        )
+                    },
+                },
+            )
         # Usa o caminho resolvido (sem ``..``/symlinks) daqui em diante.
         workspace_dir = str(resolved_workspace)
 
@@ -144,6 +162,9 @@ async def execute(request: Request) -> JSONResponse:
     execute_options = {}
     if req.mcpServers is not None:
         execute_options["mcp_servers"] = req.mcpServers
+    if req.mcpCapability:
+        execute_options["mcp_capability"] = req.mcpCapability
+        execute_options["run_id"] = req.runId
     result = await execute_agent(
         agent_id=req.agentId,
         node_id=req.nodeId,

@@ -290,7 +290,9 @@ async def test_concurrent_publish_creates_one_pr(session, test_engine, test_user
     assert a["prNumber"] == b["prNumber"] == 1
 
 
-async def test_missing_integration_with_repository_fails(session, test_user, tmp_path):
+async def test_deleted_integration_means_no_repository(session, test_user, tmp_path):
+    """Revisão final I3: conexão removida (FK SET NULL) = pipeline sem
+    repositório -> ``none``, nunca falha."""
     run = await _seed(session, test_user, with_repo=True)
     run_id = str(run.id)
     pipe = await session.get(Pipeline, run.pipeline_id)
@@ -300,5 +302,66 @@ async def test_missing_integration_with_repository_fails(session, test_user, tmp
     session.expire_all()
     with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
         out = await publish_run(run_id, db=session, manager=WorkspaceManager(tmp_path))
+    assert out["publishStatus"] == "none"
+    assert out["publishError"] is None
+
+
+async def test_integration_of_other_owner_fails(session, test_user, other_user, tmp_path):
+    run = await _seed(session, test_user, with_repo=True)
+    pipe = await session.get(Pipeline, run.pipeline_id)
+    foreign = Integration(id=uuid.uuid4(), owner_id=other_user.owner_id, type="github",
+                          name="alheia", config={"token": "x"})
+    session.add(foreign)
+    await session.flush()
+    pipe.git_integration_id = foreign.id
+    await session.commit()
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        out = await publish_run(str(run.id), db=session, manager=WorkspaceManager(tmp_path))
     assert out["publishStatus"] == "failed"
     assert out["publishError"] == "conexão Git da pipeline não encontrada"
+
+
+@pytest.mark.parametrize("what", ["workspace", "gitdir"])
+async def test_expired_workspace_fails_with_clear_message(
+    session, test_user, tmp_path, remote, what
+):
+    """Revisão final I2: workspace (ou gitdir privado) purgado -> failed com
+    mensagem clara, nunca ``no_changes`` silencioso."""
+    import shutil
+
+    run = await _seed(session, test_user, with_repo=True)
+    ws = WorkspaceManager(tmp_path / "ws")
+    await ws.clone(str(run.id), remote, "main")
+    if what == "workspace":
+        shutil.rmtree(ws.path(str(run.id)))
+    else:
+        shutil.rmtree(ws.git_dir(str(run.id)))
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        out = await publish_run(str(run.id), db=session, manager=ws,
+                                provider_factory=lambda integ: FakeProvider(remote))
+    assert out["publishStatus"] == "failed"
+    assert out["publishError"] == "O workspace deste run expirou e foi removido"
+
+
+async def test_pipeline_deleted_during_publish_does_not_crash(
+    session, test_engine, test_user, tmp_path, remote
+):
+    """A pipeline (e o run, em cascata) some enquanto o push/PR roda: o
+    publish devolve ``{}`` em vez de estourar na gravação final."""
+    run = await _seed(session, test_user, with_repo=True)
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone(str(run.id), remote, "main")
+    (p / "spec.md").write_text("# Spec\n")
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    class DeletingProvider(FakeProvider):
+        async def create_pull_request(self, repo, head, base, title, body):
+            async with factory() as other:
+                await other.delete(await other.get(Pipeline, run.pipeline_id))
+                await other.commit()
+            return await super().create_pull_request(repo, head, base, title, body)
+
+    with patch("app.runtime.publisher.ws_publish", new_callable=AsyncMock):
+        out = await publish_run(str(run.id), db=session, manager=ws,
+                                provider_factory=lambda integ: DeletingProvider(remote))
+    assert out == {}

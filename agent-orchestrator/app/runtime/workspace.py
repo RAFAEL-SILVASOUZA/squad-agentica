@@ -2,22 +2,35 @@
 
 Dono: rt-executor (Task 5, 2026-09-28-projeto-git-e-usabilidade). O worker
 escreve arquivos no workspace do run (volume compartilhado orchestrator/
-worker) e o orchestrator é quem faz commit/push — ambos os containers rodam
-como root, então os arquivos podem ter sido criados por um UID diferente do
-processo git; ``-c safe.directory=*`` evita o erro "detected dubious
-ownership in repository" do git >= 2.35 sem exigir configuração por caminho.
+worker) e o orchestrator é quem faz commit/push.
+
+Revisão final (C1): o repositório git do run NÃO fica no workspace. O clone
+usa ``--separate-git-dir`` para um diretório privado do orchestrator
+(``settings.git_dirs_dir``, fora do volume compartilhado) e todo comando git
+recebe ``--git-dir=<privado> --work-tree=<workspace>`` explícitos — um
+``.git`` (arquivo ou diretório) plantado por um agente no workspace é
+ignorado. Além disso o git roda sem config de sistema/global, sem hooks, sem
+fsmonitor, e com ``<gitdir>/info/attributes`` anulando os drivers
+filter/diff/merge que um ``.gitattributes`` do workspace pudesse pedir.
+Assim nada que o agente escreva vira execução de código no orchestrator
+(que guarda INTEGRATIONS_SECRET_KEY, credenciais do banco e os tokens).
+
+Orchestrator e worker rodam como root mas os arquivos podem ter sido criados
+por processos diferentes; ``-c safe.directory=*`` evita o erro "detected
+dubious ownership in repository" do git >= 2.35.
 """
 
 from __future__ import annotations
 
 import asyncio
-import io
 import os
 import re
 import shutil
+import tempfile
 import time
 import unicodedata
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from app.core.config import settings
@@ -27,6 +40,10 @@ class WorkspaceError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+class ArchiveTooLargeError(WorkspaceError):
+    """O zip do workspace passaria do limite (``ARCHIVE_MAX_BYTES``)."""
 
 
 # Casa credenciais embutidas em URLs (``https://user:token@host/...``) para
@@ -44,10 +61,40 @@ _PASSTHROUGH_ENV = (
     "SSL_CERT_FILE", "GIT_SSL_CAINFO",
 )
 
+# Config de linha de comando aplicada a TODO git do orchestrator (C1): sem
+# hooks (pre-push receberia a URL com token), sem fsmonitor, sem arquivo de
+# atributos global. Config de linha de comando tem precedência sobre a do
+# repositório (que, de qualquer forma, é o gitdir privado).
+_HARDEN = (
+    "-c", "safe.directory=*",
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.fsmonitor=false",
+    "-c", "core.attributesFile=/dev/null",
+    "-c", "core.untrackedCache=false",
+    "-c", "protocol.ext.allow=never",
+)
 
-# Arquivo (dentro de .git, fora do alcance do worker via tree/zip) com o SHA
-# da base clonada: "há o que publicar" = árvore suja OU HEAD à frente da base.
+# ``<gitdir>/info/attributes`` tem precedência sobre qualquer .gitattributes
+# do workspace: anula (estado "unspecified") filter/diff/merge — nenhum
+# driver externo (clean/smudge/textconv/command) roda, e o diff continua
+# detectando texto x binário pelo conteúdo.
+_INFO_ATTRIBUTES = "* !filter !diff !merge\n"
+
+# ``<gitdir>/info/exclude``: ``.git`` plantado no workspace nunca entra num
+# commit; diretórios de cache/dependências comuns também não.
+_INFO_EXCLUDE = ".git\nnode_modules/\n__pycache__/\n.npm/\n.cache/\n"
+
+# Arquivo (no gitdir privado, fora do alcance do worker) com o SHA da base
+# clonada: "há o que publicar" = árvore suja OU HEAD à frente da base.
 _BASE_FILE = "agent-portal-base"
+
+# Teto da listagem de arquivos (revisão final I1): workspace com dezenas de
+# milhares de arquivos (node_modules) não pode travar a API/portal.
+TREE_MAX_ENTRIES = 5000
+# Teto do zip (soma dos tamanhos dos arquivos) — 413 archive_too_large.
+ARCHIVE_MAX_BYTES = 200 * 1024 * 1024
+
+EXPIRED_MESSAGE = "O workspace deste run expirou e foi removido"
 
 
 def _scrub(text: str) -> str:
@@ -87,13 +134,14 @@ def slugify_branch(pipeline_name: str, run_id: str) -> str:
     return f"agent-portal/{slugify(pipeline_name)}-{run_id.replace('-', '')[:8]}"
 
 
-async def _git(cwd: Path | None, *args: str, check: bool = True) -> tuple[int, str]:
-    # HOME precisa existir para o git não avisar/falhar ao ler config global;
-    # ``-c safe.directory=*`` (ver docstring do módulo) confia em qualquer
-    # dono de repositório, já que orchestrator e worker rodam como root mas
-    # podem ter escrito os arquivos em momentos/processos diferentes.
+def _git_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    # Ambiente mínimo e explícito: nada de GIT_DIR/GIT_* herdado; sem config
+    # de sistema/global nem atributos de sistema (C1).
     env = {
         "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_ATTR_NOSYSTEM": "1",
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": "/tmp",
     }
@@ -101,8 +149,27 @@ async def _git(cwd: Path | None, *args: str, check: bool = True) -> tuple[int, s
         value = os.environ.get(key)
         if value:
             env[key] = value
+    if extra:
+        env.update(extra)
+    return env
+
+
+async def _git(
+    cwd: Path | None,
+    *args: str,
+    check: bool = True,
+    git_dir: Path | None = None,
+    work_tree: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str]:
+    repo_args: list[str] = []
+    if git_dir is not None:
+        repo_args += [f"--git-dir={git_dir}"]
+    if work_tree is not None:
+        repo_args += [f"--work-tree={work_tree}"]
     proc = await asyncio.create_subprocess_exec(
-        "git", "-c", "safe.directory=*", *args, cwd=str(cwd) if cwd else None, env=env,
+        "git", *_HARDEN, *repo_args, *args, cwd=str(cwd) if cwd else None,
+        env=_git_env(env),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     out, _ = await proc.communicate()
     text = _scrub(out.decode("utf-8", errors="replace"))
@@ -111,9 +178,34 @@ async def _git(cwd: Path | None, *args: str, check: bool = True) -> tuple[int, s
     return proc.returncode or 0, text
 
 
+def _newest_mtime(*paths: Path) -> float:
+    """Maior mtime entre os diretórios e tudo dentro deles (sem seguir links)."""
+    newest = 0.0
+    for base in paths:
+        try:
+            newest = max(newest, base.lstat().st_mtime)
+        except OSError:
+            continue
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            for name in (*dirnames, *filenames):
+                try:
+                    newest = max(newest, os.lstat(os.path.join(dirpath, name)).st_mtime)
+                except OSError:
+                    continue
+    return newest
+
+
 class WorkspaceManager:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, git_root: Path | None = None) -> None:
         self.root = Path(root or settings.workspaces_dir)
+        if git_root is not None:
+            self.git_root = Path(git_root)
+        elif root is not None:
+            # Raiz explícita (testes): gitdirs num irmão, fora da raiz dos
+            # workspaces — mesma separação da produção.
+            self.git_root = self.root.parent / f"{self.root.name}.gitdirs"
+        else:
+            self.git_root = Path(settings.git_dirs_dir)
 
     def path(self, run_id: str) -> Path:
         # run_id vem de PipelineRun.id (UUID) em todo caminho de produção;
@@ -123,12 +215,29 @@ class WorkspaceManager:
             raise WorkspaceError("run_id inválido")
         return self.root / run_id
 
+    def git_dir(self, run_id: str) -> Path:
+        """Repositório git privado do run (fora do volume compartilhado)."""
+        self.path(run_id)  # mesma validação do run_id
+        return self.git_root / run_id
+
+    def has_repo(self, run_id: str) -> bool:
+        return (self.git_dir(run_id) / "HEAD").is_file()
+
+    async def _rgit(
+        self, run_id: str, *args: str, check: bool = True, env: dict[str, str] | None = None
+    ) -> tuple[int, str]:
+        """git no repositório do run: gitdir privado + work tree explícitos."""
+        wt = self.path(run_id)
+        return await _git(
+            wt, *args, check=check, git_dir=self.git_dir(run_id), work_tree=wt, env=env
+        )
+
     def _safe(self, run_id: str, rel: str) -> Path:
         base = self.path(run_id)
         # Rejeita qualquer segmento do caminho que seja um symlink — mesmo
         # que o alvo resolvido caia (por acaso) dentro do workspace, nunca
         # seguimos link para ler um arquivo (mesma postura de tree()/
-        # zip_bytes(), que também nunca seguem symlink).
+        # zip_to_file(), que também nunca seguem symlink).
         node = base
         for part in Path(rel).parts:
             node = node / part
@@ -145,17 +254,29 @@ class WorkspaceManager:
         p.mkdir(parents=True, exist_ok=True)
         return p
 
+    def _write_info(self, run_id: str) -> None:
+        info = self.git_dir(run_id) / "info"
+        info.mkdir(parents=True, exist_ok=True)
+        (info / "attributes").write_text(_INFO_ATTRIBUTES)
+        (info / "exclude").write_text(_INFO_EXCLUDE)
+
     async def clone(self, run_id: str, clone_url: str, base_branch: str) -> Path:
         dest = self.path(run_id)
+        gd = self.git_dir(run_id)
         if dest.exists():
             raise WorkspaceError("workspace do run já existe")
+        if gd.exists():
+            shutil.rmtree(gd, ignore_errors=True)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.git_root.mkdir(parents=True, exist_ok=True)
         code, out = await _git(
-            None, "clone", "--depth", "1", "--branch", base_branch, "--", clone_url, str(dest),
+            None, "clone", "--depth", "1", "--branch", base_branch,
+            f"--separate-git-dir={gd}", "--", clone_url, str(dest),
             check=False,
         )
         if code != 0:
             shutil.rmtree(dest, ignore_errors=True)
+            shutil.rmtree(gd, ignore_errors=True)
             if "Remote branch" in out and "not found" in out:
                 raise WorkspaceError(f"branch '{base_branch}' não existe no repositório")
             if (
@@ -167,29 +288,47 @@ class WorkspaceManager:
             ):
                 raise WorkspaceError("token inválido ou sem acesso ao repositório")
             raise WorkspaceError(f"falha ao clonar o repositório: {out.strip()[-300:]}")
+        # O clone deixa ``<workspace>/.git`` como arquivo "gitdir: <privado>";
+        # removido: o workspace não aponta para o repositório (o orchestrator
+        # sempre passa --git-dir/--work-tree).
+        dotgit = dest / ".git"
+        if dotgit.is_file() or dotgit.is_symlink():
+            dotgit.unlink()
+        self._write_info(run_id)
         # Credencial fora do remote: o worker (e os agentes) nunca veem o token.
-        await _git(dest, "remote", "set-url", "origin", _CRED.sub(r"\1", clone_url))
-        _, base_sha = await _git(dest, "rev-parse", "HEAD")
-        (dest / ".git" / _BASE_FILE).write_text(base_sha.strip() + "\n")
+        await self._rgit(run_id, "remote", "set-url", "origin", _CRED.sub(r"\1", clone_url))
+        _, base_sha = await self._rgit(run_id, "rev-parse", "HEAD")
+        (gd / _BASE_FILE).write_text(base_sha.strip() + "\n")
         return dest
 
-    async def _base_sha(self, p: Path) -> str | None:
+    def copy(self, src_run_id: str, dst_run_id: str) -> None:
+        """Cópia do workspace E do gitdir privado de um run para outro (time
+        travel): cada run tem o próprio repositório, nunca compartilhado."""
+        src, dst = self.path(src_run_id), self.path(dst_run_id)
+        shutil.copytree(src, dst, symlinks=True)
+        src_gd = self.git_dir(src_run_id)
+        if src_gd.is_dir():
+            shutil.copytree(src_gd, self.git_dir(dst_run_id), symlinks=True)
+            self._write_info(dst_run_id)
+
+    async def _base_sha(self, run_id: str) -> str | None:
         """SHA da base clonada (gravado no clone; fallback: upstream do branch)."""
-        marker = p / ".git" / _BASE_FILE
+        marker = self.git_dir(run_id) / _BASE_FILE
         if marker.is_file():
             return marker.read_text().strip() or None
-        code, out = await _git(p, "rev-parse", "--verify", "-q", "@{upstream}", check=False)
+        code, out = await self._rgit(
+            run_id, "rev-parse", "--verify", "-q", "@{upstream}", check=False
+        )
         return out.strip() if code == 0 and out.strip() else None
 
     async def changed_files(self, run_id: str) -> list[dict]:
-        p = self.path(run_id)
-        if not (p / ".git").exists():
+        if not self.has_repo(run_id):
             return [{"path": f["path"], "status": "added"} for f in self.tree(run_id)]
         # ``-z`` + ``core.quotePath=false``: sem isso, nomes não-ASCII saem
         # escapados em octal ("especifica\303\247\303\243o.md") e renames
         # ("a -> b") quebram o parsing por posição fixa.
-        _, out = await _git(
-            p, "-c", "core.quotePath=false", "status", "--porcelain", "-z",
+        _, out = await self._rgit(
+            run_id, "-c", "core.quotePath=false", "status", "--porcelain", "-z",
             "--untracked-files=all",
         )
         tokens = out.split("\x00")
@@ -220,19 +359,22 @@ class WorkspaceManager:
 
         Um symlink commitado (ex.: ``leak -> /proc/self/environ`` ou
         ``-> /app/.env``) poderia vazar segredos do orchestrator via
-        tree()/zip_bytes() se seguido; aqui ele é ignorado por completo —
+        tree()/zip_to_file() se seguido; aqui ele é ignorado por completo —
         tanto o próprio arquivo quanto qualquer diretório symlink (que
-        também não é percorrido, via ``followlinks=False``).
+        também não é percorrido, via ``followlinks=False``). ``.git``
+        (arquivo ou diretório) nunca é listado.
         """
         base = self.path(run_id)
         base_resolved = base.resolve()
         for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
             dirpath_p = Path(dirpath)
-            dirnames[:] = [
+            dirnames[:] = sorted(
                 d for d in dirnames
                 if d != ".git" and not (dirpath_p / d).is_symlink()
-            ]
-            for name in filenames:
+            )
+            for name in sorted(filenames):
+                if name == ".git":
+                    continue
                 fp = dirpath_p / name
                 if fp.is_symlink():
                     continue
@@ -244,17 +386,34 @@ class WorkspaceManager:
                     continue
                 yield fp
 
-    def tree(self, run_id: str) -> list[dict]:
+    def tree_limited(self, run_id: str, max_entries: int) -> tuple[list[dict], bool]:
+        """Como ``tree``, mas no máximo ``max_entries`` itens; ``truncated``
+        indica que havia mais arquivos."""
         base = self.path(run_id)
+        paths: list[Path] = []
+        truncated = False
+        for f in self._iter_files(run_id):
+            if len(paths) >= max_entries:
+                truncated = True
+                break
+            paths.append(f)
         items = []
-        for f in sorted(self._iter_files(run_id)):
-            with f.open("rb") as h:
-                head = h.read(8000)
+        for f in sorted(paths):
+            try:
+                with f.open("rb") as h:
+                    head = h.read(8000)
+                size = f.stat().st_size
+            except OSError:
+                continue
             items.append({
                 "path": f.relative_to(base).as_posix(),
-                "size": f.stat().st_size,
+                "size": size,
                 "binary": b"\x00" in head,
             })
+        return items, truncated
+
+    def tree(self, run_id: str) -> list[dict]:
+        items, _ = self.tree_limited(run_id, 10**9)
         return items
 
     def read_file(self, run_id: str, rel_path: str, max_bytes: int = 1_000_000) -> dict:
@@ -276,53 +435,96 @@ class WorkspaceManager:
         }
 
     async def diff(self, run_id: str) -> str:
-        p = self.path(run_id)
-        if not (p / ".git").exists():
+        if not self.has_repo(run_id):
             return ""
-        await _git(p, "add", "-A", "-N")
-        # ``--no-color``: explícito mesmo sem tty (git já desliga cor por
-        # padrão fora de terminal) — evita depender desse comportamento
-        # implícito. Arquivo binário: o git detecta pelo conteúdo e imprime
-        # "Binary files a/... and b/... differ" em vez do conteúdo bruto.
-        _, out = await _git(p, "diff", "--no-color")
-        return out
+        # Índice TEMPORÁRIO (cópia do índice do run): o ``add -N`` que faz
+        # arquivos novos aparecerem no diff não mexe no índice real — diff e
+        # publicação concorrentes não disputam o ``index.lock``.
+        gd = self.git_dir(run_id)
+        fd, tmp_index = tempfile.mkstemp(prefix="agent-portal-index-")
+        os.close(fd)
+        try:
+            real_index = gd / "index"
+            if real_index.is_file():
+                shutil.copyfile(real_index, tmp_index)
+            else:
+                os.unlink(tmp_index)
+            env = {"GIT_INDEX_FILE": tmp_index}
+            await self._rgit(run_id, "add", "-A", "-N", env=env)
+            # ``--no-color``: explícito mesmo sem tty. ``--no-ext-diff`` e
+            # ``--no-textconv``: nenhum programa externo roda (C1). Arquivo
+            # binário: o git detecta pelo conteúdo e imprime "Binary files
+            # a/... and b/... differ" em vez do conteúdo bruto.
+            _, out = await self._rgit(
+                run_id, "diff", "--no-color", "--no-ext-diff", "--no-textconv", env=env
+            )
+            return out
+        finally:
+            try:
+                os.unlink(tmp_index)
+            except OSError:
+                pass
+
+    def zip_to_file(
+        self, run_id: str, dest: Path | str, max_bytes: int = ARCHIVE_MAX_BYTES
+    ) -> Path:
+        """Grava o zip do workspace em ``dest`` (arquivo, não memória).
+
+        ``ArchiveTooLargeError`` se a soma dos tamanhos passa de ``max_bytes``
+        (verificado antes de comprimir qualquer coisa)."""
+        base = self.path(run_id)
+        files = list(self._iter_files(run_id))
+        total = 0
+        for f in files:
+            try:
+                total += f.stat().st_size
+            except OSError:
+                continue
+            if total > max_bytes:
+                raise ArchiveTooLargeError("workspace grande demais para baixar como zip")
+        dest = Path(dest)
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in files:
+                try:
+                    z.write(f, f.relative_to(base).as_posix())
+                except OSError:
+                    continue
+        return dest
 
     def zip_bytes(self, run_id: str) -> bytes:
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for item in self.tree(run_id):
-                z.write(self.path(run_id) / item["path"], item["path"])
-        return buf.getvalue()
+        """Zip em memória (conveniência para testes; a API usa ``zip_to_file``)."""
+        fd, tmp = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        try:
+            return self.zip_to_file(run_id, tmp).read_bytes()
+        finally:
+            os.unlink(tmp)
 
     async def commit_and_push(
         self, run_id: str, clone_url: str, branch: str, message: str
     ) -> str | None:
-        p = self.path(run_id)
-        if not (p / ".git").exists():
-            # Sem repositório git no workspace: nada a commitar/publicar.
-            # Importante não rodar ``git add`` aqui — sem ``.git`` local, o
-            # git subiria procurando um repositório em diretórios pai (ex.:
-            # o volume compartilhado de workspaces), o que é sempre errado.
+        if not self.has_repo(run_id):
+            # Sem repositório git para o run: nada a commitar/publicar.
             return None
         # Spec §5.9: uma tentativa anterior pode ter commitado e falhado no
         # push/PR — a árvore fica limpa, mas o HEAD está à frente da base e
         # ainda há o que publicar. Commit só se a árvore está suja; publica
         # se HEAD != base.
         dirty = bool(await self.changed_files(run_id))
-        base_sha = await self._base_sha(p)
+        base_sha = await self._base_sha(run_id)
         if dirty:
             author = ["-c", f"user.name={settings.git_author_name}",
                       "-c", f"user.email={settings.git_author_email}"]
-            await _git(p, "add", "-A")
-            await _git(p, *author, "commit", "-m", message)
-        _, head_out = await _git(p, "rev-parse", "HEAD")
+            await self._rgit(run_id, "add", "-A")
+            await self._rgit(run_id, *author, "commit", "--no-verify", "-m", message)
+        _, head_out = await self._rgit(run_id, "rev-parse", "HEAD")
         head = head_out.strip()
         if not dirty and (base_sha is None or head == base_sha):
             return None
         candidate, n = branch, 1
         while True:
-            code, out = await _git(
-                p, "ls-remote", "--exit-code", "--heads", "--", clone_url, candidate,
+            code, out = await self._rgit(
+                run_id, "ls-remote", "--exit-code", "--heads", "--", clone_url, candidate,
                 check=False,
             )
             if code == 0:
@@ -349,23 +551,40 @@ class WorkspaceManager:
             # se dá pra publicar, então propaga o erro (mensagem já vem
             # escrubada de credenciais por ``_git``).
             raise WorkspaceError("não foi possível consultar o repositório remoto")
-        await _git(p, "push", "--", clone_url, f"HEAD:refs/heads/{candidate}")
+        await self._rgit(
+            run_id, "push", "--no-verify", "--", clone_url, f"HEAD:refs/heads/{candidate}"
+        )
         return candidate
 
     def remove(self, run_id: str) -> None:
         shutil.rmtree(self.path(run_id), ignore_errors=True)
+        shutil.rmtree(self.git_dir(run_id), ignore_errors=True)
 
-    def remove_many(self, run_ids: list[str]) -> None:
+    def remove_many(self, run_ids: Iterable[str]) -> None:
         for r in run_ids:
             self.remove(r)
 
-    def purge_older_than(self, days: int) -> int:
-        if not self.root.exists():
-            return 0
+    def purge_older_than(self, days: int, active: Iterable[str] = ()) -> int:
+        """Remove workspaces (e gitdirs) sem atividade há mais de ``days`` dias.
+
+        A idade é o mtime MAIS RECENTE dentro do workspace/gitdir (não o do
+        diretório raiz, que não muda quando um arquivo aninhado é editado).
+        ``active``: ids de runs running/paused — nunca removidos."""
+        keep = {str(a) for a in active}
         limit = time.time() - days * 86400
         removed = 0
-        for d in self.root.iterdir():
-            if d.is_dir() and d.stat().st_mtime < limit:
-                shutil.rmtree(d, ignore_errors=True)
+        names: set[str] = set()
+        for base in (self.root, self.git_root):
+            if base.is_dir():
+                names.update(d.name for d in base.iterdir() if d.is_dir())
+        for name in sorted(names):
+            if name in keep:
+                continue
+            try:
+                ws, gd = self.path(name), self.git_dir(name)
+            except WorkspaceError:
+                continue
+            if _newest_mtime(ws, gd) < limit:
+                self.remove(name)
                 removed += 1
         return removed

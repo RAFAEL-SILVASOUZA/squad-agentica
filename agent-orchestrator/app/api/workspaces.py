@@ -15,22 +15,36 @@ que o workspace exista (404 ``workspace_not_found``).
 
 from __future__ import annotations
 
+import asyncio
+import os
+import tempfile
 import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import Response
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.api.pipeline_runs import get_owned_run
 from app.auth.dependencies import get_current_user
 from app.core.errors import AppError
 from app.db.models import Pipeline, User
 from app.db.session import get_db
-from app.runtime.workspace import WorkspaceError, WorkspaceManager, slugify, truncate_diff
+from app.runtime.workspace import (
+    TREE_MAX_ENTRIES,
+    ArchiveTooLargeError,
+    WorkspaceError,
+    WorkspaceManager,
+    slugify,
+    truncate_diff,
+)
 
 router = APIRouter(tags=["run-workspace"])
+
+# Revisão final I1: todo I/O de disco (árvore, leitura, zip) roda em thread
+# (``asyncio.to_thread``) — nunca no loop de eventos do orchestrator.
 
 
 @router.get("/runs/{run_id}/files")
@@ -43,10 +57,15 @@ async def list_files(
     ws = WorkspaceManager()
     rid = str(run_id)
     if not ws.path(rid).is_dir():
-        return {"items": []}
+        return {"items": [], "truncated": False}
 
-    tree = ws.tree(rid)
-    changed = {c["path"]: c["status"] for c in await ws.changed_files(rid)}
+    tree, truncated = await asyncio.to_thread(ws.tree_limited, rid, TREE_MAX_ENTRIES)
+    try:
+        changed = {c["path"]: c["status"] for c in await ws.changed_files(rid)}
+    except WorkspaceError:
+        # Status do git indisponível (repositório corrompido etc.): a
+        # listagem continua útil sem a coluna de status.
+        changed = {}
     items = [
         {
             "path": f["path"],
@@ -60,7 +79,7 @@ async def list_files(
     for path, status in changed.items():
         if status == "deleted" and path not in tree_paths:
             items.append({"path": path, "size": 0, "binary": False, "status": "deleted"})
-    return {"items": items}
+    return {"items": items, "truncated": truncated}
 
 
 @router.get("/runs/{run_id}/files/content")
@@ -73,7 +92,7 @@ async def get_file_content(
     await get_owned_run(db, run_id, user.owner_id)
     ws = WorkspaceManager()
     try:
-        return ws.read_file(str(run_id), path)
+        return await asyncio.to_thread(ws.read_file, str(run_id), path)
     except WorkspaceError as e:
         if "fora do workspace" in e.message:
             raise AppError(400, "validation error", "invalid_path") from e
@@ -91,16 +110,30 @@ async def get_diff(
     rid = str(run_id)
     if not ws.path(rid).is_dir():
         return {"diff": "", "truncated": False}
-    text, truncated = truncate_diff(await ws.diff(rid))
+    try:
+        raw = await ws.diff(rid)
+    except WorkspaceError as e:
+        raise AppError(409, "conflict", "diff_unavailable", {
+            "message": "Não foi possível calcular as alterações do workspace agora. "
+                       "Tente de novo em instantes.",
+        }) from e
+    text, truncated = truncate_diff(raw)
     return {"diff": text, "truncated": truncated}
 
 
-@router.get("/runs/{run_id}/archive")
+def _unlink_quietly(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+@router.get("/runs/{run_id}/archive", response_model=None)
 async def get_archive(
     run_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-) -> Response:
+) -> FileResponse:
     run = await get_owned_run(db, run_id, user.owner_id)
     ws = WorkspaceManager()
     rid = str(run_id)
@@ -111,9 +144,23 @@ async def get_archive(
         await db.execute(select(Pipeline.name).where(Pipeline.id == run.pipeline_id))
     ).scalar_one_or_none() or "run"
     filename = f"{slugify(pipeline_name)}-{run_id.hex[:8]}.zip"
-    data = ws.zip_bytes(rid)
-    return Response(
-        content=data,
+    # Zip num arquivo temporário (não em memória), transmitido pelo
+    # FileResponse e apagado depois do envio (BackgroundTask).
+    fd, tmp = tempfile.mkstemp(prefix="agent-portal-archive-", suffix=".zip")
+    os.close(fd)
+    try:
+        await asyncio.to_thread(ws.zip_to_file, rid, tmp)
+    except ArchiveTooLargeError as e:
+        _unlink_quietly(tmp)
+        raise AppError(413, "payload too large", "archive_too_large", {
+            "message": "O workspace é grande demais para baixar como zip (limite de 200 MB).",
+        }) from e
+    except BaseException:
+        _unlink_quietly(tmp)
+        raise
+    return FileResponse(
+        tmp,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        filename=filename,
+        background=BackgroundTask(_unlink_quietly, tmp),
     )

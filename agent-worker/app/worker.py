@@ -18,6 +18,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +30,12 @@ import yaml
 
 from app.core.llm import LLMClient, get_llm_client
 from app.minio_client import AgentArtifactClient, get_artifact_client
-from app.workspace_guard import WorkspaceEscapeError, current_workspace, resolve_in_workspace
+from app.workspace_guard import (
+    WorkspaceEscapeError,
+    current_workspace,
+    ensure_workspace,
+    resolve_in_workspace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -496,6 +503,8 @@ async def execute_tool(
     owner_id: str | None = None,
     mcp_routes: dict[str, str] | None = None,
     workspace_dir: str | None = None,
+    run_id: str | None = None,
+    mcp_capability: str | None = None,
 ) -> dict[str, Any] | str:
     """Executa uma tool pelo nome. Retorna o resultado como dict."""
     if name == "shell":
@@ -523,6 +532,12 @@ async def execute_tool(
         body = {"ownerId": owner_id, "tool": name, "arguments": args}
         if workspace_dir:
             body["workspaceDir"] = workspace_dir
+        # Capacidade do run emitida pelo orchestrator (revisão final I4): sem
+        # ela a ponte responde 403.
+        if run_id is not None:
+            body["runId"] = run_id
+        if mcp_capability:
+            body["mcpCapability"] = mcp_capability
         try:
             async with httpx.AsyncClient(timeout=70) as client:
                 response = await client.post(
@@ -582,15 +597,23 @@ async def _execute_shell(args: dict[str, Any]) -> dict[str, Any]:
     if block_result:
         return {"error": block_result}
 
-    workspace_dir = current_workspace.get()
-    workspace_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # Workspace de run inexistente (expirado) não é recriado: erro claro.
+        workspace_dir = ensure_workspace()
+    except WorkspaceEscapeError as e:
+        return {"error": str(e)}
 
+    # HOME fora do workspace (revisão final): caches/configs de ferramentas
+    # (~/.npm, ~/.cache, ~/.gitconfig...) não entram nos arquivos do run
+    # nem no commit. Um diretório temporário por comando, apagado no fim.
+    home_dir = tempfile.mkdtemp(prefix="agent-home-")
     safe_env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": str(workspace_dir),
+        "HOME": home_dir,
         "LANG": "en_US.UTF-8",
     }
 
+    proc = None
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -606,10 +629,13 @@ async def _execute_shell(args: dict[str, Any]) -> dict[str, Any]:
             "stderr": stderr.decode("utf-8", errors="replace"),
         }
     except TimeoutError:
-        proc.kill()
+        if proc is not None:
+            proc.kill()
         return {"error": f"Command timed out after {timeout}s"}
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        shutil.rmtree(home_dir, ignore_errors=True)
 
 
 async def _execute_read_file(args: dict[str, Any]) -> dict[str, Any]:
@@ -841,6 +867,8 @@ async def execute_agent(
     workspace_dir: str | None = None,
     owner_id: str | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
+    run_id: str | None = None,
+    mcp_capability: str | None = None,
 ) -> ExecutionResult:
     """Executa um agente: baixa snapshot, monta capacidades, roda LLM loop.
 
@@ -963,6 +991,8 @@ async def execute_agent(
                         owner_id=owner_id,
                         mcp_routes=capabilities.mcp_routes,
                         workspace_dir=workspace_dir,
+                        run_id=run_id,
+                        mcp_capability=mcp_capability,
                     )
                     result_str = (
                         tool_result
