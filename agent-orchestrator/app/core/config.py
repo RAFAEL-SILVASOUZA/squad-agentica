@@ -99,7 +99,8 @@ class Settings(BaseSettings):
     git_dirs_dir: str = "/var/lib/agent-portal/gitdirs"
     # Revisão final I4: segredo HMAC da capacidade por run que o worker
     # apresenta à ponte MCP (/internal/mcp). Vazio = derivado de
-    # INTEGRATIONS_SECRET_KEY (ou WORKER_TOKEN, em último caso).
+    # INTEGRATIONS_SECRET_KEY (ou JWT_SECRET, em último caso) — ver
+    # app/mcp/capability.py.
     mcp_capability_secret: str = ""
     git_author_name: str = "Agent Portal"
     git_author_email: str = "agent-portal@localhost"

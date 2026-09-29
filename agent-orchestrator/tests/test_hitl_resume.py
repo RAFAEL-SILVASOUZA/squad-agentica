@@ -72,6 +72,10 @@ class FakeWorker:
         *,
         timeout: int = 60,
         workspace_dir: str | None = None,
+        owner_id: str | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+        run_id: str | None = None,
+        mcp_capability: str | None = None,
     ) -> WorkerResponse:
         self.calls.append({"agent_id": agent_id, "node_id": node_id, "inputs": inputs})
         outputs = {k: f"{agent_id}:{v}" for k, v in inputs.items()}

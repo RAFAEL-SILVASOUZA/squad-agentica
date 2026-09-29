@@ -91,6 +91,8 @@ class WorkerClient(Protocol):
         workspace_dir: str | None = None,
         owner_id: str | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
+        run_id: str | None = None,
+        mcp_capability: str | None = None,
     ) -> WorkerResponse:
         """Executa o agente no worker. Nunca levanta exceção (ADR-001).
 
@@ -98,6 +100,8 @@ class WorkerClient(Protocol):
         trabalham (None = workspace padrão do worker).
         ``mcp_servers``: refs MCP resolvidas no disparo (``[{serverId, tools}]``);
         None = o worker usa as do artefato do agente.
+        ``run_id``/``mcp_capability``: capacidade HMAC do run que o worker
+        apenas repassa à ponte MCP (/internal/mcp) — revisão final I4.
         """
         ...
 
