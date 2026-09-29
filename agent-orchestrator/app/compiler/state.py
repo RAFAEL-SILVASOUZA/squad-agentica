@@ -111,6 +111,8 @@ class State(TypedDict):
     # quando o run não tem workspace. Reducer: last (default LangGraph).
     workspace_dir: str
     owner_id: str
+    # Id do PipelineRun (capacidade MCP por run, revisão final I4).
+    run_id: str
 
 
 def initial_state() -> dict[str, Any]:

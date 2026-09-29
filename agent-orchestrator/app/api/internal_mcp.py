@@ -9,6 +9,11 @@ sandbox). Quando a chamada traz um ``workspaceDir`` válido (estritamente dentro
 de ``settings.workspaces_dir``), o processo sobe com esse diretório como cwd,
 então caminhos relativos nos argumentos caem no workspace do run. Sem
 workspace, o processo usa o cwd padrão do orchestrator.
+
+Revisão final I4: além do token dos workers, cada chamada precisa da
+capacidade do run (``mcpCapability``, HMAC de ``runId|ownerId|workspaceDir``
+emitido pelo orchestrator — ``app/mcp/capability.py``); sem ela, ou com dono/
+workspace diferentes dos do run, 403 ``mcp_capability_invalid``.
 """
 
 import asyncio
@@ -24,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
+from app.mcp.capability import verify_mcp_capability
 from app.mcp.client import CALL_TIMEOUT, CONNECT_TIMEOUT, MCPClient, describe_connection_error
 from app.mcp.registry import MCPRegistry
 
@@ -35,6 +41,10 @@ class CallRequest(BaseModel):
     tool: str = Field(min_length=1)
     arguments: dict[str, Any] = Field(default_factory=dict)
     workspaceDir: str | None = None
+    # Revisão final I4: capacidade do run (HMAC emitido pelo orchestrator ao
+    # despachar o nó) — amarra ownerId e workspaceDir ao run despachado.
+    runId: str | None = None
+    mcpCapability: str | None = None
 
 
 @router.post("/{server_id}/call")
@@ -49,6 +59,12 @@ async def call_mcp(
         x_worker_token.encode(), settings.worker_token.encode()
     ):
         raise AppError(401, "Não autorizado", "worker_token_invalid")
+    if not verify_mcp_capability(
+        body.mcpCapability, body.runId, str(body.ownerId), body.workspaceDir
+    ):
+        raise AppError(
+            403, "Capacidade MCP inválida para este run", "mcp_capability_invalid"
+        )
     server = await MCPRegistry(db).get(server_id, body.ownerId)
     workspace = None
     if body.workspaceDir:

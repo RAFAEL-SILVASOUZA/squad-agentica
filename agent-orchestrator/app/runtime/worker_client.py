@@ -77,6 +77,8 @@ class HttpWorkerClient:
         workspace_dir: str | None = None,
         owner_id: str | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
+        run_id: str | None = None,
+        mcp_capability: str | None = None,
     ) -> WorkerResponse:
         """Execute an agent on the worker. NEVER raises (ADR-001).
 
@@ -91,6 +93,8 @@ class HttpWorkerClient:
                 chamadas MCP).
             mcp_servers: Refs MCP já resolvidas pelo executor
                 (``[{serverId, tools}]``); None mantém as do artefato.
+            run_id / mcp_capability: capacidade MCP do run (``runId`` e
+                ``mcpCapability``), repassada pelo worker à ponte MCP.
 
         Returns:
             WorkerResponse with status="completed" on success, or
@@ -108,6 +112,12 @@ class HttpWorkerClient:
             body["ownerId"] = owner_id
         if mcp_servers is not None:
             body["mcpServers"] = mcp_servers
+        # Capacidade MCP do run (revisão final I4): o worker só a repassa
+        # nas chamadas /internal/mcp; nunca é um segredo reutilizável.
+        if run_id is not None:
+            body["runId"] = run_id
+        if mcp_capability:
+            body["mcpCapability"] = mcp_capability
         headers = {
             "X-Worker-Token": self._worker_token,
             "Content-Type": "application/json",

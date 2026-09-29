@@ -69,6 +69,7 @@ class FakeWorker:
         timeout: int = 60,
         workspace_dir: str | None = None,
         owner_id: str | None = None,
+        **_kwargs: Any,
     ) -> WorkerResponse:
         self.calls.append(
             {
@@ -354,6 +355,7 @@ class TestPauseResume:
             timeout: int = 60,
             workspace_dir: str | None = None,
             owner_id: str | None = None,
+            **_kwargs: Any,
         ) -> WorkerResponse:
             if node_id == "B":
                 await asyncio.sleep(5)  # Slow enough to pause during.
@@ -436,6 +438,7 @@ class TestStop:
             timeout: int = 60,
             workspace_dir: str | None = None,
             owner_id: str | None = None,
+            **_kwargs: Any,
         ) -> WorkerResponse:
             await asyncio.sleep(5)
             return await original_execute(
@@ -502,6 +505,7 @@ class TestConcurrent:
             timeout: int = 60,
             workspace_dir: str | None = None,
             owner_id: str | None = None,
+            **_kwargs: Any,
         ) -> WorkerResponse:
             await asyncio.sleep(5)
             return await original_execute(

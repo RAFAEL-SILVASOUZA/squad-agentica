@@ -726,7 +726,7 @@ export function AgentDetail({
             />
             <Toggle
               label="Acesso a shell"
-              description="Permite ao agente executar comandos no shell."
+              description="Permite ao agente executar comandos no shell. Use só em ambiente confiável e de um único usuário: o shell não tem sandbox e pode ler os workspaces de outras execuções no volume compartilhado."
               checked={shellAccess}
               onChange={setShellAccess}
             />

@@ -26,6 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 from langgraph.graph import END, START, StateGraph
 
 from app.compiler.state import State
+from app.mcp.capability import mint_mcp_capability
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +368,16 @@ def _make_agent_node(
         #    executor (retomável), em vez de marcar failed e enviar para END.
         #    Falha de execução do agente (status="failed" sem worker_down)
         #    continua encerrando a pipeline (comportamento antigo).
+        # Revisão final I4: capacidade MCP do run (o worker só a repassa).
+        mcp_kwargs: dict[str, Any] = {}
+        if state.get("owner_id"):
+            run_id = state.get("run_id") or ""
+            mcp_kwargs = {
+                "run_id": run_id,
+                "mcp_capability": mint_mcp_capability(
+                    run_id, state["owner_id"], state.get("workspace_dir") or None
+                ),
+            }
         try:
             resp = await worker_client.execute(
                 agent_id=agent.agent_id,
@@ -375,6 +386,7 @@ def _make_agent_node(
                 timeout=timeout,
                 workspace_dir=state.get("workspace_dir") or None,
                 **({"owner_id": state["owner_id"]} if state.get("owner_id") else {}),
+                **mcp_kwargs,
                 **({"mcp_servers": mcp_servers} if mcp_servers is not None else {}),
             )
         except Exception as exc:  # noqa: BLE001 — rede de segurança

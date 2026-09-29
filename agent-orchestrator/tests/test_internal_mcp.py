@@ -30,14 +30,19 @@ async def test_internal_mcp(full_app, session, test_user, case, expected):
         else "python tests/fixtures/echo_mcp_server.py",
         env={"PRIVATE_VALUE": "never-echo-this-secret"},
     )
+    from app.mcp.capability import mint_mcp_capability
+
+    owner = str(uuid.uuid4() if case == "other_owner" else test_user.id)
     async with AsyncClient(transport=ASGITransport(app=full_app), base_url="http://test") as client:
         response = await client.post(
             f"/internal/mcp/{server.id}/call",
             headers={} if case == "no_token" else {"X-Worker-Token": settings.worker_token},
             json={
-                "ownerId": str(uuid.uuid4() if case == "other_owner" else test_user.id),
+                "ownerId": owner,
                 "tool": "echo",
                 "arguments": {"text": "Olá"},
+                "runId": "run-1",
+                "mcpCapability": mint_mcp_capability("run-1", owner, None),
             },
         )
     assert response.status_code == expected, response.text
@@ -129,9 +134,19 @@ HANG_SERVER = Path(__file__).parent / "fixtures" / "hang_mcp_server.py"
 
 async def _post_call(full_app, server_id, owner_id, tool, arguments, **extra):
     from app.api.internal_mcp import router
+    from app.mcp.capability import mint_mcp_capability
 
     full_app.include_router(router)
     headers = extra.pop("headers", {"X-Worker-Token": settings.worker_token})
+    # Capacidade válida do run por padrão (revisão final I4); os testes de
+    # capacidade passam ``mcpCapability``/``runId`` explícitos.
+    extra.setdefault("runId", "run-1")
+    if "mcpCapability" not in extra:
+        extra["mcpCapability"] = mint_mcp_capability(
+            extra["runId"], str(owner_id), extra.get("workspaceDir")
+        )
+    elif extra["mcpCapability"] is None:
+        del extra["mcpCapability"]
     async with AsyncClient(transport=ASGITransport(app=full_app), base_url="http://test") as client:
         return await client.post(
             f"/internal/mcp/{server_id}/call",
@@ -389,7 +404,100 @@ async def test_run_with_deleted_mcp_server_still_executes(
         await asyncio.wait_for(active.task, timeout=10)
 
     assert calls[0]["owner_id"] == str(test_user.id)
+    # O nó despachado leva a capacidade MCP do run (revisão final I4).
+    from app.mcp.capability import verify_mcp_capability
+
+    assert calls[0]["run_id"]
+    assert verify_mcp_capability(
+        calls[0]["mcp_capability"], calls[0]["run_id"], str(test_user.id), None
+    )
     assert calls[0]["mcp_servers"] == [{"serverId": str(kept.id), "tools": kept.discovered_tools}]
     assert any(str(gone_id) in r.getMessage() for r in caplog.records)
     assert not any(r.exc_info for r in caplog.records)
     executor_module.clear_active_runs()
+
+
+# ---------------------------------------------------------------------------
+# Revisão final I4: capacidade MCP por run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case", ["valid", "tampered_owner", "tampered_workspace", "tampered_run", "missing", "garbage"]
+)
+async def test_mcp_capability_binds_owner_and_workspace(
+    full_app, session, test_user, other_user, tmp_path, monkeypatch, case
+):
+    from app.mcp.capability import mint_mcp_capability
+
+    root = tmp_path / "workspaces"
+    mine, theirs = root / "run-mine", root / "run-theirs"
+    mine.mkdir(parents=True)
+    theirs.mkdir()
+    monkeypatch.setattr(settings, "workspaces_dir", str(root))
+    server = await _echo_server(session, test_user)
+    # Servidor do OUTRO usuário (alvo de quem adulterar o ownerId).
+    await MCPRegistry(session).create(
+        owner_id=other_user.id, name="Echo2", description="", transport="stdio",
+        command=f'python "{ECHO_SERVER}"',
+    )
+    cap = mint_mcp_capability("run-mine", str(test_user.id), str(mine))
+    owner, workspace, run_id = str(test_user.id), str(mine), "run-mine"
+    if case == "tampered_owner":
+        owner = str(other_user.id)
+    elif case == "tampered_workspace":
+        workspace = str(theirs)
+    elif case == "tampered_run":
+        run_id = "run-theirs"
+    elif case == "missing":
+        cap = None
+    elif case == "garbage":
+        cap = "00" * 32
+
+    response = await _post_call(
+        full_app, server.id, owner, "cwd", {},
+        workspaceDir=workspace, runId=run_id, mcpCapability=cap,
+    )
+    if case == "valid":
+        assert response.status_code == 200, response.text
+        assert response.json()["content"][0]["text"] == str(mine.resolve())
+    else:
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "mcp_capability_invalid"
+
+
+def test_mcp_capability_secret_derivation(monkeypatch):
+    from app.mcp.capability import mint_mcp_capability, verify_mcp_capability
+
+    monkeypatch.setattr(settings, "mcp_capability_secret", "")
+    monkeypatch.setattr(settings, "integrations_secret_key", "chave-a")
+    a = mint_mcp_capability("r", "o", "/workspaces/r")
+    monkeypatch.setattr(settings, "integrations_secret_key", "chave-b")
+    b = mint_mcp_capability("r", "o", "/workspaces/r")
+    assert a != b
+    assert verify_mcp_capability(b, "r", "o", "/workspaces/r")
+    assert not verify_mcp_capability(a, "r", "o", "/workspaces/r")
+    monkeypatch.setattr(settings, "mcp_capability_secret", "explicito")
+    assert mint_mcp_capability("r", "o", "/workspaces/r") not in (a, b)
+
+
+@pytest.mark.asyncio
+async def test_worker_client_sends_mcp_capability():
+    import json
+
+    import httpx
+
+    from tests.test_rt_worker_client import _make_client
+
+    def handle(request):
+        body = json.loads(request.content)
+        assert body["runId"] == "run-9"
+        assert body["mcpCapability"] == "cap"
+        return httpx.Response(
+            200, json={"status": "completed", "outputs": {}, "action": "finalize"}
+        )
+
+    client = _make_client(handle)
+    result = await client.execute("a", "n", {}, owner_id="o", run_id="run-9", mcp_capability="cap")
+    assert result.status == "completed"

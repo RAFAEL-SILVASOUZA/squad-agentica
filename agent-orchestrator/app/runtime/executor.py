@@ -377,6 +377,7 @@ class PipelineExecutor:
             state["run_inputs"] = dict(run_inputs)
         state["workspace_dir"] = workspace_dir or ""
         state["owner_id"] = owner_id
+        state["run_id"] = run_id
 
         config = {"configurable": {"thread_id": thread_id}}
 
