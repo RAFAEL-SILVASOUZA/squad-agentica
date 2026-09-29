@@ -10,9 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import llm
+from app.core.errors import AppError
 from app.db.models import (
     KnowledgeBase,
-    KnowledgeChunk,
     KnowledgeConversation,
     KnowledgeDocument,
     KnowledgeMessage,
@@ -33,48 +33,47 @@ async def answer(
     conversation: KnowledgeConversation,
     question: str,
 ) -> KnowledgeMessage:
-    """Consulta a base, chama o provedor configurado e persiste a resposta."""
-    results = await rag_module.get_rag_service().query(
-        db,
-        owner_id,
-        question,
-        [kb.id],
-        top_k=kb.top_k,
-        agent_id=kb.scope_ref if kb.scope == "agent" else None,
-        pipeline_id=kb.scope_ref if kb.scope == "pipeline" else None,
-    )
-    now = datetime.now(UTC)
-    latest_timestamp = (
-        await db.execute(
-            select(KnowledgeMessage.created_at)
-            .where(KnowledgeMessage.conversation_id == conversation.id)
-            .order_by(KnowledgeMessage.created_at.desc(), KnowledgeMessage.id.desc())
-            .limit(1)
+    """Consulta a base, chama o provedor configurado e persiste a resposta.
+
+    A pergunta já deve estar commitada. Falhas de RAG/LLM viram 502 "llm_error"
+    e a pergunta permanece salva.
+    """
+    conversation_id = conversation.id
+    try:
+        results = await rag_module.get_rag_service().query(
+            db,
+            owner_id,
+            question,
+            [kb.id],
+            top_k=kb.top_k,
+            agent_id=kb.scope_ref if kb.scope == "agent" else None,
+            pipeline_id=kb.scope_ref if kb.scope == "pipeline" else None,
         )
-    ).scalar_one_or_none()
-    if latest_timestamp is not None and now <= latest_timestamp:
-        now = latest_timestamp + timedelta(microseconds=1)
+    except Exception as exc:
+        await db.rollback()
+        raise AppError(
+            502, "bad gateway", "llm_error",
+            {"errors": ["Não foi possível consultar a base de conhecimento."]},
+        ) from exc
+
+    document_ids = {
+        uuid.UUID(str(item["documentId"])) for item in results if item.get("documentId")
+    }
+    names: dict[uuid.UUID, str] = {}
+    if document_ids:
+        rows = await db.execute(
+            select(KnowledgeDocument.id, KnowledgeDocument.name).where(
+                KnowledgeDocument.id.in_(document_ids)
+            )
+        )
+        names = {row.id: row.name for row in rows}
     sources: list[dict[str, Any]] = []
     for item in results:
         document_id = item.get("documentId")
-        document_name = ""
-        if document_id:
-            document = await db.get(KnowledgeDocument, uuid.UUID(str(document_id)))
-            document_name = document.name if document else ""
-        chunk_id = item.get("chunkId")
-        if not chunk_id and document_id:
-            chunk = await db.execute(
-                select(KnowledgeChunk.id).where(
-                    KnowledgeChunk.document_id == uuid.UUID(str(document_id)),
-                    KnowledgeChunk.chunk_index == item.get("chunkIndex", 0),
-                )
-            )
-            found_id = chunk.scalar_one_or_none()
-            chunk_id = str(found_id) if found_id else f"{document_id}:{item.get('chunkIndex', 0)}"
         sources.append({
             "documentId": str(document_id) if document_id else "",
-            "documentName": document_name,
-            "chunkId": str(chunk_id or ""),
+            "documentName": names.get(uuid.UUID(str(document_id)), "") if document_id else "",
+            "chunkId": str(item.get("chunkId") or ""),
             "text": str(item.get("content", "")),
             "score": float(item.get("score", 0)),
         })
@@ -86,7 +85,7 @@ async def answer(
             (
                 await db.execute(
                     select(KnowledgeMessage)
-                    .where(KnowledgeMessage.conversation_id == conversation.id)
+                    .where(KnowledgeMessage.conversation_id == conversation_id)
                     .order_by(KnowledgeMessage.created_at.desc(), KnowledgeMessage.id.desc())
                     .limit(6)
                 )
@@ -94,10 +93,8 @@ async def answer(
             .scalars()
             .all()
         )
+        # A pergunta atual já foi persistida e é a última do histórico.
         history = list(reversed(previous))
-        if not history or history[-1].role != "user" or history[-1].content != question:
-            history.append(KnowledgeMessage(role="user", content=question))
-
         excerpts = "\n\n".join(
             f"[{index}] {source['text']}" for index, source in enumerate(sources, start=1)
         )
@@ -105,16 +102,44 @@ async def answer(
         for message in history[:-1]:
             messages.append({"role": message.role, "content": message.content})
         messages.append({"role": "user", "content": f"{question}\n\nTrechos:\n{excerpts}"})
-        content = await llm.get_llm_client().chat(messages)
+        # Encerra a transação de leitura antes da chamada lenta ao LLM.
+        await db.commit()
+        try:
+            content = await llm.get_llm_client().chat(messages)
+        except Exception as exc:
+            raise AppError(
+                502, "bad gateway", "llm_error",
+                {"errors": ["Não foi possível gerar a resposta agora. Tente novamente."]},
+            ) from exc
+
+    # Nova transação curta: trava a conversa e persiste a resposta.
+    locked = (
+        await db.execute(
+            select(KnowledgeConversation)
+            .where(KnowledgeConversation.id == conversation_id)
+            .with_for_update()
+        )
+    ).scalar_one()
+    latest_timestamp = (
+        await db.execute(
+            select(KnowledgeMessage.created_at)
+            .where(KnowledgeMessage.conversation_id == conversation_id)
+            .order_by(KnowledgeMessage.created_at.desc(), KnowledgeMessage.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    now = datetime.now(UTC)
+    if latest_timestamp is not None and now <= latest_timestamp:
+        now = latest_timestamp + timedelta(microseconds=1)
     response = KnowledgeMessage(
         id=uuid.uuid4(),
-        conversation_id=conversation.id,
+        conversation_id=conversation_id,
         role="assistant",
         content=content,
         sources=sources,
         created_at=now,
     )
-    conversation.updated_at = now
+    locked.updated_at = now
     db.add(response)
     await db.commit()
     await db.refresh(response)

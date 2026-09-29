@@ -57,6 +57,7 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 # Rate limit de upload: 10 requests/min por KB (spec 14.1), in-memory (V1).
 from app.auth.rate_limiter import RateLimiter  # noqa: E402
 
+UNTITLED_CONVERSATION = "Nova conversa"
 _upload_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 
@@ -398,7 +399,8 @@ async def upload_document(
 ) -> dict[str, Any]:
     kb = await _get_kb(db, user.id, kb_id)
 
-    # Rate limit: 10/min por KB (spec 14.1).
+    # Rate limit: 10/min por KB (spec 14.1). Fica antes de ler/hashear o arquivo de
+    # propósito: o limite protege exatamente esse trabalho, então um 409 também conta.
     allowed, retry_after = _upload_rate_limiter.is_allowed(str(kb.id))
     if not allowed:
         raise AppError(
@@ -675,7 +677,7 @@ async def list_conversations(
         items.append(
             {
                 "id": str(conversation.id),
-                "title": conversation.title,
+                "title": conversation.title or UNTITLED_CONVERSATION,
                 "updatedAt": conversation.updated_at.isoformat(),
                 "messageCount": count,
             }
@@ -697,7 +699,7 @@ async def create_conversation(
     db.add(conversation)
     await db.commit()
     await db.refresh(conversation)
-    return {"id": str(conversation.id), "title": conversation.title}
+    return {"id": str(conversation.id), "title": conversation.title or UNTITLED_CONVERSATION}
 
 
 @router.get("/{kb_id}/conversations/{conversation_id}")
@@ -722,7 +724,7 @@ async def get_conversation(
     )
     return {
         "id": str(conversation.id),
-        "title": conversation.title,
+        "title": conversation.title or UNTITLED_CONVERSATION,
         "messages": [
             {
                 "id": str(message.id),
@@ -785,7 +787,8 @@ async def send_conversation_message(
     conversation.updated_at = question_timestamp
     if not conversation.title:
         conversation.title = body.content[:60]
-    await db.flush()
+    # Commit libera o lock e a transação antes do RAG/LLM; a pergunta fica salva.
+    await db.commit()
 
     from app.knowledge.chat import answer
 

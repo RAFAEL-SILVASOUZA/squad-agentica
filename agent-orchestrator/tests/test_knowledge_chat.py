@@ -114,7 +114,6 @@ class TestKnowledgeChat:
         document_id = uploaded.json()["documentId"]
         created = await client.post(f"/api/knowledge/{kb_id}/conversations", json={})
         assert created.status_code == 201, created.text
-        assert created.status_code == 201
         conversation_id = created.json()["id"]
         rag.results = [{
             "score": 0.91, "content": "Funcionários têm 30 dias de férias.",
@@ -154,7 +153,7 @@ class TestKnowledgeChat:
         assert any(
             message["content"].startswith("E quem pode tirar?") for message in llm.calls[1]
         )
-        assert created.json()["title"] == ""
+        assert created.json()["title"] == "Nova conversa"
         assert listing.json()["items"][0]["title"] == "Quantos dias de férias?"
         removed = await client.delete(f"/api/knowledge/{kb_id}/conversations/{conversation_id}")
         assert removed.status_code == 204
@@ -212,3 +211,33 @@ class TestKnowledgeChat:
             assert response.status_code == 200
         assert rag.queries[-2][3:] == ("agent-context-1", None)
         assert rag.queries[-1][3:] == (None, "pipeline-context-1")
+
+    async def test_llm_failure_returns_502_and_keeps_question(self, chat_client):
+        client, rag, llm, _owner, _app = chat_client
+        kb_id = await _new_base(client)
+        conversation_id = (
+            await client.post(f"/api/knowledge/{kb_id}/conversations", json={})
+        ).json()["id"]
+        rag.results = [{"score": 0.9, "content": "Trecho", "chunkIndex": 0}]
+
+        async def boom(messages, **_kwargs):
+            raise RuntimeError("provider down")
+
+        llm.chat = boom
+        failed = await client.post(
+            f"/api/knowledge/{kb_id}/conversations/{conversation_id}/messages",
+            json={"content": "Pergunta que falha"},
+        )
+        assert failed.status_code == 502
+        assert failed.json()["code"] == "llm_error"
+        reopened = await client.get(f"/api/knowledge/{kb_id}/conversations/{conversation_id}")
+        messages = reopened.json()["messages"]
+        assert [m["role"] for m in messages] == ["user"]
+        assert messages[0]["content"] == "Pergunta que falha"
+
+    async def test_untitled_conversation_listing_has_label(self, chat_client):
+        client, _rag, _llm, _owner, _app = chat_client
+        kb_id = await _new_base(client)
+        await client.post(f"/api/knowledge/{kb_id}/conversations", json={})
+        listing = await client.get(f"/api/knowledge/{kb_id}/conversations")
+        assert listing.json()["items"][0]["title"] == "Nova conversa"

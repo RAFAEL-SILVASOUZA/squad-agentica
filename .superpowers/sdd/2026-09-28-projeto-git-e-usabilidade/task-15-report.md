@@ -40,3 +40,16 @@
 ## Estado
 
 Sem commit e sem arquivos staged; aguardando revisão do coordenador. `.codex/` já estava untracked no início e não foi lido nem alterado. `agent-portal/` não foi tocado. O preflight não encontrou `learning/INDEX.md`; o trabalho seguiu os briefings e o código atual.
+
+## Fix round 1
+
+Changes:
+1. `send_conversation_message` now commits the user question (lock released) before RAG/LLM; `chat.answer` runs RAG, batches document names (single IN query), commits to end the read transaction before the LLM call, then persists the assistant message in a new short transaction (re-locks conversation, monotonic timestamp). RAG/LLM exceptions -> `AppError(502, "bad gateway", "llm_error")` with pt-BR message; question stays saved.
+2. N+1 document lookups replaced by one IN query; dead chunk-lookup fallback removed (uses rag `chunkId`).
+3. Unreachable history-append branch removed.
+4. Duplicate assertion removed in test_knowledge_chat.py.
+5. Upload rate limiter kept before the duplicate check on purpose (documented in a comment): the limit protects the file read/hash work, and checking duplicates first requires that work; unique-constraint race path untouched.
+6. Untitled conversations return title "Nova conversa" (create/list/get).
+Tests added: LLM failure -> 502 llm_error + question in GET; untitled label in listing.
+
+Commands: pytest tests/test_knowledge_*.py -> 65 passed; full orchestrator suite -> 632 passed; ruff on touched files -> All checks passed.
