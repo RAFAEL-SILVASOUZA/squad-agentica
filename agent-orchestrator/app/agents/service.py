@@ -82,17 +82,11 @@ class AgentService:
         self._storage = storage or get_agent_storage()
 
     async def _artifact_yaml(self, db: AsyncSession, agent: Agent) -> str:
-        from app.mcp.registry import MCPRegistry
+        from app.mcp.registry import resolve_mcp_refs
 
-        servers = []
-        for ref in agent.mcp_servers or []:
-            server_id = ref.get("serverId") or ref.get("id")
-            try:
-                parsed_id = uuid.UUID(str(server_id))
-            except ValueError:
-                raise AppError(422, "Referência MCP inválida", "mcp_config_invalid") from None
-            server = await MCPRegistry(db).get(parsed_id, agent.owner_id)
-            servers.append({"serverId": str(server.id), "tools": server.discovered_tools or []})
+        servers, warnings = await resolve_mcp_refs(db, agent.owner_id, agent.mcp_servers)
+        for warning in warnings:
+            logger.warning("Agente %s: %s", agent.id, warning)
         return agent_to_yaml(agent, servers)
 
     async def create_agent(

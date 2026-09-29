@@ -89,11 +89,14 @@ class WorkerClient(Protocol):
         timeout: int = 60,
         workspace_dir: str | None = None,
         owner_id: str | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
     ) -> WorkerResponse:
         """Executa o agente no worker. Nunca levanta exceção (ADR-001).
 
         ``workspace_dir``: workspace do run onde as ferramentas do agente
         trabalham (None = workspace padrão do worker).
+        ``mcp_servers``: refs MCP resolvidas no disparo (``[{serverId, tools}]``);
+        None = o worker usa as do artefato do agente.
         """
         ...
 
@@ -308,6 +311,7 @@ def _make_agent_node(
     worker_client: WorkerClient,
     is_entry: bool = False,
     feedback_sources: list[str] | None = None,
+    mcp_servers: list[dict[str, Any]] | None = None,
 ) -> Any:
     """Fábrica do node function de um agente.
 
@@ -371,6 +375,7 @@ def _make_agent_node(
                 timeout=timeout,
                 workspace_dir=state.get("workspace_dir") or None,
                 **({"owner_id": state["owner_id"]} if state.get("owner_id") else {}),
+                **({"mcp_servers": mcp_servers} if mcp_servers is not None else {}),
             )
         except Exception as exc:  # noqa: BLE001 — rede de segurança
             logger.exception("worker_client.execute raised unexpectedly for node %s", node_id)
@@ -539,6 +544,7 @@ def compile_pipeline(
     *,
     worker_client: WorkerClient,
     checkpointer: Any = None,
+    mcp_servers_by_agent: dict[str, list[dict[str, Any]]] | None = None,
 ) -> Any:
     """Converte uma Pipeline num StateGraph compilado do LangGraph.
 
@@ -549,6 +555,8 @@ def compile_pipeline(
         worker_client: Implementação do Protocol WorkerClient (injetado).
         checkpointer: Opcional. Se fornecido, o grafo usa este checkpointer
                       (PostgresSaver, MemorySaver, etc.).
+        mcp_servers_by_agent: Opcional. agentId -> refs MCP resolvidas pelo
+                      executor no disparo; agentes ausentes usam o artefato.
 
     Returns:
         CompiledStateGraph pronto para ainvoke/astream.
@@ -617,6 +625,7 @@ def compile_pipeline(
             worker_client,
             is_entry=node.id == pipeline.entry_node_id,
             feedback_sources=feedback_sources_by_target.get(node.id),
+            mcp_servers=(mcp_servers_by_agent or {}).get(node.agent_snapshot.agent_id),
         )
         graph.add_node(node.id, node_fn)
 

@@ -49,8 +49,9 @@ from app.compiler.graph_builder import (
     compile_pipeline,
 )
 from app.compiler.state import initial_state
-from app.db.models import Artifact, Checkpoint
+from app.db.models import Agent, Artifact, Checkpoint
 from app.db.session import async_session_factory
+from app.mcp.registry import resolve_mcp_refs
 from app.runtime.checkpoint import make_thread_id
 from app.runtime.publisher import publish_run
 from app.runtime.websocket import publish as ws_publish
@@ -211,6 +212,52 @@ _ARTIFACT_TYPE_MAP: dict[str, str] = {
 }
 
 
+async def resolve_pipeline_mcp(
+    pipeline: Pipeline, owner_id: str
+) -> dict[str, list[dict[str, Any]]]:
+    """Resolve as refs MCP dos agentes da pipeline no disparo (agentId -> refs).
+
+    Lê o registry do dono para cada agente com ``mcpServers``: tools recém
+    descobertas chegam ao worker mesmo com artefato antigo. Servidor removido
+    vira aviso (o run segue sem as tools dele); banco indisponível mantém as
+    refs do artefato. Nunca levanta.
+    """
+    try:
+        owner_uuid = uuid.UUID(str(owner_id))
+    except ValueError:
+        return {}
+    agent_ids: set[uuid.UUID] = set()
+    for node in pipeline.nodes:
+        try:
+            agent_ids.add(uuid.UUID(str(node.agent_snapshot.agent_id)))
+        except ValueError:
+            continue
+    if not agent_ids:
+        return {}
+    resolved: dict[str, list[dict[str, Any]]] = {}
+    try:
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Agent).where(Agent.id.in_(agent_ids), Agent.owner_id == owner_uuid)
+            )
+            for agent in result.scalars():
+                if not agent.mcp_servers:
+                    continue
+                servers, warnings = await resolve_mcp_refs(
+                    session, owner_uuid, agent.mcp_servers
+                )
+                for warning in warnings:
+                    logger.warning("Agente %s: %s", agent.id, warning)
+                resolved[str(agent.id)] = servers
+    except Exception as exc:  # noqa: BLE001 — o run segue com o artefato
+        logger.warning(
+            "Refs MCP não resolvidas no disparo (%s); usando o artefato do agente",
+            type(exc).__name__,
+        )
+        return {}
+    return resolved
+
+
 def _artifact_type_for(port_name: str, value: Any) -> str:
     """Infere o ArtifactType do nome/conteúdo da porta (spec 4.5)."""
     lower = port_name.lower()
@@ -303,6 +350,10 @@ class PipelineExecutor:
         if retry_after is not None:
             raise RateLimitError(retry_after)
 
+        # Refs MCP resolvidas antes do check de concorrência: nenhum await
+        # entre o check e o registro do run ativo.
+        mcp_servers_by_agent = await resolve_pipeline_mcp(pipeline, owner_id)
+
         # Concurrency check: 409 if already running.
         if pipeline.id in _active_runs:
             existing = _active_runs[pipeline.id]
@@ -315,6 +366,7 @@ class PipelineExecutor:
             pipeline,
             worker_client=self._worker_client,
             checkpointer=self._checkpointer,
+            mcp_servers_by_agent=mcp_servers_by_agent,
         )
 
         # Build initial state.
@@ -426,6 +478,7 @@ class PipelineExecutor:
         Raises:
             PipelineAlreadyRunningError: if a run is already active.
         """
+        mcp_servers_by_agent = await resolve_pipeline_mcp(pipeline, owner_id)
         if pipeline.id in _active_runs:
             existing = _active_runs[pipeline.id]
             if existing.task is not None and not existing.task.done():
@@ -439,6 +492,7 @@ class PipelineExecutor:
             pipeline,
             worker_client=self._worker_client,
             checkpointer=self._checkpointer,
+            mcp_servers_by_agent=mcp_servers_by_agent,
         )
 
         config = {"configurable": {"thread_id": thread_id}}

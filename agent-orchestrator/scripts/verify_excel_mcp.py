@@ -1,4 +1,10 @@
-"""Verificação manual: conexão Excel cadastrada, sem imprimir credenciais."""
+"""Verificação manual: conexão Excel cadastrada, sem imprimir credenciais.
+
+Não é teste automatizado (precisa do servidor "Excel" cadastrado e de um LLM
+real). Rodar dentro do container do orchestrator, em /app:
+
+    python -m scripts.verify_excel_mcp
+"""
 
 import asyncio
 import json
@@ -72,9 +78,9 @@ async def main():
                 f"{{{content_types_ns}}}Override",
                 {
                     "PartName": "/xl/workbook.xml",
-                "ContentType": (
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
-                ),
+                    "ContentType": (
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+                    ),
                 },
             )
             ET.SubElement(
@@ -82,9 +88,9 @@ async def main():
                 f"{{{content_types_ns}}}Override",
                 {
                     "PartName": "/xl/worksheets/sheet1.xml",
-                "ContentType": (
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
-                ),
+                    "ContentType": (
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+                    ),
                 },
             )
             workbook.writestr("[Content_Types].xml", ET.tostring(content_types))

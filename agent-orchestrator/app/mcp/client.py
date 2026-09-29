@@ -162,7 +162,14 @@ class MCPClient:
                 line = await self._process.stdout.readline()
                 if not line:
                     raise ConnectionError("MCP server closed connection")
-                response = json.loads(line.decode("utf-8"))
+                # Ignora lixo no stdout (logs), notificações e requests
+                # iniciados pelo servidor (têm "method"): só a resposta conta.
+                try:
+                    response = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    continue
+                if not isinstance(response, dict) or "method" in response:
+                    continue
                 if response.get("id") == request["id"]:
                     break
         if "error" in response:
@@ -230,17 +237,28 @@ class MCPClient:
 
     async def disconnect(self) -> None:
         """Desconecta do servidor MCP."""
-        if self._process is not None:
+        process, self._process = self._process, None
+        if process is None:
+            return
+        # O grupo inteiro (start_new_session): npx deixa filhos (node) que não
+        # morrem com o líder. SIGKILL no grupo sempre, mesmo se a espera for
+        # cancelada, para não vazar processos.
+        try:
             try:
-                os.killpg(self._process.pid, signal.SIGTERM)
-                await asyncio.wait_for(self._process.wait(), timeout=5)
-            except (TimeoutError, ProcessLookupError):
-                try:
-                    os.killpg(self._process.pid, signal.SIGKILL)
-                    await self._process.wait()
-                except (ProcessLookupError, OSError):
-                    pass
-            self._process = None
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            except TimeoutError:
+                pass
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        if process.returncode is None:
+            await process.wait()
 
 
 async def test_mcp_connection(

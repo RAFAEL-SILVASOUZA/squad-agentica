@@ -81,9 +81,7 @@ class MCPRegistry:
         """Lista servidores MCP do owner com paginacao."""
         query = select(MCPServer).where(MCPServer.owner_id == owner_id)
         count_query = (
-            select(func.count())
-            .select_from(MCPServer)
-            .where(MCPServer.owner_id == owner_id)
+            select(func.count()).select_from(MCPServer).where(MCPServer.owner_id == owner_id)
         )
 
         if transport:
@@ -166,3 +164,31 @@ class MCPRegistry:
         await self._db.commit()
         await self._db.refresh(server)
         return server
+
+
+async def resolve_mcp_refs(
+    db: AsyncSession, owner_id: uuid.UUID, refs: list[Any] | None
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Materializa as refs MCP de um agente em ``[{serverId, tools}]``.
+
+    Política única (artefato do agente e disparo do run): ref inválida ou
+    servidor inexistente/de outro dono é ignorada com um aviso — um servidor
+    removido não pode derrubar o run nem o salvamento do agente.
+    """
+    servers: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    registry = MCPRegistry(db)
+    for ref in refs or []:
+        raw_id = (ref.get("serverId") or ref.get("id")) if isinstance(ref, dict) else ref
+        try:
+            server_id = uuid.UUID(str(raw_id))
+        except (TypeError, ValueError):
+            warnings.append("Referência MCP inválida ignorada")
+            continue
+        try:
+            server = await registry.get(server_id, owner_id)
+        except AppError:
+            warnings.append(f"Servidor MCP {server_id} não encontrado; ferramentas ignoradas")
+            continue
+        servers.append({"serverId": str(server.id), "tools": server.discovered_tools or []})
+    return servers, warnings

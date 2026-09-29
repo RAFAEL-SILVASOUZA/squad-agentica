@@ -1,4 +1,15 @@
-"""Ponte MCP interna autenticada pelo token compartilhado dos workers."""
+"""Ponte MCP interna autenticada pelo token compartilhado dos workers.
+
+Os workers chamam ``POST /internal/mcp/{server_id}/call`` quando o LLM usa uma
+tool MCP; o orchestrator abre o servidor do dono e repassa o ``tools/call``.
+
+Servidores stdio são código confiável cadastrado pelo dono: rodam dentro do
+container do orchestrator com o acesso ao sistema de arquivos dele (não há
+sandbox). Quando a chamada traz um ``workspaceDir`` válido (estritamente dentro
+de ``settings.workspaces_dir``), o processo sobe com esse diretório como cwd,
+então caminhos relativos nos argumentos caem no workspace do run. Sem
+workspace, o processo usa o cwd padrão do orchestrator.
+"""
 
 import asyncio
 import secrets
@@ -33,42 +44,24 @@ async def call_mcp(
     db: Annotated[AsyncSession, Depends(get_db)],
     x_worker_token: Annotated[str, Header()] = "",
 ) -> dict[str, Any]:
+    # Bytes: compare_digest com str não-ASCII levanta TypeError (viraria 500).
     if not settings.worker_token or not secrets.compare_digest(
-        x_worker_token, settings.worker_token
+        x_worker_token.encode(), settings.worker_token.encode()
     ):
         raise AppError(401, "Não autorizado", "worker_token_invalid")
     server = await MCPRegistry(db).get(server_id, body.ownerId)
     workspace = None
-    arguments = dict(body.arguments)
     if body.workspaceDir:
-        workspace = Path(body.workspaceDir).resolve()
-        if Path(settings.workspaces_dir).resolve() not in workspace.parents:
-            raise AppError(422, "Workspace inválido para MCP", "invalid_mcp_path")
-    # O Excel aceita caminhos absolutos; resolvemos os argumentos conhecidos
-    # antes do processo. Servidores cadastrados continuam sendo código confiável.
-    if "@negokaz/excel-mcp-server" in (server.command or ""):
-        if workspace is None:
-            raise AppError(422, "Excel requer o workspace do run", "invalid_mcp_path")
-        for key in (
-            "fileAbsolutePath",
-            "filepath",
-            "filePath",
-            "path",
-            "sourcePath",
-            "destinationPath",
+        try:
+            workspace = Path(body.workspaceDir).resolve()
+        except (OSError, ValueError):
+            workspace = None
+        if (
+            workspace is None
+            or Path(settings.workspaces_dir).resolve() not in workspace.parents
+            or not workspace.is_dir()
         ):
-            if key not in arguments:
-                continue
-            try:
-                value = Path(arguments[key])
-                resolved = (workspace / value).resolve()
-                if workspace not in resolved.parents:
-                    raise ValueError
-                arguments[key] = str(resolved)
-            except (TypeError, ValueError, OSError):
-                raise AppError(
-                    422, "Caminho fora do workspace do run", "invalid_mcp_path"
-                ) from None
+            raise AppError(422, "Workspace inválido para MCP", "invalid_mcp_path")
     client = MCPClient(
         server.transport,
         server.command,
@@ -79,7 +72,7 @@ async def call_mcp(
     try:
         async with asyncio.timeout(CONNECT_TIMEOUT + CALL_TIMEOUT):
             await client.connect()
-            result = await client.call_tool(body.tool, arguments)
+            result = await client.call_tool(body.tool, body.arguments)
         return {"content": result.get("content", []), "isError": bool(result.get("isError", False))}
     except Exception as exc:
         raise AppError(

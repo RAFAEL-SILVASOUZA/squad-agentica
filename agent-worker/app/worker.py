@@ -220,14 +220,20 @@ class WorkerLoader:
     def _resolve_mcp(self, snapshot: AgentSnapshot, warnings: list[str]) -> list[dict[str, Any]]:
         """Tools MCP (serializadas no snapshot pelo orchestrator)."""
         mcp_tools: list[dict[str, Any]] = []
+        # Nomes já ocupados: nativas, custom tools (refs {toolId, definition}:
+        # o nome está na definição) e MCP anteriores. A primeira vence.
+        reserved = {t["name"] for t in _BUILTIN_TOOLS}
+        reserved.update(
+            custom["definition"].get("name")
+            for custom in snapshot.tools
+            if isinstance(custom, dict) and isinstance(custom.get("definition"), dict)
+        )
         for ref in snapshot.mcp_servers:
             server_id = self._ref_id(ref, "serverId")
             if not server_id:
                 warnings.append(f"mcp ref sem serverId ignorada: {ref!r}")
                 continue
             # O orchestrator serializa as tools descobertas no ref.
-            reserved = {t["name"] for t in _BUILTIN_TOOLS} | {t["name"] for t in mcp_tools}
-            reserved.update(t.get("name") for t in snapshot.tools)
             for tool in ref.get("tools", []):
                 if tool.get("name") in reserved:
                     warnings.append(f"Colisão MCP: {tool['name']} já tem uma ferramenta registrada")
@@ -514,30 +520,57 @@ async def execute_tool(
         if not owner_id:
             return {"error": "Dono do run ausente para chamada MCP"}
         url = os.environ.get("ORCHESTRATOR_INTERNAL_URL", "http://orchestrator:8000").rstrip("/")
+        body = {"ownerId": owner_id, "tool": name, "arguments": args}
+        if workspace_dir:
+            body["workspaceDir"] = workspace_dir
         try:
-            body = {"ownerId": owner_id, "tool": name, "arguments": args}
-            if workspace_dir:
-                body["workspaceDir"] = workspace_dir
             async with httpx.AsyncClient(timeout=70) as client:
                 response = await client.post(
                     f"{url}/internal/mcp/{mcp_routes[name]}/call",
                     headers={"X-Worker-Token": os.environ.get("WORKER_TOKEN", "")},
                     json=body,
                 )
-                response.raise_for_status()
-                result = response.json()
-            text = "\n".join(
-                item.get("text", "")
-                if item.get("type") == "text"
-                else f"[{item.get('type', 'unknown')}]"
-                for item in result.get("content", [])
-            )
-            return f"Erro MCP: {text}" if result.get("isError") else text
-        except (httpx.HTTPError, ValueError):
-            return {"error": "Não foi possível executar a ferramenta MCP"}
+        except httpx.HTTPError:
+            return {"error": "Não foi possível contatar o orchestrator para a ferramenta MCP"}
+        try:
+            result = response.json()
+        except ValueError:
+            result = None
+        if response.is_error or not isinstance(result, dict):
+            return {"error": _mcp_error_message(result)}
+        content = result.get("content")
+        text = "\n".join(
+            _mcp_content_text(item) for item in (content if isinstance(content, list) else [])
+        )
+        return f"Erro MCP: {text}" if result.get("isError") else text
     else:
         # Custom tool ou MCP tool: nao executavel no worker (V1).
         return {"error": f"Tool '{name}' is not executable in worker (V1)"}
+
+
+def _mcp_error_message(body: Any) -> str:
+    """Mensagem pt-BR do orchestrator (``{"error", "code", "details"}``) para o LLM.
+
+    O orchestrator já sanitiza o texto (sem segredos); sem corpo legível cai
+    numa mensagem genérica.
+    """
+    if isinstance(body, dict):
+        message = body.get("error") or body.get("message")
+        if isinstance(message, str) and message:
+            details = body.get("details")
+            if details:
+                return f"{message} ({json.dumps(details, ensure_ascii=False)})"
+            return message
+    return "Não foi possível executar a ferramenta MCP"
+
+
+def _mcp_content_text(item: Any) -> str:
+    """Um item de ``content`` MCP como texto: ``text`` inline, o resto ``[<type>]``."""
+    if not isinstance(item, dict):
+        return "[unknown]"
+    if item.get("type") == "text":
+        return str(item.get("text", ""))
+    return f"[{item.get('type', 'unknown')}]"
 
 
 async def _execute_shell(args: dict[str, Any]) -> dict[str, Any]:

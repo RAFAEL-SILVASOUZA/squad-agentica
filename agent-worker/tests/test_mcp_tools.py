@@ -47,3 +47,61 @@ async def test_loader_native_collision(caplog):
     assert [t["name"] for t in capabilities.mcp_tools] == ["echo"]
     assert capabilities.mcp_routes == {"echo": "s"}
     assert "read_file" in caplog.text
+
+
+def _mock_orchestrator(monkeypatch, response):
+    original = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kw: original(transport=httpx.MockTransport(lambda request: response), **kw),
+    )
+
+
+@pytest.mark.asyncio
+async def test_mcp_error_message_reaches_llm(monkeypatch):
+    _mock_orchestrator(
+        monkeypatch,
+        httpx.Response(
+            502,
+            json={"error": "O servidor MCP excedeu o tempo limite.", "code": "mcp_call_failed"},
+        ),
+    )
+    result = await execute_tool("echo", {}, owner_id="o", mcp_routes={"echo": "s"})
+    assert result == {"error": "O servidor MCP excedeu o tempo limite."}
+
+
+@pytest.mark.asyncio
+async def test_mcp_error_without_json_body_is_generic(monkeypatch):
+    _mock_orchestrator(monkeypatch, httpx.Response(500, text="boom"))
+    result = await execute_tool("echo", {}, owner_id="o", mcp_routes={"echo": "s"})
+    assert result == {"error": "Não foi possível executar a ferramenta MCP"}
+
+
+@pytest.mark.asyncio
+async def test_mcp_non_dict_content_items(monkeypatch):
+    _mock_orchestrator(
+        monkeypatch,
+        httpx.Response(200, json={"content": ["solto", {"type": "text", "text": "ok"}]}),
+    )
+    result = await execute_tool("echo", {}, owner_id="o", mcp_routes={"echo": "s"})
+    assert result == "[unknown]\nok"
+
+
+@pytest.mark.asyncio
+async def test_loader_custom_tool_collision_uses_definition_name():
+    snapshot = snapshot_from_yaml(
+        "id: a\n"
+        "tools:\n"
+        "  - toolId: t1\n"
+        "    definition:\n"
+        "      name: echo\n"
+        "      description: custom\n"
+        "mcpServers:\n"
+        "  - serverId: s\n"
+        "    tools:\n"
+        "      - name: echo\n"
+        "      - name: other\n"
+    )
+    capabilities = await WorkerLoader(artifact_client=object()).load(snapshot)
+    assert capabilities.mcp_routes == {"other": "s"}
