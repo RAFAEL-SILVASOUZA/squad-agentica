@@ -214,6 +214,32 @@ async def test_files_listing_is_capped_and_flags_truncated(
     assert data["truncated"] is True
 
 
+async def test_files_listing_without_repo_never_walks_uncapped(
+    full_client, make_run_with_workspace, monkeypatch
+):
+    """Revisão final 2: workspace sem repositório git -> status "added"
+    derivado da árvore LIMITADA; nem ``tree`` (varredura completa) nem
+    ``changed_files`` são chamados."""
+    import app.api.workspaces as workspaces_module
+    from app.runtime.workspace import WorkspaceManager
+
+    def forbidden(*_a, **_k):
+        raise AssertionError("varredura sem limite chamada pela listagem")
+
+    monkeypatch.setattr(workspaces_module, "TREE_MAX_ENTRIES", 3)
+    monkeypatch.setattr(WorkspaceManager, "tree", forbidden)
+    monkeypatch.setattr(WorkspaceManager, "changed_files", forbidden)
+    run_id, path = await make_run_with_workspace()
+    for i in range(5):
+        (path / f"f{i}.txt").write_text("x")
+    resp = await full_client.get(f"/api/runs/{run_id}/files")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["truncated"] is True
+    assert len(data["items"]) == 3
+    assert all(i["status"] == "added" for i in data["items"])
+
+
 async def test_archive_too_large_is_413(full_client, make_run_with_workspace, monkeypatch):
     import app.runtime.workspace as ws_module
 

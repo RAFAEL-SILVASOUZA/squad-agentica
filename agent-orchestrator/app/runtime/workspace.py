@@ -23,6 +23,7 @@ dubious ownership in repository" do git >= 2.35.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import shutil
@@ -34,6 +35,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class WorkspaceError(Exception):
@@ -72,6 +75,13 @@ _HARDEN = (
     "-c", "core.attributesFile=/dev/null",
     "-c", "core.untrackedCache=false",
     "-c", "protocol.ext.allow=never",
+    # Revisão final 2: repositório ANINHADO (``sub/.git`` criado por um
+    # agente) registrado como gitlink faria status/diff rodarem um git filho
+    # dentro de ``sub/`` — que lê a config/atributos do agente (filter.clean
+    # etc.). Submódulos nunca são inspecionados nem percorridos.
+    "-c", "diff.ignoreSubmodules=all",
+    "-c", "submodule.recurse=false",
+    "-c", "status.submoduleSummary=false",
 )
 
 # ``<gitdir>/info/attributes`` tem precedência sobre qualquer .gitattributes
@@ -83,6 +93,10 @@ _INFO_ATTRIBUTES = "* !filter !diff !merge\n"
 # ``<gitdir>/info/exclude``: ``.git`` plantado no workspace nunca entra num
 # commit; diretórios de cache/dependências comuns também não.
 _INFO_EXCLUDE = ".git\nnode_modules/\n__pycache__/\n.npm/\n.cache/\n"
+# Diretórios que o exclude acima já ignora em qualquer nível: a busca por
+# repositórios aninhados não precisa descer neles.
+_EXCLUDED_DIRS = frozenset({".git", "node_modules", "__pycache__", ".npm", ".cache"})
+_GITLINK_MODE = "160000"
 
 # Arquivo (no gitdir privado, fora do alcance do worker) com o SHA da base
 # clonada: "há o que publicar" = árvore suja OU HEAD à frente da base.
@@ -178,6 +192,32 @@ async def _git(
     return proc.returncode or 0, text
 
 
+def _exclude_pattern(rel: str) -> str:
+    """Padrão ancorado e literal do gitignore para o diretório ``rel``."""
+    escaped = re.sub(r"([\\*?\[\]!# ])", r"\\\1", rel)
+    return f"/{escaped}/"
+
+
+def _find_nested_repos(work_tree: Path) -> list[str]:
+    """Diretórios (relativos, POSIX) abaixo do work tree que contêm ``.git``
+    (arquivo ou diretório) — repositórios aninhados. O topo não conta; não
+    desce em symlinks, em diretórios já excluídos nem dentro de um
+    repositório aninhado encontrado."""
+    found: list[str] = []
+    for dirpath, dirnames, _ in os.walk(work_tree, followlinks=False):
+        dp = Path(dirpath)
+        keep = []
+        for d in sorted(dirnames):
+            if d in _EXCLUDED_DIRS or (dp / d).is_symlink():
+                continue
+            if os.path.lexists(dp / d / ".git"):
+                found.append((dp / d).relative_to(work_tree).as_posix())
+                continue
+            keep.append(d)
+        dirnames[:] = keep
+    return found
+
+
 def _newest_mtime(*paths: Path) -> float:
     """Maior mtime entre os diretórios e tudo dentro deles (sem seguir links)."""
     newest = 0.0
@@ -254,11 +294,58 @@ class WorkspaceManager:
         p.mkdir(parents=True, exist_ok=True)
         return p
 
-    def _write_info(self, run_id: str) -> None:
+    def _write_info(self, run_id: str, nested: Iterable[str] = ()) -> None:
         info = self.git_dir(run_id) / "info"
         info.mkdir(parents=True, exist_ok=True)
         (info / "attributes").write_text(_INFO_ATTRIBUTES)
-        (info / "exclude").write_text(_INFO_EXCLUDE)
+        extra = "".join(f"{_exclude_pattern(n)}\n" for n in nested)
+        (info / "exclude").write_text(_INFO_EXCLUDE + extra)
+
+    def _exclude_nested_sync(self, run_id: str) -> list[str]:
+        nested = _find_nested_repos(self.path(run_id))
+        self._write_info(run_id, nested)
+        return nested
+
+    async def _exclude_nested_repos(self, run_id: str) -> None:
+        """Revisão final 2: repositórios aninhados no workspace vão para o
+        ``info/exclude`` privado do run (reescrito a cada chamada) — nunca
+        entram no índice como gitlink. A busca percorre o workspace: roda em
+        thread, fora do loop de eventos."""
+        nested = await asyncio.to_thread(self._exclude_nested_sync, run_id)
+        if nested:
+            logger.warning(
+                "Workspace do run %s tem repositório git aninhado (ignorado): %s",
+                run_id, ", ".join(nested[:10]),
+            )
+
+    async def _drop_new_gitlinks(self, run_id: str, env: dict[str, str] | None = None) -> None:
+        """Defesa em profundidade: todo gitlink do índice que não existe
+        igual no HEAD (novo ou com outro commit) volta ao estado do HEAD.
+        Submódulos legítimos da base continuam intactos."""
+        _, staged = await self._rgit(run_id, "ls-files", "-s", "-z", env=env)
+        index_links = {}
+        for entry in staged.split("\x00"):
+            if entry.startswith(_GITLINK_MODE + " "):
+                meta, path = entry.split("\t", 1)
+                index_links[path] = meta.split()[1]
+        if not index_links:
+            return
+        _, head = await self._rgit(run_id, "ls-tree", "-r", "-z", "HEAD", check=False)
+        head_links = {}
+        for entry in head.split("\x00"):
+            if entry.startswith(_GITLINK_MODE + " "):
+                meta, path = entry.split("\t", 1)
+                head_links[path] = meta.split()[2]
+        bad = sorted(p for p, sha in index_links.items() if head_links.get(p) != sha)
+        if not bad:
+            return
+        logger.warning(
+            "Workspace do run %s: gitlink(s) removido(s) do índice: %s",
+            run_id, ", ".join(bad[:10]),
+        )
+        await self._rgit(
+            run_id, "--literal-pathspecs", "reset", "-q", "HEAD", "--", *bad, env=env
+        )
 
     async def clone(self, run_id: str, clone_url: str, base_branch: str) -> Path:
         dest = self.path(run_id)
@@ -323,13 +410,20 @@ class WorkspaceManager:
 
     async def changed_files(self, run_id: str) -> list[dict]:
         if not self.has_repo(run_id):
-            return [{"path": f["path"], "status": "added"} for f in self.tree(run_id)]
+            # Sem repositório: tudo é "added". A varredura do disco roda em
+            # thread (nunca no loop de eventos) e só lista caminhos.
+            base = self.path(run_id)
+            paths = await asyncio.to_thread(
+                lambda: [f.relative_to(base).as_posix() for f in self._iter_files(run_id)]
+            )
+            return [{"path": p, "status": "added"} for p in paths]
+        await self._exclude_nested_repos(run_id)
         # ``-z`` + ``core.quotePath=false``: sem isso, nomes não-ASCII saem
         # escapados em octal ("especifica\303\247\303\243o.md") e renames
         # ("a -> b") quebram o parsing por posição fixa.
         _, out = await self._rgit(
             run_id, "-c", "core.quotePath=false", "status", "--porcelain", "-z",
-            "--untracked-files=all",
+            "--untracked-files=all", "--ignore-submodules=all",
         )
         tokens = out.split("\x00")
         result = []
@@ -441,22 +535,29 @@ class WorkspaceManager:
         # arquivos novos aparecerem no diff não mexe no índice real — diff e
         # publicação concorrentes não disputam o ``index.lock``.
         gd = self.git_dir(run_id)
+        await self._exclude_nested_repos(run_id)
         fd, tmp_index = tempfile.mkstemp(prefix="agent-portal-index-")
         os.close(fd)
         try:
             real_index = gd / "index"
-            if real_index.is_file():
-                shutil.copyfile(real_index, tmp_index)
-            else:
-                os.unlink(tmp_index)
+
+            def _prepare_index() -> None:
+                if real_index.is_file():
+                    shutil.copyfile(real_index, tmp_index)
+                else:
+                    os.unlink(tmp_index)
+
+            await asyncio.to_thread(_prepare_index)
             env = {"GIT_INDEX_FILE": tmp_index}
             await self._rgit(run_id, "add", "-A", "-N", env=env)
+            await self._drop_new_gitlinks(run_id, env=env)
             # ``--no-color``: explícito mesmo sem tty. ``--no-ext-diff`` e
             # ``--no-textconv``: nenhum programa externo roda (C1). Arquivo
             # binário: o git detecta pelo conteúdo e imprime "Binary files
             # a/... and b/... differ" em vez do conteúdo bruto.
             _, out = await self._rgit(
-                run_id, "diff", "--no-color", "--no-ext-diff", "--no-textconv", env=env
+                run_id, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
+                "--ignore-submodules=all", env=env,
             )
             return out
         finally:
@@ -515,7 +616,9 @@ class WorkspaceManager:
         if dirty:
             author = ["-c", f"user.name={settings.git_author_name}",
                       "-c", f"user.email={settings.git_author_email}"]
+            await self._exclude_nested_repos(run_id)
             await self._rgit(run_id, "add", "-A")
+            await self._drop_new_gitlinks(run_id)
             await self._rgit(run_id, *author, "commit", "--no-verify", "-m", message)
         _, head_out = await self._rgit(run_id, "rev-parse", "HEAD")
         head = head_out.strip()

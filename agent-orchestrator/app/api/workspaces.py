@@ -59,13 +59,23 @@ async def list_files(
     if not ws.path(rid).is_dir():
         return {"items": [], "truncated": False}
 
-    tree, truncated = await asyncio.to_thread(ws.tree_limited, rid, TREE_MAX_ENTRIES)
-    try:
-        changed = {c["path"]: c["status"] for c in await ws.changed_files(rid)}
-    except WorkspaceError:
-        # Status do git indisponível (repositório corrompido etc.): a
-        # listagem continua útil sem a coluna de status.
-        changed = {}
+    def _scan() -> tuple[list[dict], bool, bool]:
+        tree, truncated = ws.tree_limited(rid, TREE_MAX_ENTRIES)
+        return tree, truncated, ws.has_repo(rid)
+
+    # Árvore limitada e checagem do repositório na MESMA thread. Sem
+    # repositório git, todo arquivo é "added" — derivado da árvore já
+    # limitada (nunca uma varredura completa do disco).
+    tree, truncated, has_repo = await asyncio.to_thread(_scan)
+    if not has_repo:
+        changed = {f["path"]: "added" for f in tree}
+    else:
+        try:
+            changed = {c["path"]: c["status"] for c in await ws.changed_files(rid)}
+        except WorkspaceError:
+            # Status do git indisponível (repositório corrompido etc.): a
+            # listagem continua útil sem a coluna de status.
+            changed = {}
     items = [
         {
             "path": f["path"],

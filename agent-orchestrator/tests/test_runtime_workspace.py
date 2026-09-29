@@ -396,6 +396,143 @@ async def test_malicious_workspace_git_config_never_executes(tmp_path, remote):
     assert not any(f == ".git" or f.startswith(".git/") for f in files)
 
 
+def _plant_nested_repo(p, script, name="sub"):
+    """Repositório ANINHADO no workspace (``sub/.git`` criado por um agente
+    com shell): config com ``filter.evil.clean``, ``info/attributes`` pedindo
+    o filtro e um arquivo rastreado "sujo" (stat alterado) — um git filho
+    rodando dentro de ``sub/`` executaria o filtro."""
+    import os
+    import time
+
+    sub = p / name
+    sub.mkdir(parents=True)
+    run = lambda *a: subprocess.run(  # noqa: E731
+        ["git", "-c", "safe.directory=*", "-c", "user.name=t", "-c", "user.email=t@t", *a],
+        cwd=sub, capture_output=True, check=True,
+    )
+    run("init", "-q", "-b", "main")
+    (sub / "f.txt").write_text("sub\n")
+    run("add", "f.txt")
+    run("commit", "-q", "-m", "sub")
+    run("config", "filter.evil.clean", f"{script}")
+    (sub / ".git" / "info").mkdir(exist_ok=True)
+    (sub / ".git" / "info" / "attributes").write_text("* filter=evil\n")
+    # Stat-dirty: mesmo conteúdo, mtime diferente -> o git filho re-hasheia
+    # (e passa pelo filtro clean).
+    later = time.time() + 10
+    os.utime(sub / "f.txt", (later, later))
+    return sub
+
+
+async def test_nested_repo_never_executes_and_never_becomes_gitlink(tmp_path, remote):
+    """Revisão final 2 (Crítico): ``sub/.git`` aninhado não vira gitlink e
+    nenhum git filho roda dentro de ``sub/`` (status/diff/commit)."""
+    import os
+    import shutil
+
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("r1", remote, "main")
+    marker = tmp_path / "PWNED"
+    script = _evil_script(tmp_path, marker)
+    _plant_nested_repo(p, script)
+
+    # Controle: sem o endurecimento novo, ``add -A`` registra ``sub`` como
+    # gitlink e o ``git status`` seguinte roda um git filho em ``sub/`` que
+    # executa o filtro da config do repositório aninhado.
+    ctl_index = tmp_path / "ctl-index"
+    shutil.copyfile(ws.git_dir("r1") / "index", ctl_index)
+    plain = ["git", "-c", "safe.directory=*", f"--git-dir={ws.git_dir('r1')}", f"--work-tree={p}"]
+    env = {**os.environ, "GIT_INDEX_FILE": str(ctl_index)}
+    subprocess.run([*plain, "add", "-A"], cwd=p, env=env, capture_output=True, check=True)
+    subprocess.run([*plain, "status"], cwd=p, env=env, capture_output=True)
+    assert marker.exists(), "controle: o ataque deveria funcionar sem o endurecimento"
+    marker.unlink()
+
+    (p / "novo.txt").write_text("conteudo\n")
+    changed = {c["path"] for c in await ws.changed_files("r1")}
+    assert "novo.txt" in changed
+    assert not any(c == "sub" or c.startswith("sub/") for c in changed)
+    assert "+conteudo" in await ws.diff("r1")
+    branch = await ws.commit_and_push("r1", remote, "agent-portal/x", "m")
+    assert branch == "agent-portal/x"
+    # Depois do commit (índice real atualizado), status/diff de novo.
+    (p / "outro.txt").write_text("y\n")
+    await ws.changed_files("r1")
+    await ws.diff("r1")
+    assert not marker.exists(), "filtro do repositório aninhado executou no orchestrator"
+
+    tree = subprocess.run(
+        ["git", "--git-dir", remote, "ls-tree", "-r", "agent-portal/x"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "160000" not in tree
+    assert not any(line.split("\t", 1)[1].startswith("sub") for line in tree.splitlines())
+    # O índice real também não guarda gitlink.
+    staged = subprocess.run(
+        ["git", f"--git-dir={ws.git_dir('r1')}", "ls-files", "-s"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "160000" not in staged
+
+
+async def test_nested_repo_defense_layers_work_independently(tmp_path, remote, monkeypatch):
+    """Nome com caracteres especiais do gitignore é excluído literalmente; e,
+    mesmo sem o exclude (camada 1 desligada), o gitlink é removido do índice
+    antes do commit e nenhum git filho roda (camadas 2 e 3)."""
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("r1", remote, "main")
+    marker = tmp_path / "PWNED"
+    script = _evil_script(tmp_path, marker)
+    _plant_nested_repo(p, script, name="pasta [x]*! #")
+    (p / "novo.txt").write_text("x\n")
+    changed = {c["path"] for c in await ws.changed_files("r1")}
+    assert changed == {"novo.txt"}
+
+    monkeypatch.setattr(WorkspaceManager, "_exclude_nested_repos", _noop_exclude)
+    ws._write_info("r1")  # exclude sem os repositórios aninhados
+    _plant_nested_repo(p, script, name="outro")
+    assert await ws.commit_and_push("r1", remote, "agent-portal/l", "m") == "agent-portal/l"
+    (p / "mais.txt").write_text("y\n")
+    await ws.changed_files("r1")
+    await ws.diff("r1")
+    assert not marker.exists()
+    tree = subprocess.run(
+        ["git", "--git-dir", remote, "ls-tree", "-r", "agent-portal/l"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "160000" not in tree
+
+
+async def _noop_exclude(self, run_id):
+    return None
+
+
+async def test_existing_submodule_gitlink_is_preserved(tmp_path, remote):
+    """Um gitlink que JÁ existe na base (submódulo legítimo do repositório)
+    não é removido na publicação — só gitlinks novos/alterados."""
+    seed = tmp_path / "seed"
+    fake_sha = "1" * 40
+    subprocess.run(
+        ["git", "update-index", "--add", "--cacheinfo", f"160000,{fake_sha},lib"],
+        cwd=seed, check=True,
+    )
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "sm"],
+        cwd=seed, check=True,
+    )
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=seed, check=True)
+
+    ws = WorkspaceManager(tmp_path / "ws")
+    p = await ws.clone("r1", remote, "main")
+    (p / "novo.txt").write_text("x\n")
+    assert await ws.commit_and_push("r1", remote, "agent-portal/sm", "m") == "agent-portal/sm"
+    tree = subprocess.run(
+        ["git", "--git-dir", remote, "ls-tree", "agent-portal/sm"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert f"160000 commit {fake_sha}\tlib" in tree
+
+
 async def test_info_attributes_neutralizes_worktree_filter_driver(tmp_path, remote):
     """Mesmo com um driver filter/diff DEFINIDO na config, o
     ``<gitdir>/info/attributes`` anula o .gitattributes do workspace."""
