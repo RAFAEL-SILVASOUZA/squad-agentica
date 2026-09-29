@@ -177,4 +177,31 @@ describe("FilesTab", () => {
     expect(mockGet).toHaveBeenCalledWith("/api/runs/r1/diff");
     expect(screen.getByText("Diff truncado — baixe o .zip para ver tudo")).toBeInTheDocument();
   });
+
+  it("warns when the file list was truncated by the server", async () => {
+    mockGet.mockResolvedValue({ items: [{ path: "a.txt", size: 1, binary: false, status: "added" }], truncated: true });
+    render(<FilesTab runId="r1" />);
+    expect(await screen.findByText(/mais de 5\.000 arquivos/)).toBeInTheDocument();
+  });
+
+  it("revokes the zip object URL only after a delay", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockGet.mockResolvedValue({ items: [] });
+      mockDownload.mockResolvedValue({ blob: new Blob(["PK"]), filename: "x.zip" });
+      const revokeObjectURL = vi.fn();
+      Object.assign(URL, { createObjectURL: vi.fn(() => "blob:zip"), revokeObjectURL });
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+      render(<FilesTab runId="r1" />);
+      fireEvent.click(await screen.findByRole("button", { name: /Baixar \.zip/ }));
+      await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+      vi.advanceTimersByTime(500);
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(600);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:zip");
+      clickSpy.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -695,6 +695,35 @@ describe("PipelineMonitor", () => {
     expect(mockGet).toHaveBeenCalledWith("/api/runs/run-1/files");
   });
 
+  it("shows the run error (not a success toast) when execute returns a failed run", async () => {
+    const pipeline = makePipeline({ status: "draft" });
+
+    mockGet.mockResolvedValue(pipeline);
+    mockList
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [makeRun({ status: "failed" })], total: 1, page: 1, limit: 50 });
+
+    mockPost.mockResolvedValue({
+      runId: "r9",
+      status: "failed",
+      error: "branch 'main' não existe no repositório",
+    });
+
+    renderMonitor();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /iniciar/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar/i }));
+    fireEvent.change(await screen.findByLabelText("task *"), { target: { value: "gerar plano" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Executar$/ }));
+
+    expect(await screen.findByText(/Falha ao iniciar: branch 'main' não existe no repositório/)).toBeInTheDocument();
+    expect(screen.queryByText("Pipeline iniciada.")).not.toBeInTheDocument();
+  });
+
   it("shows 409 toast when execute fails with pipeline_already_running", async () => {
     const { ApiError } = await import("@/lib/api");
     const pipeline = makePipeline({ status: "draft" });

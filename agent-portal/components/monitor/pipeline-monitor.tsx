@@ -314,9 +314,18 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
     async (runInputs: Record<string, string> = {}) => {
       setActionLoading("execute");
       try {
-        await api.post(`/api/pipelines/${pipelineId}/execute`, { inputs: runInputs });
+        const started = await api.post<{ status?: string; error?: string }>(
+          `/api/pipelines/${pipelineId}/execute`,
+          { inputs: runInputs }
+        );
         setRunInputsOpen(false);
-        addToast("success", "Pipeline iniciada.");
+        // O run pode nascer "failed" (clone falhou, branch inexistente...):
+        // mostra o motivo em vez de "Pipeline iniciada".
+        if (started?.status === "failed") {
+          addToast("error", started.error ? `Falha ao iniciar: ${started.error}` : "Falha ao iniciar a pipeline.");
+        } else {
+          addToast("success", "Pipeline iniciada.");
+        }
         // Novo run: estados e saídas do anterior deixam de valer.
         setNodeStatuses((prev) => {
           const next = { ...prev };

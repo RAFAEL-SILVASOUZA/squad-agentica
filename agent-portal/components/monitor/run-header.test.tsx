@@ -60,4 +60,38 @@ describe("RunHeader", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Missing tool call type");
     expect(screen.queryByRole("link", { name: /PR #/ })).not.toBeInTheDocument();
   });
+
+  it("offers Publicar for a completed run with repository that was never published", () => {
+    const onPublish = vi.fn();
+    const repo = { integrationId: "i1", fullName: "acme/app", baseBranch: "main" };
+    const { rerender } = render(
+      <RunHeader
+        pipeline={makePipeline({ name: "P", repository: repo })}
+        run={makeRun({ status: "completed", publishStatus: "none" })}
+        onPublish={onPublish}
+        actions={null}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Publicar" }));
+    expect(onPublish).toHaveBeenCalled();
+    // Sem repositório, ou ainda em execução: nada de "Publicar".
+    rerender(
+      <RunHeader
+        pipeline={makePipeline({ name: "P" })}
+        run={makeRun({ status: "completed", publishStatus: "none" })}
+        onPublish={onPublish}
+        actions={null}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Publicar" })).not.toBeInTheDocument();
+    rerender(
+      <RunHeader
+        pipeline={makePipeline({ name: "P", repository: repo })}
+        run={makeRun({ status: "running", publishStatus: "none" })}
+        onPublish={onPublish}
+        actions={null}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Publicar" })).not.toBeInTheDocument();
+  });
 });

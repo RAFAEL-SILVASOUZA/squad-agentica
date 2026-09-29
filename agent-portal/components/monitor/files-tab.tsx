@@ -57,7 +57,9 @@ function saveBlob(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  // ~1s: alguns navegadores ainda leem o blob depois do click(); revogar
+  // imediatamente cancelava o download.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 interface DirNode {
@@ -253,6 +255,8 @@ const codeBlock: React.CSSProperties = {
  */
 export function FilesTab({ runId, refreshKey }: FilesTabProps) {
   const [files, setFiles] = React.useState<RunFile[] | null>(null);
+  // A API lista no máximo 5000 arquivos (`truncated: true` quando há mais).
+  const [truncatedList, setTruncatedList] = React.useState(false);
   const [listError, setListError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState("");
   const [viewer, setViewer] = React.useState<Viewer>({ kind: "none" });
@@ -270,9 +274,10 @@ export function FilesTab({ runId, refreshKey }: FilesTabProps) {
     const token = ++listRef.current;
     setRefreshing(true);
     try {
-      const res = await api.get<{ items: RunFile[] }>(`/api/runs/${runId}/files`);
+      const res = await api.get<{ items: RunFile[]; truncated?: boolean }>(`/api/runs/${runId}/files`);
       if (token === listRef.current) {
         setFiles(res.items);
+        setTruncatedList(Boolean(res.truncated));
         setListError(null);
       }
     } catch (err) {
@@ -285,6 +290,7 @@ export function FilesTab({ runId, refreshKey }: FilesTabProps) {
   // Run novo: estado do zero.
   React.useEffect(() => {
     setFiles(null);
+    setTruncatedList(false);
     setListError(null);
     setViewer({ kind: "none" });
     setFolderOpen({});
@@ -388,6 +394,11 @@ export function FilesTab({ runId, refreshKey }: FilesTabProps) {
       {downloadError && (
         <div role="alert" style={{ ...notice, borderColor: "var(--error)", color: "var(--error)" }}>
           {downloadError}
+        </div>
+      )}
+      {truncatedList && (
+        <div role="status" style={notice}>
+          Este workspace tem mais de 5.000 arquivos; só os primeiros são listados. Baixe o .zip para ver todos.
         </div>
       )}
       {listError && (

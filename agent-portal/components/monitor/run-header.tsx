@@ -114,6 +114,14 @@ export function RunHeader({ pipeline, run, onPublish, actions, publishing = fals
               {run && publishStatus === "no_changes" && (
                 <span style={mutedChip}>Nenhum arquivo alterado</span>
               )}
+              {run && run.status === "completed" && pipeline.repository && publishStatus === "none" && (
+                // Run concluído com repositório mas sem publicação (ex.: o
+                // repositório foi configurado depois): publicar manualmente.
+                <Button size="sm" onClick={onPublish} loading={publishing}>
+                  <GitBranch size={12} aria-hidden="true" />
+                  Publicar
+                </Button>
+              )}
             </div>
           </div>
         </div>

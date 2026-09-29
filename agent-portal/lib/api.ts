@@ -47,6 +47,14 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_path: "Caminho de arquivo inválido.",
   rate_limited: "Muitas requisições. Aguarde um instante e tente de novo.",
   internal_error: "Erro interno do servidor. Tente novamente.",
+  run_not_found: "Execução não encontrada.",
+  document_not_found: "Documento não encontrado.",
+  conversation_not_found: "Conversa não encontrada.",
+  invalid_config: "Configuração inválida.",
+  archive_too_large: "O workspace é grande demais para baixar como zip (limite de 200 MB).",
+  invalid_workspace: "O workspace desta execução não existe mais (expirou ou foi removido).",
+  diff_unavailable: "Não foi possível calcular as alterações do workspace agora. Tente de novo em instantes.",
+  mcp_capability_invalid: "Chamada MCP recusada: credencial do run inválida.",
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -63,7 +71,11 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 function validationSummary(details: unknown): string | null {
   const errors = (details as { errors?: unknown } | undefined)?.errors;
-  if (!Array.isArray(errors) || errors.length === 0) return null;
+  if (!Array.isArray(errors) || errors.length === 0) {
+    // `details.message` (pt-BR, vindo do servidor) também explica o erro.
+    const message = (details as { message?: unknown } | undefined)?.message;
+    return typeof message === "string" && message.trim() ? message.trim() : null;
+  }
   const first = errors[0] as Record<string, unknown> | string;
   if (typeof first === "string") return first;
   const loc = Array.isArray(first.loc) ? first.loc.filter((p) => p !== "body").join(".") : "";
@@ -80,7 +92,8 @@ function extractErrorMessage(
   if (CODE_MESSAGES[code]) {
     // O detalhe (ex.: erro de validação do script) diz ao usuário o que corrigir.
     const summary = validationSummary(body.details);
-    return { message: summary ? `${CODE_MESSAGES[code]} ${summary}` : CODE_MESSAGES[code], code };
+    const base = CODE_MESSAGES[code];
+    return { message: summary && summary !== base ? `${base} ${summary}` : base, code };
   }
   if (typeof body.error === "string" && ERROR_MESSAGES[body.error.trim()]) {
     const base = ERROR_MESSAGES[body.error.trim()];

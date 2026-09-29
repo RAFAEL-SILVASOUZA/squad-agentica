@@ -257,6 +257,33 @@ describe("errorMessageFromBody (E1)", () => {
     ).toBe("O código da tool não passou na validação. Script must define a function named 'execute'");
   });
 
+  it("translates the new codes and surfaces details.message without repeating it", () => {
+    expect(errorMessageFromBody(404, { error: "not_found", code: "run_not_found" })).toBe("Execução não encontrada.");
+    expect(errorMessageFromBody(404, { error: "not_found", code: "document_not_found" })).toBe(
+      "Documento não encontrado."
+    );
+    expect(errorMessageFromBody(404, { error: "not_found", code: "conversation_not_found" })).toBe(
+      "Conversa não encontrada."
+    );
+    expect(
+      errorMessageFromBody(400, {
+        error: "validation error",
+        code: "invalid_config",
+        details: { message: "Config do Azure DevOps deve conter 'organization'." },
+      })
+    ).toBe("Configuração inválida. Config do Azure DevOps deve conter 'organization'.");
+    // Mesmo texto no código e no details.message: aparece uma vez só.
+    expect(
+      errorMessageFromBody(413, {
+        error: "payload too large",
+        code: "archive_too_large",
+        details: { message: "O workspace é grande demais para baixar como zip (limite de 200 MB)." },
+      })
+    ).toBe("O workspace é grande demais para baixar como zip (limite de 200 MB).");
+    expect(errorMessageFromBody(400, { error: "x", code: "invalid_workspace" })).toMatch(/não existe mais/);
+    expect(errorMessageFromBody(403, { error: "x", code: "mcp_capability_invalid" })).toMatch(/MCP/);
+  });
+
   it("keeps FastAPI detail outside the envelope", () => {
     expect(errorMessageFromBody(404, { detail: "Not Found" })).toBe("Not Found");
   });
