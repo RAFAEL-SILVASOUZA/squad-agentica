@@ -4,7 +4,8 @@ import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useSession } from "next-auth/react";
-import { Loader2, LogIn } from "lucide-react";
+import { LogIn } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   return (
@@ -171,7 +172,7 @@ function LoginPageInner() {
                 outline: "none",
                 transition: "border-color var(--transition)",
               }}
-              placeholder="admin@local"
+              placeholder="voce@empresa.com"
             />
             {errors.email && (
               <p
@@ -236,36 +237,32 @@ function LoginPageInner() {
             )}
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={loading}
-            aria-disabled={loading}
-            style={{
-              width: "100%",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              padding: "10px 16px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--accent)",
-              background: loading ? "var(--accent)" : "var(--accent)",
-              color: "#fff",
-              fontSize: "13px",
-              fontWeight: 500,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.6 : 1,
-              transition: "background var(--transition), border-color var(--transition)",
-            }}
+            variant="primary"
+            loading={loading}
+            style={{ width: "100%" }}
           >
-            {loading ? (
-              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-            ) : (
-              <LogIn size={14} />
-            )}
+            {!loading && <LogIn size={14} />}
             {loading ? "Entrando..." : "Entrar"}
-          </button>
+          </Button>
         </form>
+
+        <p
+          style={{
+            fontSize: "13px",
+            color: "var(--text-secondary)",
+            textAlign: "right",
+            margin: "0.75rem 0 0",
+          }}
+        >
+          <a
+            href="/forgot-password"
+            style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
+          >
+            Esqueci?
+          </a>
+        </p>
 
         <p
           style={{

@@ -3,7 +3,8 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Loader2, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { register } from "@/lib/auth-client";
 
 export default function RegisterPage() {
@@ -30,6 +31,7 @@ function RegisterPageInner() {
   }>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
 
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
 
@@ -215,7 +217,7 @@ function RegisterPageInner() {
               aria-describedby={errors.email ? "email-error" : undefined}
               aria-invalid={!!errors.email}
               style={inputStyle(!!errors.email)}
-              placeholder="admin@local"
+              placeholder="voce@empresa.com"
             />
             {errors.email && (
               <p id="email-error" style={errorStyle}>
@@ -233,12 +235,37 @@ function RegisterPageInner() {
               type="password"
               autoComplete="new-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-describedby={errors.password ? "password-error" : undefined}
+              onChange={(e) => {
+                const value = e.target.value;
+                setPassword(value);
+                if (passwordTouched) {
+                  setErrors((current) => ({
+                    ...current,
+                    password:
+                      value.length > 0 && value.length < 8
+                        ? "A senha precisa ter pelo menos 8 caracteres"
+                        : undefined,
+                  }));
+                }
+              }}
+              onBlur={() => {
+                setPasswordTouched(true);
+                setErrors((current) => ({
+                  ...current,
+                  password:
+                    password.length > 0 && password.length < 8
+                      ? "A senha precisa ter pelo menos 8 caracteres"
+                      : undefined,
+                }));
+              }}
+              aria-describedby={errors.password ? "password-error" : "password-hint"}
               aria-invalid={!!errors.password}
               style={inputStyle(!!errors.password)}
               placeholder="Mínimo 8 caracteres"
             />
+            <p id="password-hint" style={{ ...errorStyle, color: "var(--text-secondary)" }}>
+              Mínimo 8 caracteres
+            </p>
             {errors.password && (
               <p id="password-error" style={errorStyle}>
                 {errors.password}
@@ -270,35 +297,16 @@ function RegisterPageInner() {
             )}
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={loading}
-            aria-disabled={loading}
-            style={{
-              width: "100%",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              padding: "10px 16px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--accent)",
-              background: "var(--accent)",
-              color: "#fff",
-              fontSize: "13px",
-              fontWeight: 500,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.6 : 1,
-              transition: "background var(--transition), border-color var(--transition)",
-            }}
+            variant="primary"
+            loading={loading}
+            disabled={!!errors.password}
+            style={{ width: "100%" }}
           >
-            {loading ? (
-              <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-            ) : (
-              <UserPlus size={14} />
-            )}
+            {!loading && <UserPlus size={14} />}
             {loading ? "Criando..." : "Criar conta"}
-          </button>
+          </Button>
         </form>
 
         <p

@@ -102,7 +102,28 @@ describe("LoginPage", () => {
     });
   });
 
-  it("shows loading state during submission", async () => {
+
+  it("shows link to register page", () => {
+    render(<LoginPage />);
+    const link = screen.getByText(/criar conta/i);
+    expect(link).toHaveAttribute("href", "/register");
+  });
+
+  it("uses the neutral email placeholder", () => {
+    render(<LoginPage />);
+    expect(screen.getByLabelText(/e-mail/i)).toHaveAttribute(
+      "placeholder",
+      "voce@empresa.com"
+    );
+  });
+
+  it("shows an 'Esqueci?' link pointing to /forgot-password", () => {
+    render(<LoginPage />);
+    const link = screen.getByText("Esqueci?");
+    expect(link).toHaveAttribute("href", "/forgot-password");
+  });
+
+  it("marks the button aria-busy during login", async () => {
     let resolveSignIn: (v: { error: null }) => void;
     mockSignIn.mockReturnValue(
       new Promise((resolve) => {
@@ -120,22 +141,17 @@ describe("LoginPage", () => {
     const submitBtn = screen.getByRole("button", { name: /entrar/i });
     await user.click(submitBtn);
 
-    // Button should show loading state
     await waitFor(
       () => {
-        expect(screen.getByRole("button")).toHaveTextContent(/entrando/i);
+        expect(screen.getByRole("button")).toHaveAttribute(
+          "aria-busy",
+          "true"
+        );
       },
       { timeout: 2000 }
     );
 
-    // Resolve to unblock
     resolveSignIn!({ error: null });
-  });
-
-  it("shows link to register page", () => {
-    render(<LoginPage />);
-    const link = screen.getByText(/criar conta/i);
-    expect(link).toHaveAttribute("href", "/register");
   });
 
   it("shows error banner from URL params", () => {

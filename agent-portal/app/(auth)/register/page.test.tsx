@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RegisterPage from "./page";
 
@@ -145,6 +146,35 @@ describe("RegisterPage", () => {
         "email_already_exists"
       );
     });
+  });
+
+  it("uses the neutral email placeholder", () => {
+    render(<RegisterPage />);
+    expect(screen.getByLabelText("E-mail")).toHaveAttribute(
+      "placeholder",
+      "voce@empresa.com"
+    );
+  });
+
+  it("shows the password requirement hint", () => {
+    render(<RegisterPage />);
+    expect(
+      screen.getByText("Mínimo 8 caracteres", { exact: false })
+    ).toBeInTheDocument();
+  });
+
+  it("on blur, shows the short password error and disables the button", async () => {
+    const user = userEvent.setup();
+    render(<RegisterPage />);
+
+    const passwordInput = screen.getByLabelText("Senha");
+    await user.type(passwordInput, "12345");
+    await user.tab();
+
+    expect(
+      screen.getByText("A senha precisa ter pelo menos 8 caracteres")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /criar conta/i })).toBeDisabled();
   });
 
   it("redirects to callbackUrl on success", async () => {
