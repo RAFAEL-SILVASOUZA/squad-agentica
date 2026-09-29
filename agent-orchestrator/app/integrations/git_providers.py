@@ -13,6 +13,9 @@ from urllib.parse import quote
 
 import httpx
 
+# Teto de páginas seguidas nas listagens (100 itens por página no GitHub).
+MAX_PAGES = 10
+
 
 class GitProviderError(Exception):
     def __init__(self, message: str) -> None:
@@ -87,17 +90,39 @@ class GitHubProvider:
             },
         )
 
-    async def list_repos(self) -> list[Repo]:
+    async def _get_paginated(
+        self, path: str, params: dict[str, Any], what: str
+    ) -> list[dict[str, Any]]:
+        """GET seguindo o cabeçalho ``Link: <...>; rel="next"`` do GitHub, até
+        ``MAX_PAGES`` páginas de 100 (revisão final I5). Só segue links do
+        mesmo host da API — o token nunca vai para outro servidor."""
+        items: list[dict[str, Any]] = []
         async with self._client() as c:
-            r = await c.get("/user/repos", params={"per_page": 100, "sort": "updated"})
-        _raise_for(r, "Listar repositórios")
-        return [Repo(x["full_name"], x.get("default_branch") or "main") for x in r.json()]
+            url: str | None = path
+            query: dict[str, Any] | None = params
+            for _ in range(MAX_PAGES):
+                r = await c.get(url, params=query)
+                _raise_for(r, what)
+                data = r.json()
+                if isinstance(data, list):
+                    items.extend(data)
+                nxt = r.links.get("next", {}).get("url")
+                if not nxt or not nxt.startswith(self._api + "/"):
+                    break
+                url, query = nxt, None
+        return items
+
+    async def list_repos(self) -> list[Repo]:
+        data = await self._get_paginated(
+            "/user/repos", {"per_page": 100, "sort": "updated"}, "Listar repositórios"
+        )
+        return [Repo(x["full_name"], x.get("default_branch") or "main") for x in data]
 
     async def list_branches(self, repo: str) -> list[str]:
-        async with self._client() as c:
-            r = await c.get(f"/repos/{repo}/branches", params={"per_page": 100})
-        _raise_for(r, "Listar branches")
-        return [b["name"] for b in r.json()]
+        data = await self._get_paginated(
+            f"/repos/{repo}/branches", {"per_page": 100}, "Listar branches"
+        )
+        return [b["name"] for b in data]
 
     def clone_url(self, repo: str) -> str:
         if self._clone_base:
@@ -164,11 +189,24 @@ class AzureDevOpsProvider:
 
     async def list_branches(self, repo: str) -> list[str]:
         project, name = self._split(repo)
+        out: list[str] = []
+        token: str | None = None
         async with self._client() as c:
-            r = await c.get(f"/{self._org}/{project}/_apis/git/repositories/{name}/refs",
-                            params={"filter": "heads/", "api-version": self.API_VERSION})
-        _raise_for(r, "Listar branches")
-        return [x["name"].removeprefix("refs/heads/") for x in r.json().get("value", [])]
+            # Refs paginadas por ``x-ms-continuationtoken`` (revisão final I5).
+            for _ in range(MAX_PAGES):
+                params = {"filter": "heads/", "api-version": self.API_VERSION, "$top": 1000}
+                if token:
+                    params["continuationToken"] = token
+                r = await c.get(f"/{self._org}/{project}/_apis/git/repositories/{name}/refs",
+                                params=params)
+                _raise_for(r, "Listar branches")
+                out += [
+                    x["name"].removeprefix("refs/heads/") for x in r.json().get("value", [])
+                ]
+                token = r.headers.get("x-ms-continuationtoken")
+                if not token:
+                    break
+        return out
 
     def clone_url(self, repo: str) -> str:
         project, name = self._split(repo)

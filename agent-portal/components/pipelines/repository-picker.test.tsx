@@ -82,4 +82,17 @@ describe("RepositoryPicker", () => {
     render(<RepositoryPicker value={null} onChange={vi.fn()} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Erro interno do servidor. Tente novamente.");
   });
+
+  it("always offers the repository default branch even if the branch list omits it", async () => {
+    mockList.mockResolvedValue({ items: [{ id: "i1", type: "github", name: "GH", config: {} }], total: 1, page: 1, limit: 100 });
+    mockGet.mockImplementation(async (path: string) =>
+      path.endsWith("/repositories") ? { items: [{ fullName: "o/r", defaultBranch: "trunk" }] }
+        : { items: ["feature-1", "feature-2"] });
+    render(<RepositoryPicker value={null} onChange={vi.fn()} />);
+    fireEvent.change(await screen.findByLabelText("Conexão"), { target: { value: "i1" } });
+    fireEvent.change(await screen.findByLabelText("Repositório"), { target: { value: "o/r" } });
+    await waitFor(() => expect(screen.getByRole("option", { name: "feature-1" })).toBeInTheDocument());
+    expect(screen.getByRole("option", { name: "trunk" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Branch")).toHaveValue("trunk");
+  });
 });

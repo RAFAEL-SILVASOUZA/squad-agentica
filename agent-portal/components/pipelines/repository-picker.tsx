@@ -160,7 +160,13 @@ export function RepositoryPicker({ value, onChange }: RepositoryPickerProps) {
     );
   }
 
-  const branchOptions = (branches.length ? branches : [baseBranch].filter(Boolean)).map((b) => ({ value: b, label: b }));
+  // Revisão final I5: a branch padrão do repositório (e a já escolhida)
+  // sempre aparecem, mesmo que o provedor não as devolva na listagem
+  // (ex.: repositório com mais branches do que as páginas consultadas).
+  const defaultBranch = repositories.find((r) => r.fullName === fullName)?.defaultBranch ?? "";
+  const branchOptions = Array.from(
+    new Set([defaultBranch, baseBranch, ...branches].filter(Boolean))
+  ).map((b) => ({ value: b, label: b }));
 
   // Spec §4: busca na lista de repositórios do provedor (case-insensitive por fullName).
   const filteredRepositories = repositories.filter((r) =>

@@ -184,3 +184,83 @@ def test_provider_for_unsupported_type(monkeypatch):
     with pytest.raises(GitProviderError) as exc:
         provider_for(integration)
     assert "não é um provedor Git" in exc.value.message
+
+
+# ---------------------------------------------------------------------------
+# Revisão final I5: paginação (Link do GitHub, continuationToken do Azure)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_github_list_repos_follows_link_header_up_to_10_pages():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        page = int(request.url.params.get("page", "1"))
+        headers = {}
+        # Sempre há "próxima": o provedor precisa parar em 10 páginas.
+        nxt = f"https://api.github.com/user/repos?per_page=100&page={page + 1}"
+        headers["Link"] = f'<{nxt}>; rel="next", <https://api.github.com/x>; rel="last"'
+        body = [{"full_name": f"o/r{page}-{i}", "default_branch": "main"} for i in range(100)]
+        return httpx.Response(200, json=body, headers=headers)
+
+    gh = GitHubProvider(token="ghp_x", transport=httpx.MockTransport(handler))
+    repos = await gh.list_repos()
+    assert len(calls) == 10
+    assert len(repos) == 1000
+    assert repos[-1].full_name == "o/r10-99"
+    # A 1ª chamada leva os parâmetros; as seguintes usam a URL do Link.
+    assert "sort=updated" in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_github_list_branches_paginates_and_stops_without_next():
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params.get("page", "1"))
+        headers = {}
+        if page < 3:
+            headers["Link"] = (
+                f'<https://api.github.com/repos/o/r/branches?per_page=100&page={page + 1}>;'
+                ' rel="next"'
+            )
+        return httpx.Response(200, json=[{"name": f"b{page}"}], headers=headers)
+
+    gh = GitHubProvider(token="ghp_x", transport=httpx.MockTransport(handler))
+    assert await gh.list_branches("o/r") == ["b1", "b2", "b3"]
+
+
+@pytest.mark.asyncio
+async def test_github_pagination_never_follows_other_host():
+    hosts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        return httpx.Response(
+            200, json=[{"name": "main"}],
+            headers={"Link": '<https://evil.example/steal?page=2>; rel="next"'},
+        )
+
+    gh = GitHubProvider(token="ghp_x", transport=httpx.MockTransport(handler))
+    assert await gh.list_branches("o/r") == ["main"]
+    assert hosts == ["api.github.com"]
+
+
+@pytest.mark.asyncio
+async def test_azure_branches_follow_continuation_token():
+    seen_tokens = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        token = request.url.params.get("continuationToken")
+        seen_tokens.append(token)
+        if token is None:
+            return httpx.Response(
+                200, json={"value": [{"name": "refs/heads/main"}]},
+                headers={"x-ms-continuationtoken": "abc"},
+            )
+        return httpx.Response(200, json={"value": [{"name": "refs/heads/dev"}]})
+
+    az = AzureDevOpsProvider(token="az_x", organization="org",
+                             transport=httpx.MockTransport(handler))
+    assert await az.list_branches("Proj/app") == ["main", "dev"]
+    assert seen_tokens == [None, "abc"]
