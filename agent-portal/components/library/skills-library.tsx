@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
 import { MarkdownPreview } from "./markdown-preview";
+import { PortsEditor, type Port } from "@/components/ports/ports-editor";
 
 /**
  * SkillsLibrary (fe-library, protótipo view-SKILLS).
@@ -44,8 +45,8 @@ interface SkillItem {
   category: string;
   type: string;
   definition: { template: string; variables: string[] };
-  inputs: unknown[];
-  outputs: unknown[];
+  inputs: Port[];
+  outputs: Port[];
   required_integrations: string[];
   created_at: string;
   updated_at: string;
@@ -67,14 +68,17 @@ const CATEGORY_LABELS: Record<string, string> = {
   analysis: "Análise",
 };
 
+// Tipos de port (mesma whitelist do contrato de agente, spec 4.1).
+const PORT_TYPE_OPTIONS = ["document", "code", "artifact", "signal"];
+
 interface SkillFormState {
   name: string;
   description: string;
   category: string;
   template: string;
   variables: string;
-  inputs: string;
-  outputs: string;
+  inputs: Port[];
+  outputs: Port[];
   requiredIntegrations: string;
 }
 
@@ -84,20 +88,10 @@ const EMPTY_FORM: SkillFormState = {
   category: "code",
   template: "",
   variables: "",
-  inputs: "[]",
-  outputs: "[]",
+  inputs: [],
+  outputs: [],
   requiredIntegrations: "",
 };
-
-function parseJsonArray(raw: string, field: string): unknown[] {
-  const trimmed = raw.trim();
-  if (!trimmed) return [];
-  const parsed = JSON.parse(trimmed);
-  if (!Array.isArray(parsed)) {
-    throw new Error(`${field} deve ser uma lista JSON`);
-  }
-  return parsed;
-}
 
 export function SkillsLibrary() {
   const { addToast } = useToast();
@@ -149,8 +143,8 @@ export function SkillsLibrary() {
       category: skill.category,
       template: skill.definition?.template ?? "",
       variables: (skill.definition?.variables ?? []).join(", "),
-      inputs: JSON.stringify(skill.inputs ?? [], null, 2),
-      outputs: JSON.stringify(skill.outputs ?? [], null, 2),
+      inputs: skill.inputs ?? [],
+      outputs: skill.outputs ?? [],
       requiredIntegrations: (skill.required_integrations ?? []).join(", "),
     });
     setFormError(null);
@@ -160,16 +154,6 @@ export function SkillsLibrary() {
 
   const handleSave = React.useCallback(async () => {
     setFormError(null);
-
-    let inputs: unknown[];
-    let outputs: unknown[];
-    try {
-      inputs = parseJsonArray(form.inputs, "Inputs");
-      outputs = parseJsonArray(form.outputs, "Outputs");
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : "JSON inválido");
-      return;
-    }
 
     if (!form.name.trim()) {
       setFormError("Nome é obrigatório");
@@ -191,8 +175,8 @@ export function SkillsLibrary() {
           .map((v) => v.trim())
           .filter(Boolean),
       },
-      inputs,
-      outputs,
+      inputs: form.inputs,
+      outputs: form.outputs,
       required_integrations: form.requiredIntegrations
         .split(",")
         .map((v) => v.trim())
@@ -489,25 +473,17 @@ export function SkillsLibrary() {
             hint="Variáveis referenciadas no template como {{nome}}."
             disabled={saving}
           />
-          <Textarea
-            id="skill-inputs"
-            label="Inputs (JSON)"
+          <PortsEditor
+            label="Inputs"
             value={form.inputs}
-            onChange={(e) => setForm((f) => ({ ...f, inputs: e.target.value }))}
-            rows={3}
-            placeholder='[{"name": "arquivo", "type": "string", "required": true}]'
-            disabled={saving}
-            style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
+            onChange={(ports) => setForm((f) => ({ ...f, inputs: ports }))}
+            types={PORT_TYPE_OPTIONS}
           />
-          <Textarea
-            id="skill-outputs"
-            label="Outputs (JSON)"
+          <PortsEditor
+            label="Outputs"
             value={form.outputs}
-            onChange={(e) => setForm((f) => ({ ...f, outputs: e.target.value }))}
-            rows={3}
-            placeholder='[{"name": "resultado", "type": "string", "required": false}]'
-            disabled={saving}
-            style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
+            onChange={(ports) => setForm((f) => ({ ...f, outputs: ports }))}
+            types={PORT_TYPE_OPTIONS}
           />
           <Input
             id="skill-integrations"

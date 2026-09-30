@@ -168,6 +168,30 @@ describe("AgentDetail", () => {
     expect(payload.actions).toEqual(["follow", "finalize"]);
   });
 
+  it("saves a port's description in the payload", async () => {
+    const { onSave } = renderDetail({ agent: makeAgent() });
+    // Edita a descrição do port de entrada via PortsEditor. O primeiro
+    // "Descrição do port 1" é o da seção Entradas (Saídas vem depois).
+    const descInputs = screen.getAllByLabelText("Descrição do port 1");
+    fireEvent.change(descInputs[0], {
+      target: { value: "Plano aprovado pelo cliente" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalled();
+    });
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.inputs).toEqual([
+      {
+        name: "plano_aprovado",
+        type: "object",
+        required: true,
+        description: "Plano aprovado pelo cliente",
+      },
+    ]);
+  });
+
   it("toggles an action", async () => {
     const { onSave } = renderDetail({ agent: makeAgent() });
     // "return" não está ativo no agente; clique para ativar.

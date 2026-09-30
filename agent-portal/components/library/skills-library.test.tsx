@@ -44,8 +44,8 @@ function makeSkill(overrides: Record<string, unknown> = {}): Record<string, unkn
     category: "code",
     type: "prompt",
     definition: { template: "Revise {{arquivo}}", variables: ["arquivo"] },
-    inputs: [{ name: "arquivo", type: "string", required: true }],
-    outputs: [{ name: "resultado", type: "string", required: false }],
+    inputs: [{ name: "arquivo", type: "document", required: true }],
+    outputs: [{ name: "resultado", type: "document", required: false }],
     required_integrations: [],
     created_at: "2026-09-26T10:00:00Z",
     updated_at: "2026-09-26T10:00:00Z",
@@ -162,7 +162,7 @@ describe("SkillsLibrary", () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
-  it("shows form error for invalid inputs JSON", async () => {
+  it("does not render a raw 'Inputs (JSON)' textarea; uses PortsEditor instead", async () => {
     renderLibrary();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /criar primeiro skill/i })).toBeInTheDocument();
@@ -172,13 +172,43 @@ describe("SkillsLibrary", () => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "JSON ruim" } });
+    // O modal não tem mais o textarea bruto de JSON.
+    expect(screen.queryByLabelText("Inputs (JSON)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Outputs (JSON)")).not.toBeInTheDocument();
+    // Em vez disso, o editor estruturado de ports está presente.
+    expect(screen.getByText("Inputs")).toBeInTheDocument();
+    expect(screen.getByText("Outputs")).toBeInTheDocument();
+  });
+
+  it("saves ports edited in the PortsEditor on create", async () => {
+    mockPost.mockResolvedValue(makeSkill({ id: "skill-new" }));
+    mockList.mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 100 });
+    renderLibrary();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /criar primeiro skill/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /criar primeiro skill/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Skill nova" } });
     fireEvent.change(screen.getByLabelText("Template (markdown)"), { target: { value: "ok" } });
-    fireEvent.change(screen.getByLabelText("Inputs (JSON)"), { target: { value: "{\"name\": \"x\"}" } });
+
+    // Adiciona um input via PortsEditor e preenche o nome.
+    const addButtons = screen.getAllByText("+ Adicionar");
+    fireEvent.click(addButtons[0]);
+    fireEvent.change(screen.getByLabelText("Nome do port 1"), { target: { value: "arquivo" } });
+
     fireEvent.click(screen.getByRole("button", { name: /criar skill/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(/deve ser uma lista/i);
+      expect(mockPost).toHaveBeenCalledWith(
+        "/api/skills",
+        expect.objectContaining({
+          inputs: [{ name: "arquivo", type: "document", required: false }],
+        })
+      );
     });
   });
 

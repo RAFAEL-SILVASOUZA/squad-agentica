@@ -8,6 +8,7 @@ Cobre todas as regras de port/action:
 from __future__ import annotations
 
 from app.agents.validator import (
+    MAX_PORT_DESCRIPTION_LENGTH,
     VALID_ACTIONS,
     VALID_PORT_TYPES,
     validate_agent_contract,
@@ -87,6 +88,58 @@ class TestPortValidation:
             inputs = [{"name": "x", "type": port_type, "required": True}]
             result = validate_agent_contract(inputs, [], [])
             assert result.valid, f"Port type '{port_type}' should be valid"
+
+    def test_port_with_description_accepted(self):
+        inputs = [
+            {
+                "name": "req",
+                "type": "document",
+                "required": True,
+                "description": "A short description within the limit.",
+            }
+        ]
+        result = validate_agent_contract(inputs, [], [])
+        assert result.valid
+        assert result.errors == []
+
+    def test_port_with_max_length_description_accepted(self):
+        inputs = [
+            {
+                "name": "req",
+                "type": "document",
+                "required": True,
+                "description": "x" * MAX_PORT_DESCRIPTION_LENGTH,
+            }
+        ]
+        result = validate_agent_contract(inputs, [], [])
+        assert result.valid
+        assert result.errors == []
+
+    def test_port_with_too_long_description_rejected(self):
+        inputs = [
+            {
+                "name": "req",
+                "type": "document",
+                "required": True,
+                "description": "x" * (MAX_PORT_DESCRIPTION_LENGTH + 1),
+            }
+        ]
+        result = validate_agent_contract(inputs, [], [])
+        assert not result.valid
+        assert any(e.rule == "port_description_too_long" for e in result.errors)
+
+    def test_port_with_non_string_description_rejected(self):
+        inputs = [
+            {
+                "name": "req",
+                "type": "document",
+                "required": True,
+                "description": 12345,
+            }
+        ]
+        result = validate_agent_contract(inputs, [], [])
+        assert not result.valid
+        assert any(e.rule == "port_description_type" for e in result.errors)
 
 
 class TestActionValidation:

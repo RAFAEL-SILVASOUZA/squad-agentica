@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X, Trash2 } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -27,6 +27,7 @@ import type {
   NotificationChannel,
 } from "@/lib/types";
 import type { AgentUpdatePayload } from "@/lib/agents";
+import { PortsEditor } from "@/components/ports/ports-editor";
 
 /**
  * Detalhe/edição do agente (protótipo view-AGENT-DETAIL).
@@ -232,36 +233,6 @@ export function AgentDetail({
   const nameOf = (list: { value: string; label: string }[], id: string) =>
     list.find((o) => o.value === id)?.label ?? id;
 
-  const addPort = (
-    setter: React.Dispatch<React.SetStateAction<PortDef[]>>,
-    list: PortDef[]
-  ) => {
-    // E4: nova porta nasce com tipo DENTRO da whitelist do contrato
-    // (spec 4.1: "document" | "code" | "artifact" | "signal"). "string" era
-    // fora da whitelist e qualquer save com a porta vazia dava 400.
-    setter([
-      ...list,
-      { name: "", type: "document", required: false },
-    ]);
-  };
-
-  const updatePort = (
-    setter: React.Dispatch<React.SetStateAction<PortDef[]>>,
-    index: number,
-    patch: Partial<PortDef>
-  ) => {
-    setter((prev) =>
-      prev.map((p, i) => (i === index ? { ...p, ...patch } : p))
-    );
-  };
-
-  const removePort = (
-    setter: React.Dispatch<React.SetStateAction<PortDef[]>>,
-    index: number
-  ) => {
-    setter((prev) => prev.filter((_, i) => i !== index));
-  };
-
   const toggleAction = (action: FlowAction) => {
     setActions((prev) =>
       prev.includes(action)
@@ -433,227 +404,18 @@ export function AgentDetail({
         <Card>
           <SectionTitle>Contrato de Fluxo</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Inputs */}
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "8px",
-                }}
-              >
-                <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text)" }}>
-                  Entradas
-                </span>
-                <Button
-                  size="sm"
-                  onClick={() => addPort(setInputs, inputs)}
-                  aria-label="Adicionar entrada"
-                >
-                  <Plus size={12} aria-hidden="true" />
-                  Adicionar
-                </Button>
-              </div>
-              {inputs.length === 0 && (
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                  Nenhuma entrada definida.
-                </p>
-              )}
-              {inputs.map((port, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 110px auto auto",
-                    gap: "6px",
-                    alignItems: "center",
-                    marginBottom: "6px",
-                  }}
-                >
-                  <input
-                    aria-label={`Nome da entrada ${i + 1}`}
-                    value={port.name}
-                    onChange={(e) => updatePort(setInputs, i, { name: e.target.value })}
-                    placeholder="nome"
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--border)",
-                      background: "var(--bg-elevated)",
-                      color: "var(--text)",
-                      fontSize: "12px",
-                      outline: "none",
-                    }}
-                  />
-                  <select
-                    aria-label={`Tipo da entrada ${i + 1}`}
-                    value={PORT_TYPE_OPTIONS.includes(port.type) ? port.type : "document"}
-                    onChange={(e) => updatePort(setInputs, i, { type: e.target.value })}
-                    style={{
-                      padding: "6px 8px",
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--border)",
-                      background: "var(--bg-elevated)",
-                      color: "var(--text)",
-                      fontSize: "12px",
-                      outline: "none",
-                    }}
-                  >
-                    {PORT_TYPE_OPTIONS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontSize: "11px",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={port.required}
-                      onChange={(e) =>
-                        updatePort(setInputs, i, { required: e.target.checked })
-                      }
-                      aria-label={`Entrada ${i + 1} obrigatória`}
-                    />
-                    req
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removePort(setInputs, i)}
-                    aria-label={`Remover entrada ${i + 1}`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--text-muted)",
-                      cursor: "pointer",
-                      padding: 2,
-                      display: "flex",
-                    }}
-                  >
-                    <Trash2 size={13} aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Outputs */}
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "8px",
-                }}
-              >
-                <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text)" }}>
-                  Saídas
-                </span>
-                <Button
-                  size="sm"
-                  onClick={() => addPort(setOutputs, outputs)}
-                  aria-label="Adicionar saída"
-                >
-                  <Plus size={12} aria-hidden="true" />
-                  Adicionar
-                </Button>
-              </div>
-              {outputs.length === 0 && (
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                  Nenhuma saída definida.
-                </p>
-              )}
-              {outputs.map((port, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 110px auto auto",
-                    gap: "6px",
-                    alignItems: "center",
-                    marginBottom: "6px",
-                  }}
-                >
-                  <input
-                    aria-label={`Nome da saída ${i + 1}`}
-                    value={port.name}
-                    onChange={(e) => updatePort(setOutputs, i, { name: e.target.value })}
-                    placeholder="nome"
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--border)",
-                      background: "var(--bg-elevated)",
-                      color: "var(--text)",
-                      fontSize: "12px",
-                      outline: "none",
-                    }}
-                  />
-                  <select
-                    aria-label={`Tipo da saída ${i + 1}`}
-                    value={PORT_TYPE_OPTIONS.includes(port.type) ? port.type : "document"}
-                    onChange={(e) => updatePort(setOutputs, i, { type: e.target.value })}
-                    style={{
-                      padding: "6px 8px",
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--border)",
-                      background: "var(--bg-elevated)",
-                      color: "var(--text)",
-                      fontSize: "12px",
-                      outline: "none",
-                    }}
-                  >
-                    {PORT_TYPE_OPTIONS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontSize: "11px",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={port.required}
-                      onChange={(e) =>
-                        updatePort(setOutputs, i, { required: e.target.checked })
-                      }
-                      aria-label={`Saída ${i + 1} obrigatória`}
-                    />
-                    req
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removePort(setOutputs, i)}
-                    aria-label={`Remover saída ${i + 1}`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--text-muted)",
-                      cursor: "pointer",
-                      padding: 2,
-                      display: "flex",
-                    }}
-                  >
-                    <Trash2 size={13} aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
+            <PortsEditor
+              label="Entradas"
+              value={inputs}
+              onChange={setInputs}
+              types={PORT_TYPE_OPTIONS}
+            />
+            <PortsEditor
+              label="Saídas"
+              value={outputs}
+              onChange={setOutputs}
+              types={PORT_TYPE_OPTIONS}
+            />
 
             {/* Actions */}
             <div>

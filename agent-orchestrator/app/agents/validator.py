@@ -17,6 +17,9 @@ VALID_PORT_TYPES: frozenset[str] = frozenset({"document", "code", "artifact", "s
 # Whitelist de actions (spec 4.1: "follow" | "return" | "finalize").
 VALID_ACTIONS: frozenset[str] = frozenset({"follow", "return", "finalize"})
 
+# Tamanho máximo da descrição de um port (redesign de usabilidade).
+MAX_PORT_DESCRIPTION_LENGTH: int = 500
+
 
 @dataclass
 class ValidationError:
@@ -164,6 +167,28 @@ def _validate_ports(ports: list[dict], direction: str, errors: list[ValidationEr
                     message=f"{prefix}.required must be a boolean, got {type(required).__name__}",
                 )
             )
+
+        # description: optional; if present must be a string ≤ MAX_PORT_DESCRIPTION_LENGTH.
+        description = port.get("description")
+        if description is not None:
+            if not isinstance(description, str):
+                errors.append(
+                    ValidationError(
+                        rule="port_description_type",
+                        message=f"{prefix}.description must be a string, got {type(description).__name__}",
+                    )
+                )
+            elif len(description) > MAX_PORT_DESCRIPTION_LENGTH:
+                errors.append(
+                    ValidationError(
+                        rule="port_description_too_long",
+                        message=(
+                            f"{prefix}.description must be at most "
+                            f"{MAX_PORT_DESCRIPTION_LENGTH} characters, "
+                            f"got {len(description)}"
+                        ),
+                    )
+                )
 
 
 def errors_to_details(result: ValidationResult) -> dict:
