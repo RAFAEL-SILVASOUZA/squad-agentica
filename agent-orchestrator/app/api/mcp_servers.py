@@ -16,6 +16,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -79,6 +80,7 @@ class MCPServerResponse(BaseModel):
     discoveredTools: list[MCPToolInfoResponse]
     createdAt: str
     updatedAt: str
+    usageCount: int = 0
 
 
 class MCPServerListResponse(BaseModel):
@@ -114,7 +116,7 @@ def _mask_env(env: dict[str, str] | None) -> dict[str, str]:
     return {k: _MASKED for k in (env or {})}
 
 
-def _to_response(server: Any) -> MCPServerResponse:
+def _to_response(server: Any, usage_count: int = 0) -> MCPServerResponse:
     """Converte um model MCPServer em MCPServerResponse."""
     tools = [
         MCPToolInfoResponse(
@@ -137,6 +139,7 @@ def _to_response(server: Any) -> MCPServerResponse:
         discoveredTools=tools,
         createdAt=server.created_at.isoformat() if server.created_at else "",
         updatedAt=server.updated_at.isoformat() if server.updated_at else "",
+        usageCount=usage_count,
     )
 
 
@@ -159,8 +162,21 @@ async def list_mcp_servers(
     items, total = await registry.list(
         user.id, page=page, limit=limit, transport=transport, status=status
     )
+
+    # Calcula usageCount: numero de agentes DISTINCT do usuario que referenciam cada server.
+    result = await db.execute(
+        text(
+            "SELECT elem->>'serverId' AS item_id, COUNT(DISTINCT a.id) AS cnt "
+            "FROM agents a, jsonb_array_elements(a.\"mcpServers\") AS elem "
+            "WHERE a.owner_id = :user_id "
+            "GROUP BY elem->>'serverId'"
+        ),
+        {"user_id": str(user.id)},
+    )
+    usage_map: dict[str, int] = {row[0]: row[1] for row in result.fetchall()}
+
     return MCPServerListResponse(
-        items=[_to_response(s) for s in items],
+        items=[_to_response(s, usage_map.get(str(s.id), 0)) for s in items],
         total=total,
         page=page,
         limit=limit,

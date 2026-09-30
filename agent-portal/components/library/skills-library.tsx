@@ -4,23 +4,20 @@ import * as React from "react";
 import {
   BookOpen,
   Plus,
-  Pencil,
   Trash2,
   RefreshCw,
   AlertTriangle,
-  Eye,
-  Code2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
 import { MarkdownPreview } from "./markdown-preview";
@@ -50,6 +47,7 @@ interface SkillItem {
   required_integrations: string[];
   created_at: string;
   updated_at: string;
+  usageCount?: number;
 }
 
 const CATEGORY_OPTIONS = [
@@ -297,86 +295,36 @@ export function SkillsLibrary() {
           </Button>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-            gap: "12px",
+        <DataTable<SkillItem>
+          columns={[
+            { key: "name", header: "Nome", sortable: true },
+            { key: "category", header: "Categoria", sortable: true, render: (s) => CATEGORY_LABELS[s.category] ?? s.category },
+            { key: "description", header: "Descrição", render: (s) => s.description || "—" },
+            { key: "usageCount", header: "Usos", sortable: true, render: (s) => `${s.usageCount ?? 0} agentes` },
+          ]}
+          rows={skills}
+          rowKey={(s) => s.id}
+          searchPlaceholder="Buscar skills…"
+          filters={[
+            {
+              key: "category",
+              label: "Categoria",
+              options: CATEGORY_OPTIONS,
+            },
+          ]}
+          onRowMenu={(skill, action) => {
+            if (action === "edit") openEdit(skill);
+            if (action === "delete") {
+              setDeleting(skill);
+              setDeleteModalOpen(true);
+            }
           }}
-        >
-          {skills.map((skill) => (
-            <Card key={skill.id} hoverable onClick={() => openEdit(skill)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    color: "var(--text)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {skill.name}
-                </span>
-                <Badge status="neutral" label={CATEGORY_LABELS[skill.category] ?? skill.category} />
-              </div>
-              <p
-                style={{
-                  fontSize: "12px",
-                  color: "var(--text-secondary)",
-                  margin: "8px 0 0",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {skill.description || "Sem descrição"}
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginTop: "12px",
-                  paddingTop: "10px",
-                  borderTop: "1px solid var(--border-subtle)",
-                }}
-              >
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEdit(skill);
-                  }}
-                  aria-label={`Editar skill ${skill.name}`}
-                >
-                  <Pencil size={12} aria-hidden="true" />
-                  Editar
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleting(skill);
-                    setDeleteModalOpen(true);
-                  }}
-                  aria-label={`Excluir skill ${skill.name}`}
-                >
-                  <Trash2 size={12} aria-hidden="true" />
-                  Excluir
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+          rowMenuItems={[
+            { label: "Editar", action: "edit" },
+            { label: "Excluir", action: "delete", danger: true },
+          ]}
+          emptyMessage="Nenhuma skill encontrada"
+        />
       </div>
     );
   }

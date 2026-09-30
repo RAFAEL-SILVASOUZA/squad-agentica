@@ -14,6 +14,8 @@ export { Card } from "./card";
 export type { CardProps } from "./card";
 export { Table } from "./table";
 export type { TableProps, TableColumn } from "./table";
+export { DataTable } from "./data-table";
+export type { DataTableProps, DataTableColumn, DataTableFilter, DataTableRowMenuItem } from "./data-table";
 export { Modal } from "./modal";
 export type { ModalProps } from "./modal";
 export { Drawer } from "./drawer";

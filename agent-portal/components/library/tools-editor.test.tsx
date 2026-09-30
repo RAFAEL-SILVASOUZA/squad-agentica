@@ -66,6 +66,19 @@ describe("ToolsEditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockList.mockResolvedValue({ items: [], total: 0, page: 1, limit: 100 });
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
   });
 
   it("renders loading skeletons on initial load", () => {
@@ -161,9 +174,10 @@ describe("ToolsEditor", () => {
     mockList.mockResolvedValue({ items: [makeTool()], total: 1, page: 1, limit: 100 });
     renderEditor();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /editar tool calcular hash/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /editar tool calcular hash/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();
@@ -176,9 +190,10 @@ describe("ToolsEditor", () => {
     mockPut.mockResolvedValue(makeTool({ name: "Renomeada" }));
     renderEditor();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /editar tool calcular hash/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /editar tool calcular hash/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();
@@ -198,9 +213,10 @@ describe("ToolsEditor", () => {
     mockPost.mockResolvedValue(undefined);
     renderEditor();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /deploy tool calcular hash/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /deploy tool calcular hash/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Deploy" }));
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith("/api/tools/tool-1/deploy");
@@ -212,9 +228,10 @@ describe("ToolsEditor", () => {
     mockPost.mockResolvedValue({ success: true, output: '{"hash": "abc123"}', duration_ms: 42 });
     renderEditor();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /testar tool calcular hash/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /testar tool calcular hash/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Testar" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();
@@ -245,7 +262,8 @@ describe("ToolsEditor", () => {
       result: { error: "module has no attribute 'execute'", traceback: "Traceback ..." },
     });
     renderEditor();
-    fireEvent.click(await screen.findByRole("button", { name: /testar tool calcular hash/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /ações/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Testar" }));
     fireEvent.click(await screen.findByRole("button", { name: /executar teste/i }));
     expect(await screen.findByText(/module has no attribute 'execute'/)).toBeInTheDocument();
   });
@@ -255,9 +273,10 @@ describe("ToolsEditor", () => {
     mockDelete.mockResolvedValue(undefined);
     renderEditor();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /excluir tool calcular hash/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /excluir tool calcular hash/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Excluir" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();

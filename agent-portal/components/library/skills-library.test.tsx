@@ -67,6 +67,19 @@ describe("SkillsLibrary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockList.mockResolvedValue({ items: [], total: 0, page: 1, limit: 100 });
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
   });
 
   it("renders loading skeletons on initial load", () => {
@@ -95,7 +108,7 @@ describe("SkillsLibrary", () => {
       expect(screen.getByText("Revisar código")).toBeInTheDocument();
     });
     expect(screen.getByText("Revisa diffs de código")).toBeInTheDocument();
-    expect(screen.getByText("Código")).toBeInTheDocument();
+    expect(screen.getAllByText("Código").length).toBeGreaterThan(0);
   });
 
   it("opens create modal when CTA is clicked", async () => {
@@ -239,9 +252,10 @@ describe("SkillsLibrary", () => {
     mockList.mockResolvedValue({ items: [makeSkill()], total: 1, page: 1, limit: 100 });
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /editar skill revisar código/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /editar skill revisar código/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
 
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -257,9 +271,10 @@ describe("SkillsLibrary", () => {
     mockPut.mockResolvedValue(makeSkill({ name: "Renomeada" }));
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /editar skill revisar código/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /editar skill revisar código/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
 
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -279,9 +294,10 @@ describe("SkillsLibrary", () => {
     mockDelete.mockResolvedValue(undefined);
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /excluir skill revisar código/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /excluir skill revisar código/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Excluir" }));
 
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: "Excluir skill" })).toBeInTheDocument();

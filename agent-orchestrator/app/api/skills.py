@@ -16,6 +16,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -71,6 +72,7 @@ class SkillResponse(BaseModel):
     required_integrations: list[str]
     created_at: str
     updated_at: str
+    usageCount: int = 0
 
 
 class SkillListResponse(BaseModel):
@@ -106,7 +108,7 @@ class BuiltinSkillsListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _to_response(skill: Any) -> SkillResponse:
+def _to_response(skill: Any, usage_count: int = 0) -> SkillResponse:
     """Converte um model Skill em SkillResponse."""
     return SkillResponse(
         id=skill.id,
@@ -120,6 +122,7 @@ def _to_response(skill: Any) -> SkillResponse:
         required_integrations=skill.required_integrations,
         created_at=skill.created_at.isoformat() if skill.created_at else "",
         updated_at=skill.updated_at.isoformat() if skill.updated_at else "",
+        usageCount=usage_count,
     )
 
 
@@ -158,8 +161,21 @@ async def list_skills(
     """Lista skills do usuario."""
     registry = SkillRegistry(db, get_skill_storage())
     items, total = await registry.list(user.id, page=page, limit=limit, category=category)
+
+    # Calcula usageCount: numero de agentes DISTINCT do usuario que referenciam cada skill.
+    result = await db.execute(
+        text(
+            "SELECT elem->>'skillId' AS item_id, COUNT(DISTINCT a.id) AS cnt "
+            "FROM agents a, jsonb_array_elements(a.skills) AS elem "
+            "WHERE a.owner_id = :user_id "
+            "GROUP BY elem->>'skillId'"
+        ),
+        {"user_id": str(user.id)},
+    )
+    usage_map: dict[str, int] = {row[0]: row[1] for row in result.fetchall()}
+
     return SkillListResponse(
-        items=[_to_response(s) for s in items],
+        items=[_to_response(s, usage_map.get(str(s.id), 0)) for s in items],
         total=total,
         page=page,
         limit=limit,

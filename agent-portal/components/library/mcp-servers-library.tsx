@@ -4,11 +4,9 @@ import * as React from "react";
 import {
   Server,
   Plus,
-  Pencil,
   Trash2,
   RefreshCw,
   AlertTriangle,
-  Plug,
   CheckCircle2,
   XCircle,
 } from "lucide-react";
@@ -17,10 +15,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
 
@@ -46,6 +44,7 @@ interface MCPServerItem {
   discoveredTools: unknown[];
   created_at: string;
   updated_at: string;
+  usageCount?: number;
 }
 
 const TRANSPORT_OPTIONS = [
@@ -321,106 +320,43 @@ export function MCPServersLibrary() {
           </Button>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: "12px",
+        <DataTable<MCPServerItem>
+          columns={[
+            { key: "name", header: "Nome", sortable: true },
+            {
+              key: "status",
+              header: "Status",
+              sortable: true,
+              render: (s) =>
+                s.status === "connected"
+                  ? `Conectado · ${s.discoveredTools.length} tools`
+                  : STATUS_LABELS[s.status] ?? s.status,
+            },
+            { key: "description", header: "Descrição", render: (s) => s.description || "—" },
+            { key: "transport", header: "Transporte", sortable: true },
+            { key: "usageCount", header: "Usos", sortable: true, render: (s) => `${s.usageCount ?? 0} agentes` },
+          ]}
+          rows={servers}
+          rowKey={(s) => s.id}
+          searchPlaceholder="Buscar servidores…"
+          onRowMenu={(server, action) => {
+            if (action === "edit") openEdit(server);
+            if (action === "test") {
+              setTesting(server);
+              setTestResult(null);
+            }
+            if (action === "delete") {
+              setDeleting(server);
+              setDeleteModalOpen(true);
+            }
           }}
-        >
-          {servers.map((server) => (
-            <Card key={server.id} hoverable onClick={() => openEdit(server)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    color: "var(--text)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {server.name}
-                </span>
-                <Badge
-                  status={server.status === "connected" ? "success" : server.status === "error" ? "error" : "neutral"}
-                  label={STATUS_LABELS[server.status] ?? server.status}
-                />
-              </div>
-              <p
-                style={{
-                  fontSize: "12px",
-                  color: "var(--text-secondary)",
-                  margin: "8px 0 0",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {server.description || "Sem descrição"}
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginTop: "12px",
-                  paddingTop: "10px",
-                  borderTop: "1px solid var(--border-subtle)",
-                }}
-              >
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEdit(server);
-                  }}
-                  aria-label={`Editar servidor ${server.name}`}
-                >
-                  <Pencil size={12} aria-hidden="true" />
-                  Editar
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTesting(server);
-                    setTestResult(null);
-                  }}
-                  aria-label={`Testar conexão ${server.name}`}
-                >
-                  <Plug size={12} aria-hidden="true" />
-                  Testar
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleting(server);
-                    setDeleteModalOpen(true);
-                  }}
-                  aria-label={`Excluir servidor ${server.name}`}
-                >
-                  <Trash2 size={12} aria-hidden="true" />
-                  Excluir
-                </Button>
-              </div>
-              {server.discoveredTools.length > 0 && (
-                <div style={{ marginTop: "10px", fontSize: "11px", color: "var(--text-muted)" }}>
-                  {server.discoveredTools.length} tools descobertas
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
+          rowMenuItems={[
+            { label: "Editar", action: "edit" },
+            { label: "Testar conexão", action: "test" },
+            { label: "Excluir", action: "delete", danger: true },
+          ]}
+          emptyMessage="Nenhum servidor encontrado"
+        />
       </div>
     );
   }

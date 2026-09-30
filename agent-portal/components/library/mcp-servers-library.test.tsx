@@ -67,6 +67,19 @@ describe("MCPServersLibrary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockList.mockResolvedValue({ items: [], total: 0, page: 1, limit: 100 });
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
   });
 
   it("renders loading skeletons on initial load", () => {
@@ -161,9 +174,10 @@ describe("MCPServersLibrary", () => {
     mockList.mockResolvedValue({ items: [makeServer()], total: 1, page: 1, limit: 100 });
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /editar servidor servidor de busca/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /editar servidor servidor de busca/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();
@@ -176,9 +190,10 @@ describe("MCPServersLibrary", () => {
     mockPut.mockResolvedValue(makeServer({ name: "Renomeado" }));
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /editar servidor servidor de busca/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /editar servidor servidor de busca/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();
@@ -199,9 +214,10 @@ describe("MCPServersLibrary", () => {
     mockPost.mockResolvedValue({ status: "connected", discoveredTools: [{ name: "search" }, { name: "fetch" }] });
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /testar conexão servidor de busca/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /testar conexão servidor de busca/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Testar conexão" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();
@@ -226,7 +242,8 @@ describe("MCPServersLibrary", () => {
       error: "Não foi possível conectar a http://x/sse: timeout",
     });
     renderLibrary();
-    fireEvent.click(await screen.findByRole("button", { name: /testar conexão servidor de busca/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /ações/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Testar conexão" }));
     const testBtn = (await screen.findAllByRole("button", { name: /testar conexão/i })).pop();
     if (testBtn) fireEvent.click(testBtn);
     expect(await screen.findByText("Falha na conexão")).toBeInTheDocument();
@@ -238,9 +255,10 @@ describe("MCPServersLibrary", () => {
     mockDelete.mockResolvedValue(undefined);
     renderLibrary();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /excluir servidor servidor de busca/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /ações/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /excluir servidor servidor de busca/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ações/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Excluir" }));
 
     await waitFor(() => {
       expect(document.body.querySelector("[role='dialog']")).not.toBeNull();

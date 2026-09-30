@@ -4,12 +4,9 @@ import * as React from "react";
 import {
   Wrench,
   Plus,
-  Pencil,
   Trash2,
   RefreshCw,
   AlertTriangle,
-  Play,
-  Upload,
   CheckCircle2,
   XCircle,
 } from "lucide-react";
@@ -18,10 +15,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
 
@@ -45,6 +42,7 @@ interface ToolItem {
   status: string;
   created_at: string;
   updated_at: string;
+  usageCount?: number;
 }
 
 interface TestResult {
@@ -354,118 +352,37 @@ export function ToolsEditor() {
           </Button>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: "12px",
+        <DataTable<ToolItem>
+          columns={[
+            { key: "name", header: "Nome", sortable: true },
+            { key: "status", header: "Status", sortable: true, render: (t) => STATUS_LABELS[t.status] ?? t.status },
+            { key: "description", header: "Descrição", render: (t) => t.description || "—" },
+            { key: "usageCount", header: "Usos", sortable: true, render: (t) => `${t.usageCount ?? 0} agentes` },
+          ]}
+          rows={tools}
+          rowKey={(t) => t.id}
+          searchPlaceholder="Buscar tools…"
+          onRowMenu={(tool, action) => {
+            if (action === "edit") openEdit(tool);
+            if (action === "test") {
+              setTesting(tool);
+              setTestInput("{}");
+              setTestResult(null);
+            }
+            if (action === "deploy") void handleDeploy(tool);
+            if (action === "delete") {
+              setDeleting(tool);
+              setDeleteModalOpen(true);
+            }
           }}
-        >
-          {tools.map((tool) => (
-            <Card key={tool.id} hoverable onClick={() => openEdit(tool)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    color: "var(--text)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {tool.name}
-                </span>
-                <Badge
-                  status={tool.status === "deployed" ? "success" : "neutral"}
-                  label={STATUS_LABELS[tool.status] ?? tool.status}
-                />
-              </div>
-              <p
-                style={{
-                  fontSize: "12px",
-                  color: "var(--text-secondary)",
-                  margin: "8px 0 0",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {tool.description || "Sem descrição"}
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  // 4 ações não cabem no card de 280px: quebra de linha em
-                  // vez de cortar o "Excluir".
-                  flexWrap: "wrap",
-                  gap: "8px",
-                  marginTop: "12px",
-                  paddingTop: "10px",
-                  borderTop: "1px solid var(--border-subtle)",
-                }}
-              >
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEdit(tool);
-                  }}
-                  aria-label={`Editar tool ${tool.name}`}
-                >
-                  <Pencil size={12} aria-hidden="true" />
-                  Editar
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTesting(tool);
-                    setTestInput("{}");
-                    setTestResult(null);
-                  }}
-                  aria-label={`Testar tool ${tool.name}`}
-                >
-                  <Play size={12} aria-hidden="true" />
-                  Testar
-                </Button>
-                {tool.status !== "deployed" && (
-                  <Button
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDeploy(tool);
-                    }}
-                    aria-label={`Deploy tool ${tool.name}`}
-                  >
-                    <Upload size={12} aria-hidden="true" />
-                    Deploy
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleting(tool);
-                    setDeleteModalOpen(true);
-                  }}
-                  aria-label={`Excluir tool ${tool.name}`}
-                >
-                  <Trash2 size={12} aria-hidden="true" />
-                  Excluir
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+          rowMenuItems={[
+            { label: "Editar", action: "edit" },
+            { label: "Testar", action: "test" },
+            { label: "Deploy", action: "deploy" },
+            { label: "Excluir", action: "delete", danger: true },
+          ]}
+          emptyMessage="Nenhuma tool encontrada"
+        />
       </div>
     );
   }
