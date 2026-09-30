@@ -6,15 +6,18 @@ import { Plus, Bot, RefreshCw, GitBranch, CheckCircle2, Search } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import {
   AgentCard,
   StatsStrip,
   RecentRuns,
   PendingApprovals,
+  OnboardingChecklist,
   type RecentRunItem,
 } from "@/components/dashboard";
 import { api } from "@/lib/api";
+import { plural } from "@/lib/plural";
 import { getWebSocketClient, disposeWebSocketClient } from "@/lib/websocket";
 import { filterAgentsBySearchAndType } from "@/lib/agent-filter";
 import type {
@@ -42,9 +45,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 interface DashboardData {
   agents: Agent[];
   totalAgents: number;
+  totalPipelines: number;
+  knowledgeCount: number;
+  mcpCount: number;
   runningPipelines: { id: string; name: string }[];
   recentRuns: RecentRunItem[];
   pendingApprovals: ApprovalRequest[];
+}
+
+/** Contagem leve (total) de uma listagem; falha não bloqueia o dashboard. */
+async function countList(path: string): Promise<number> {
+  try {
+    const res = await api.list<unknown>(path, { page: 1, limit: 1 });
+    return res?.total ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function fetchDashboardData(
@@ -70,12 +86,20 @@ async function fetchDashboardData(
   // 24h. (Antes do CRUD de pipelines existir, só as pipelines com aprovação
   // pendente eram consideradas e runs concluídos nunca apareciam.)
   const pipelineNames = new Map<string, string>();
+  let totalPipelines = 0;
   try {
     const pipelinesRes = await api.list<Pipeline>("/api/pipelines", { page: 1, limit: 50 });
+    totalPipelines = pipelinesRes.total;
     for (const p of pipelinesRes.items) pipelineNames.set(p.id, p.name);
   } catch {
     // Listagem indisponível: cai nas pipelines das aprovações pendentes.
   }
+
+  // Contagens para o checklist de onboarding (falha não bloqueia).
+  const [knowledgeCount, mcpCount] = await Promise.all([
+    countList("/api/knowledge"),
+    countList("/api/mcp-servers"),
+  ]);
   const pipelineIds = new Set<string>(pipelineNames.keys());
   for (const approval of pendingApprovals) {
     pipelineIds.add(approval.pipelineId);
@@ -114,6 +138,9 @@ async function fetchDashboardData(
   return {
     agents,
     totalAgents: agentsRes.total,
+    totalPipelines,
+    knowledgeCount,
+    mcpCount,
     runningPipelines,
     recentRuns,
     pendingApprovals,
@@ -267,7 +294,19 @@ export default function DashboardPage() {
     };
   }, [data]);
 
-  const isEmpty = data !== null && data.agents.length === 0;
+  // Portal vazio: sem agentes e sem pipelines → onboarding, sem métricas.
+  const isEmpty =
+    data !== null && data.agents.length === 0 && data.totalPipelines === 0;
+
+  // Checklist de onboarding: aparece enquanto faltar algum item básico.
+  const showChecklist =
+    data !== null &&
+    !(
+      data.agents.length > 0 &&
+      data.totalPipelines > 0 &&
+      data.knowledgeCount > 0 &&
+      data.mcpCount > 0
+    );
 
   return (
     <div>
@@ -291,7 +330,7 @@ export default function DashboardPage() {
               margin: 0,
             }}
           >
-            Agentes
+            Overview
           </h1>
           <p
             style={{
@@ -302,7 +341,7 @@ export default function DashboardPage() {
           >
             {loading
               ? "Carregando…"
-              : `${data?.totalAgents ?? 0} agentes · ${stats.runningPipelines} pipelines em execução`}
+              : `${plural(data?.totalAgents ?? 0, "agente", "agentes")} · ${plural(stats.runningPipelines, "pipeline", "pipelines")} em execução`}
           </p>
         </div>
         <Link href="/agents/new">
@@ -336,17 +375,25 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Stats strip */}
-      <div style={{ marginBottom: "20px" }}>
-        <StatsStrip
-          stats={stats}
-          runningPipelineId={data?.runningPipelines[0]?.id}
-          recentRunPipelineId={data?.recentRuns[0]?.run.pipelineId}
-          loading={loading}
+      {/* Stats strip (oculto enquanto o portal está vazio) */}
+      {!isEmpty && (
+        <div style={{ marginBottom: "20px" }}>
+          <StatsStrip stats={stats} loading={loading} />
+        </div>
+      )}
+
+      {/* Checklist de onboarding (enquanto faltarem itens básicos) */}
+      {data && !loading && !error && showChecklist && (
+        <OnboardingChecklist
+          hasAgent={data.agents.length > 0}
+          hasPipeline={data.totalPipelines > 0}
+          hasKnowledge={data.knowledgeCount > 0}
+          hasMcp={data.mcpCount > 0}
         />
-      </div>
+      )}
 
       {/* Grid de agentes / estado de primeiro uso (portal vazio) */}
+      {!isEmpty && (
       <section aria-labelledby="agents-heading" style={{ marginBottom: "24px" }}>
           <h2
             id="agents-heading"
@@ -375,7 +422,7 @@ export default function DashboardPage() {
               htmlFor="agents-search"
               style={{ position: "absolute", left: -9999 }}
             >
-              Buscar agente
+              Buscar por nome, descrição ou tipo
             </label>
             <input
               id="agents-search"
@@ -430,23 +477,7 @@ export default function DashboardPage() {
               ))}
             </select>
           </div>
-        {isEmpty && !loading && !error ? (
-          <Card style={{ marginBottom: "12px" }}>
-            <EmptyState
-              icon={Bot}
-              title="Comece criando seu primeiro agente"
-              description="Crie um agente e depois monte uma pipeline conectando agentes no editor de fluxo. O portal nasce vazio: nada aqui é ilustrativo."
-              action={
-                <Link href="/agents/new">
-                  <Button variant="primary">
-                    <Plus size={14} aria-hidden="true" />
-                    Criar primeiro agente
-                  </Button>
-                </Link>
-              }
-            />
-          </Card>
-        ) : loading ? (
+        {loading ? (
           <div
             style={{
               display: "grid",
@@ -456,49 +487,7 @@ export default function DashboardPage() {
           >
             {[0, 1, 2, 3].map((i) => (
               <Card key={i} style={{ minHeight: 128 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--bg-hover)",
-                    }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        height: 12,
-                        borderRadius: 4,
-                        background: "var(--bg-hover)",
-                        marginBottom: 6,
-                      }}
-                    />
-                    <div
-                      style={{
-                        height: 10,
-                        width: "60%",
-                        borderRadius: 4,
-                        background: "var(--bg-hover)",
-                      }}
-                    />
-                  </div>
-                </div>
-                <div
-                  style={{
-                    height: 14,
-                    width: "40%",
-                    borderRadius: 4,
-                    background: "var(--bg-hover)",
-                  }}
-                />
+                <SkeletonRows rows={3} height={14} gap={8} />
               </Card>
             ))}
           </div>
@@ -552,6 +541,7 @@ export default function DashboardPage() {
           )
         )}
       </section>
+      )}
 
       {/* Runs recentes + aprovações pendentes */}
       <div

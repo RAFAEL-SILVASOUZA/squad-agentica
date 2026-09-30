@@ -40,10 +40,15 @@ vi.mock("@/lib/websocket", () => ({
   disposeWebSocketClient: vi.fn(),
 }));
 
+let mockSessionStatus: "loading" | "authenticated" = "authenticated";
+
 vi.mock("next-auth/react", () => ({
   useSession: () => ({
-    data: { user: { name: "Test User" } },
-    status: "authenticated",
+    data:
+      mockSessionStatus === "authenticated"
+        ? { user: { name: "Test User" } }
+        : null,
+    status: mockSessionStatus,
   }),
 }));
 
@@ -92,10 +97,25 @@ function renderLayout() {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
+describe("DashboardLayout", () => {
+  beforeEach(() => {
+    mockSessionStatus = "authenticated";
+  });
+
+  it("shows SkeletonShell while the session loads", () => {
+    mockSessionStatus = "loading";
+    renderLayout();
+    expect(
+      document.querySelector('[data-skeleton="header"]')
+    ).not.toBeNull();
+  });
+});
+
 describe("DashboardLayout badge (fe-approvals, contrato §7)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wsHandlers.clear();
+    mockSessionStatus = "authenticated";
     mockFetch.mockImplementation(async (url: string) => {
       if (String(url).includes("/api/session-token")) {
         return {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Monitor, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { BadgeStatus } from "@/components/ui/badge";
 import type { PipelineRun } from "@/lib/types";
@@ -58,19 +58,7 @@ export interface RecentRunsProps {
 
 export function RecentRuns({ items, loading = false }: RecentRunsProps) {
   if (loading) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        {[0, 1, 2].map((i) => (
-          <Card key={i} style={{ minHeight: 64 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <Skeleton width={140} height={14} />
-              <Skeleton width={90} height={14} />
-              <Skeleton width={110} height={14} />
-            </div>
-          </Card>
-        ))}
-      </div>
-    );
+    return <SkeletonRows rows={3} height={64} gap={8} />;
   }
 
   if (items.length === 0) {

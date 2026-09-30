@@ -112,6 +112,22 @@ export function AgentCard({ agent, status = "idle" }: AgentCardProps) {
           />
         </div>
 
+        {agent.description && (
+          <div
+            style={{
+              fontSize: "11px",
+              color: "var(--text-muted)",
+              marginBottom: "10px",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {agent.description}
+          </div>
+        )}
+
         <Badge status={STATUS_BADGE[status]} label={STATUS_LABEL[status]} />
 
         {tags.length > 0 && (

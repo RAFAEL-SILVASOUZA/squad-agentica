@@ -25,8 +25,9 @@ function makeApproval(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest
 
 describe("PendingApprovals", () => {
   it("renders loading skeletons", () => {
-    render(<PendingApprovals items={[]} loading />);
+    const { container } = render(<PendingApprovals items={[]} loading />);
     expect(screen.queryByText("Nenhuma aprovação pendente")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
   });
 
   it("renders empty state when no items and not loading", () => {

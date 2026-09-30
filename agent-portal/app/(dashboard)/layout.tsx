@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { getWebSocketClient, disposeWebSocketClient } from "@/lib/websocket";
+import { SkeletonShell } from "@/components/ui/skeleton";
 import type { ApprovalRequest, ApprovalNewEvent, ApprovalResolvedEvent } from "@/lib/types";
 
 /**
@@ -123,18 +124,7 @@ export default function DashboardLayout({
           background: "var(--bg)",
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            width: 24,
-            height: 24,
-            border: "3px solid var(--border)",
-            borderTopColor: "var(--accent)",
-            borderRadius: "50%",
-            display: "inline-block",
-            animation: "spin 1s linear infinite",
-          }}
-        />
+        <SkeletonShell />
       </div>
     );
   }

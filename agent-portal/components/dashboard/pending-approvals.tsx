@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { CheckCircle2, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { ApprovalRequest } from "@/lib/types";
 
@@ -35,18 +35,7 @@ function timeSince(iso: string | null | undefined): string {
 
 export function PendingApprovals({ items, loading = false }: PendingApprovalsProps) {
   if (loading) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        {[0, 1].map((i) => (
-          <Card key={i} style={{ minHeight: 64 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <Skeleton width={200} height={14} />
-              <Skeleton width={80} height={14} />
-            </div>
-          </Card>
-        ))}
-      </div>
-    );
+    return <SkeletonRows rows={2} height={64} gap={8} />;
   }
 
   if (items.length === 0) {

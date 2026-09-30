@@ -8,9 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Stats strip do dashboard (protótipo view-dashboard, 4 stat cards).
- * - Pipelines em execução → /pipelines/{id}/run (monitor)
- * - Runs recentes (últimas 24h) → /pipelines/{id}/run
- * - Tarefas concluídas (runs completed) → /pipelines/{id}/run
+ * - Execuções em andamento → /pipelines?run=running
+ * - Concluídas (24h) → /pipelines?since=24h
+ * - Completadas → /pipelines?run=completed
  * - Aprovações pendentes → /approvals
  *
  * Sem emojis; ícones via lucide-react. Todos os cards são links reais.
@@ -25,10 +25,6 @@ export interface DashboardStats {
 
 export interface StatsStripProps {
   stats: DashboardStats;
-  /** Pipeline em execução mais recente (destino do card "Pipelines em execução"). */
-  runningPipelineId?: string;
-  /** Pipeline do run mais recente (destino do card "Runs recentes"). */
-  recentRunPipelineId?: string;
   loading?: boolean;
 }
 
@@ -66,7 +62,7 @@ function StatCard({ icon, value, label, href, loading }: StatCardProps) {
         </span>
         <div style={{ minWidth: 0 }}>
           {loading ? (
-            <Skeleton width={36} height={18} />
+            <Skeleton width={36} height={18} label="stat" />
           ) : (
             <div
               style={{
@@ -96,12 +92,7 @@ function StatCard({ icon, value, label, href, loading }: StatCardProps) {
   );
 }
 
-export function StatsStrip({
-  stats,
-  runningPipelineId,
-  recentRunPipelineId,
-  loading = false,
-}: StatsStripProps) {
+export function StatsStrip({ stats, loading = false }: StatsStripProps) {
   return (
     <div
       style={{
@@ -113,22 +104,22 @@ export function StatsStrip({
       <StatCard
         icon={<Play size={15} aria-hidden="true" />}
         value={stats.runningPipelines}
-        label="Pipelines em execução"
-        href={runningPipelineId ? `/pipelines/${runningPipelineId}/run` : "/approvals"}
+        label="Execuções em andamento"
+        href="/pipelines?run=running"
         loading={loading}
       />
       <StatCard
         icon={<Clock size={15} aria-hidden="true" />}
         value={stats.recentRuns}
-        label="Runs nas últimas 24h"
-        href={recentRunPipelineId ? `/pipelines/${recentRunPipelineId}/run` : "/approvals"}
+        label="Concluídas (24h)"
+        href="/pipelines?since=24h"
         loading={loading}
       />
       <StatCard
         icon={<CheckCircle2 size={15} aria-hidden="true" />}
         value={stats.completedRuns}
-        label="Runs concluídos"
-        href={recentRunPipelineId ? `/pipelines/${recentRunPipelineId}/run` : "/approvals"}
+        label="Completadas"
+        href="/pipelines?run=completed"
         loading={loading}
       />
       <StatCard

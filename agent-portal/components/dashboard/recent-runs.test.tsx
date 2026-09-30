@@ -16,8 +16,9 @@ function makeRun(overrides: Partial<PipelineRun> = {}): PipelineRun {
 
 describe("RecentRuns", () => {
   it("renders loading skeletons", () => {
-    render(<RecentRuns items={[]} loading />);
+    const { container } = render(<RecentRuns items={[]} loading />);
     expect(screen.queryByText("Nenhuma execução ainda")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
   });
 
   it("renders empty state when no items and not loading", () => {

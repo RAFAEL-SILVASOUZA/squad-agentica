@@ -6,3 +6,5 @@ export { RecentRuns } from "./recent-runs";
 export type { RecentRunsProps, RecentRunItem } from "./recent-runs";
 export { PendingApprovals } from "./pending-approvals";
 export type { PendingApprovalsProps } from "./pending-approvals";
+export { OnboardingChecklist } from "./onboarding-checklist";
+export type { OnboardingChecklistProps } from "./onboarding-checklist";

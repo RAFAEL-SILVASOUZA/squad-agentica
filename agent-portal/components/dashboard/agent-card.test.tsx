@@ -35,6 +35,20 @@ describe("AgentCard", () => {
     expect(screen.getByText("Coordinador")).toBeInTheDocument();
   });
 
+  it("renders the agent description when present", () => {
+    render(
+      <AgentCard
+        agent={makeAgent({ description: "Monta o plano de execução" })}
+      />
+    );
+    expect(screen.getByText("Monta o plano de execução")).toBeInTheDocument();
+  });
+
+  it("renders no description block when the agent has none", () => {
+    render(<AgentCard agent={makeAgent({ description: "" })} />);
+    expect(screen.queryByText("Monta o plano de execução")).not.toBeInTheDocument();
+  });
+
   it("links to /agents/{id}", () => {
     render(<AgentCard agent={makeAgent({ id: "abc" })} />);
     const link = screen.getByRole("link", { name: /abrir agente planner/i });

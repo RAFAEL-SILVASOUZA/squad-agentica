@@ -96,6 +96,46 @@ function mockWsClient() {
   return client;
 }
 
+/**
+ * Mocka api.list na ordem exata das chamadas de fetchDashboardData:
+ * agents, approvals, pipelines, knowledge, mcp-servers e runs por pipeline.
+ */
+function mockDashboard(opts: {
+  agents?: Agent[];
+  approvals?: ApprovalRequest[];
+  pipelines?: { id: string; name: string }[];
+  runs?: PipelineRun[];
+  knowledgeTotal?: number;
+  mcpTotal?: number;
+}) {
+  const agents = opts.agents ?? [];
+  const approvals = opts.approvals ?? [];
+  const pipelines = opts.pipelines ?? [];
+  const runs = opts.runs ?? [];
+  const list = api.list as unknown as ReturnType<typeof vi.fn>;
+
+  list
+    .mockResolvedValueOnce({ items: agents, total: agents.length, page: 1, limit: 50 })
+    .mockResolvedValueOnce({ items: approvals, total: approvals.length, page: 1, limit: 20 })
+    .mockResolvedValueOnce({ items: pipelines, total: pipelines.length, page: 1, limit: 50 })
+    .mockResolvedValueOnce({ items: [], total: opts.knowledgeTotal ?? 0, page: 1, limit: 1 })
+    .mockResolvedValueOnce({ items: [], total: opts.mcpTotal ?? 0, page: 1, limit: 1 });
+
+  const pipelineIds = new Set<string>([
+    ...pipelines.map((p) => p.id),
+    ...approvals.map((a) => a.pipelineId),
+  ]);
+  for (const id of pipelineIds) {
+    const pipelineRuns = runs.filter((r) => r.pipelineId === id);
+    list.mockResolvedValueOnce({
+      items: pipelineRuns,
+      total: pipelineRuns.length,
+      page: 1,
+      limit: 20,
+    });
+  }
+}
+
 function renderPage() {
   return render(
     <ToastProvider>
@@ -123,36 +163,91 @@ afterEach(() => {
 });
 
 describe("DashboardPage", () => {
-  it("renders empty state with CTA when portal is empty", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // agents
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 }); // approvals
-
+  it("renders the H1 'Overview'", async () => {
+    mockDashboard({});
     mockWsClient();
     renderPage();
 
     await waitFor(() => {
       expect(
-        screen.getByText("Comece criando seu primeiro agente")
+        screen.getByRole("heading", { level: 1, name: "Overview" })
       ).toBeInTheDocument();
     });
+  });
 
-    const cta = screen.getByRole("link", {
-      name: /criar primeiro agente/i,
+  it("shows the agent count with plural in the subtitle", async () => {
+    mockDashboard({ agents: [makeAgent()] });
+    mockWsClient();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 agente/)).toBeInTheDocument();
     });
-    expect(cta).toHaveAttribute("href", "/agents/new");
-    expect(screen.queryByText("Nenhum agente ainda")).not.toBeInTheDocument();
+  });
+
+  it("search field has the label 'Buscar por nome, descrição ou tipo' and matches type case-insensitively", async () => {
+    mockDashboard({
+      agents: [makeAgent({ id: "a1", name: "Agente X", type: "planner" })],
+    });
+    mockWsClient();
+    renderPage();
+
+    const search = await screen.findByLabelText(
+      "Buscar por nome, descrição ou tipo"
+    );
+    fireEvent.change(search, { target: { value: "planner" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Agente X")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the onboarding checklist with 4 items and hides metrics when the portal is empty", async () => {
+    mockDashboard({});
+    mockWsClient();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Primeiros passos")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Crie um agente")).toBeInTheDocument();
+    expect(screen.getByText("Crie uma pipeline")).toBeInTheDocument();
+    expect(screen.getByText("Adicione uma base de conhecimento")).toBeInTheDocument();
+    expect(screen.getByText("Conecte uma ferramenta (MCP)")).toBeInTheDocument();
+    // As métricas (cards da stats strip) não aparecem: nenhum link de stat.
+    expect(
+      screen.queryByRole("link", { name: /execuções em andamento: /i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /aprovações pendentes: /i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks 'Crie um agente' when an agent exists", async () => {
+    mockDashboard({ agents: [makeAgent()] });
+    mockWsClient();
+    renderPage();
+
+    await waitFor(() => {
+      const item = screen.getByText("Crie um agente").closest("li");
+      expect(item).toHaveAttribute("data-done", "true");
+    });
+  });
+
+  it("shows skeletons while loading", async () => {
+    (api.list as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise(() => {})
+    );
+    mockWsClient();
+    renderPage();
+
+    expect(document.querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
   });
 
   it("renders agent cards when agents exist", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        items: [makeAgent({ name: "Planner", type: "Coordinador" })],
-        total: 1,
-        page: 1,
-        limit: 50,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+    mockDashboard({
+      agents: [makeAgent({ name: "Planner", type: "Coordinador" })],
+    });
 
     mockWsClient();
     renderPage();
@@ -169,14 +264,7 @@ describe("DashboardPage", () => {
   });
 
   it("renders pending approvals list", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
-      .mockResolvedValueOnce({
-        items: [makeApproval({ message: "Aprovar deploy?" })],
-        total: 1,
-        page: 1,
-        limit: 20,
-      });
+    mockDashboard({ approvals: [makeApproval({ message: "Aprovar deploy?" })] });
 
     mockWsClient();
     renderPage();
@@ -188,21 +276,7 @@ describe("DashboardPage", () => {
 
   it("renders recent runs with status", async () => {
     const run = makeRun({ status: "running", startedAt: new Date().toISOString() });
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
-      .mockResolvedValueOnce({
-        items: [makeApproval({ pipelineId: "pipe-1" })],
-        total: 1,
-        page: 1,
-        limit: 20,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // pipelines
-      .mockResolvedValueOnce({
-        items: [run],
-        total: 1,
-        page: 1,
-        limit: 20,
-      });
+    mockDashboard({ approvals: [makeApproval({ pipelineId: "pipe-1" })], runs: [run] });
 
     mockWsClient();
     renderPage();
@@ -229,47 +303,19 @@ describe("DashboardPage", () => {
 
   it("renders stats strip with counts", async () => {
     const run = makeRun({ status: "completed", startedAt: new Date().toISOString() });
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
-      .mockResolvedValueOnce({
-        items: [makeApproval({ pipelineId: "pipe-1" })],
-        total: 1,
-        page: 1,
-        limit: 20,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // pipelines
-      .mockResolvedValueOnce({
-        items: [run],
-        total: 1,
-        page: 1,
-        limit: 20,
-      });
+    mockDashboard({ approvals: [makeApproval({ pipelineId: "pipe-1" })], runs: [run] });
 
     mockWsClient();
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Runs concluídos")).toBeInTheDocument();
+      expect(screen.getByText("Completadas")).toBeInTheDocument();
     });
   });
 
   it("updates run status on pipeline:status WS event", async () => {
     const run = makeRun({ status: "running", startedAt: new Date().toISOString() });
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
-      .mockResolvedValueOnce({
-        items: [makeApproval({ pipelineId: "pipe-1" })],
-        total: 1,
-        page: 1,
-        limit: 20,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 }) // pipelines
-      .mockResolvedValueOnce({
-        items: [run],
-        total: 1,
-        page: 1,
-        limit: 20,
-      });
+    mockDashboard({ approvals: [makeApproval({ pipelineId: "pipe-1" })], runs: [run] });
 
     const client = mockWsClient();
     renderPage();
@@ -298,50 +344,41 @@ describe("DashboardPage", () => {
   });
 
   it("refetches on WS reconnect", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+    mockDashboard({});
 
     const client = mockWsClient();
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Comece criando seu primeiro agente")).toBeInTheDocument();
+      expect(screen.getByText("Primeiros passos")).toBeInTheDocument();
     });
 
     const onReconnect = client.onReconnect.mock.calls[0]?.[0] as () => void;
     expect(onReconnect).toBeTypeOf("function");
 
     // Refetch após reconexão.
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+    mockDashboard({});
 
     onReconnect();
 
     await waitFor(() => {
-      // agents + approvals + pipelines, na carga e na reconexão.
-      expect(api.list).toHaveBeenCalledTimes(6);
+      // agents + approvals + pipelines + knowledge + mcp, na carga e na reconexão.
+      expect(api.list).toHaveBeenCalledTimes(10);
     });
   });
 
   it("filters agents client-side by search term", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        items: [
-          makeAgent({ id: "a1", name: "Planner", type: "Coordinador" }),
-          makeAgent({
-            id: "a2",
-            name: "Backend Developer",
-            type: "Developer",
-            description: "Escreve APIs REST",
-          }),
-        ],
-        total: 2,
-        page: 1,
-        limit: 50,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+    mockDashboard({
+      agents: [
+        makeAgent({ id: "a1", name: "Planner", type: "Coordinador" }),
+        makeAgent({
+          id: "a2",
+          name: "Backend Developer",
+          type: "Developer",
+          description: "Escreve APIs REST",
+        }),
+      ],
+    });
 
     mockWsClient();
     renderPage();
@@ -351,7 +388,7 @@ describe("DashboardPage", () => {
       expect(screen.getByText("Backend Developer")).toBeInTheDocument();
     });
 
-    const search = screen.getByLabelText("Buscar agente");
+    const search = screen.getByLabelText("Buscar por nome, descrição ou tipo");
     fireEvent.change(search, { target: { value: "api" } });
 
     await waitFor(() => {
@@ -361,17 +398,12 @@ describe("DashboardPage", () => {
   });
 
   it("filters agents by type via the type selector (server-side param)", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        items: [
-          makeAgent({ id: "a1", name: "Planner", type: "Coordinador" }),
-          makeAgent({ id: "a2", name: "Dev", type: "Developer" }),
-        ],
-        total: 2,
-        page: 1,
-        limit: 50,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+    mockDashboard({
+      agents: [
+        makeAgent({ id: "a1", name: "Planner", type: "Coordinador" }),
+        makeAgent({ id: "a2", name: "Dev", type: "Developer" }),
+      ],
+    });
 
     mockWsClient();
     renderPage();
@@ -396,14 +428,9 @@ describe("DashboardPage", () => {
   });
 
   it("shows a no-match empty state with a clear-filters action", async () => {
-    (api.list as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        items: [makeAgent({ id: "a1", name: "Planner", type: "Coordinador" })],
-        total: 1,
-        page: 1,
-        limit: 50,
-      })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 20 });
+    mockDashboard({
+      agents: [makeAgent({ id: "a1", name: "Planner", type: "Coordinador" })],
+    });
 
     mockWsClient();
     renderPage();
@@ -412,7 +439,7 @@ describe("DashboardPage", () => {
       expect(screen.getByText("Planner")).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText("Buscar agente"), {
+    fireEvent.change(screen.getByLabelText("Buscar por nome, descrição ou tipo"), {
       target: { value: "zzz" },
     });
 
@@ -442,6 +469,19 @@ describe("filterAgentsBySearchAndType", () => {
     expect(filterAgentsBySearchAndType(agents, "plano", "")).toHaveLength(1);
     expect(filterAgentsBySearchAndType(agents, "apis", "")).toHaveLength(1);
     expect(filterAgentsBySearchAndType(agents, "coordinador", "")).toHaveLength(1);
+  });
+
+  it("matches ignoring accents", () => {
+    const accented: Agent[] = [
+      makeAgent({
+        id: "a3",
+        name: "Relatório",
+        type: "Redator",
+        description: "Escreve especificações",
+      }),
+    ];
+    expect(filterAgentsBySearchAndType(accented, "relatorio", "")).toHaveLength(1);
+    expect(filterAgentsBySearchAndType(accented, "especificacoes", "")).toHaveLength(1);
   });
 
   it("combines type filter and search", () => {

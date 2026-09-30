@@ -20,50 +20,42 @@ describe("StatsStrip", () => {
 
   it("renders all four labels", () => {
     render(<StatsStrip stats={baseStats} />);
-    expect(screen.getByText("Pipelines em execução")).toBeInTheDocument();
-    expect(screen.getByText("Runs nas últimas 24h")).toBeInTheDocument();
-    expect(screen.getByText("Runs concluídos")).toBeInTheDocument();
+    expect(screen.getByText("Execuções em andamento")).toBeInTheDocument();
+    expect(screen.getByText("Concluídas (24h)")).toBeInTheDocument();
+    expect(screen.getByText("Completadas")).toBeInTheDocument();
     expect(screen.getByText("Aprovações pendentes")).toBeInTheDocument();
   });
 
-  it("links running pipelines card to the monitor of the running pipeline", () => {
-    render(
-      <StatsStrip
-        stats={baseStats}
-        runningPipelineId="pipe-1"
-        recentRunPipelineId="pipe-2"
-      />
-    );
+  it("links the running card to /pipelines?run=running", () => {
+    render(<StatsStrip stats={baseStats} />);
     const link = screen.getByRole("link", {
-      name: /pipelines em execução: 2/i,
+      name: /execuções em andamento: 2/i,
     });
-    expect(link).toHaveAttribute("href", "/pipelines/pipe-1/run");
+    expect(link).toHaveAttribute("href", "/pipelines?run=running");
   });
 
-  it("links approvals card to /approvals", () => {
+  it("links the 24h card to /pipelines?since=24h", () => {
+    render(<StatsStrip stats={baseStats} />);
+    const link = screen.getByRole("link", {
+      name: /concluídas \(24h\): 5/i,
+    });
+    expect(link).toHaveAttribute("href", "/pipelines?since=24h");
+  });
+
+  it("links the completed card to /pipelines?run=completed", () => {
+    render(<StatsStrip stats={baseStats} />);
+    const link = screen.getByRole("link", {
+      name: /completadas: 3/i,
+    });
+    expect(link).toHaveAttribute("href", "/pipelines?run=completed");
+  });
+
+  it("links the approvals card to /approvals", () => {
     render(<StatsStrip stats={baseStats} />);
     const link = screen.getByRole("link", {
       name: /aprovações pendentes: 4/i,
     });
     expect(link).toHaveAttribute("href", "/approvals");
-  });
-
-  it("falls back to /approvals when no running pipeline id", () => {
-    render(<StatsStrip stats={baseStats} />);
-    const link = screen.getByRole("link", {
-      name: /pipelines em execução: 2/i,
-    });
-    expect(link).toHaveAttribute("href", "/approvals");
-  });
-
-  it("links recent runs card to the monitor of the recent run pipeline", () => {
-    render(
-      <StatsStrip stats={baseStats} recentRunPipelineId="pipe-9" />
-    );
-    const link = screen.getByRole("link", {
-      name: /runs nas últimas 24h: 5/i,
-    });
-    expect(link).toHaveAttribute("href", "/pipelines/pipe-9/run");
   });
 
   it("shows zero values when stats are zero", () => {
@@ -78,5 +70,10 @@ describe("StatsStrip", () => {
       />
     );
     expect(screen.getAllByText("0")).toHaveLength(4);
+  });
+
+  it("shows skeletons while loading", () => {
+    const { container } = render(<StatsStrip stats={baseStats} loading />);
+    expect(container.querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
   });
 });
