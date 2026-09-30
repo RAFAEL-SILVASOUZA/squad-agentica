@@ -762,6 +762,7 @@ class KnowledgeMessage(Base):
     role: Mapped[str] = mapped_column(KnowledgeMessageRole, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    feedback: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = _created_at()
 
     conversation: Mapped["KnowledgeConversation"] = relationship(back_populates="messages")

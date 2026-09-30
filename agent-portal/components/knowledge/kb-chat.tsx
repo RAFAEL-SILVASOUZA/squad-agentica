@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { MessageSquarePlus, Send, Trash2, RefreshCw, AlertTriangle } from "lucide-react";
+import { MessageSquarePlus, Send, Trash2, RefreshCw, AlertTriangle, MoreVertical, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
-import { Markdown } from "@/components/ui/markdown";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
+import { Citations } from "./citations";
 import type { ChatMessage, ChatSource, ConversationSummary } from "./types";
 
 /**
@@ -36,11 +36,26 @@ function formatDate(iso: string): string {
   return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function SourceList({ sources }: { sources: ChatSource[] }) {
+const WAIT_STAGES = ["Buscando trechos", "Lendo", "Respondendo"];
+
+function SourceList({
+  sources,
+  messageId,
+  baseId,
+  onFeedback,
+}: {
+  sources: ChatSource[];
+  messageId?: string;
+  baseId?: string;
+  onFeedback?: (index: number, wrong: boolean) => void;
+}) {
+  const [markedWrong, setMarkedWrong] = React.useState<Set<number>>(new Set());
   if (!sources || sources.length === 0) return null;
   return (
     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>Fontes</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
+        {sources.length} {sources.length === 1 ? "fonte" : "fontes"}
+      </span>
       {sources.map((s, i) => (
         <details
           key={`${s.chunkId}-${i}`}
@@ -56,6 +71,35 @@ function SourceList({ sources }: { sources: ChatSource[] }) {
             {`${i + 1}. ${s.documentName}`} <span style={{ color: "var(--text-muted)" }}>· score {s.score.toFixed(2)}</span>
           </summary>
           <p style={{ margin: "6px 0 2px", color: "var(--text)", whiteSpace: "pre-wrap" }}>{s.text}</p>
+          {onFeedback && (
+            <button
+              type="button"
+              aria-label={`Fonte errada ${i + 1}`}
+              onClick={() => {
+                const wrong = !markedWrong.has(i);
+                const next = new Set(markedWrong);
+                if (wrong) next.add(i); else next.delete(i);
+                setMarkedWrong(next);
+                onFeedback(i, wrong);
+              }}
+              style={{
+                marginTop: 4,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 11,
+                color: markedWrong.has(i) ? "var(--error)" : "var(--text-muted)",
+                background: "none",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                padding: "2px 8px",
+                cursor: "pointer",
+              }}
+            >
+              <XCircle size={11} aria-hidden="true" />
+              Fonte errada
+            </button>
+          )}
         </details>
       ))}
     </div>
@@ -74,9 +118,11 @@ export function KbChat({ baseId }: KbChatProps) {
   const [failedContent, setFailedContent] = React.useState<string | null>(null);
   const [deleting, setDeleting] = React.useState<ConversationSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [waitStage, setWaitStage] = React.useState(0);
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const wasSending = React.useRef(false);
+  const waitTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   // Descarta respostas de carregamentos superados (troca rápida de conversa/base).
   const loadSeq = React.useRef(0);
 
@@ -140,6 +186,33 @@ export function KbChat({ baseId }: KbChatProps) {
     if (wasSending.current && !sending) inputRef.current?.focus();
     wasSending.current = sending;
   }, [sending]);
+
+  // Etapas de espera: uma a cada 1,5s, a última permanece.
+  React.useEffect(() => {
+    if (sending) {
+      setWaitStage(0);
+      let stage = 0;
+      waitTimerRef.current = setInterval(() => {
+        stage++;
+        if (stage < WAIT_STAGES.length) setWaitStage(stage);
+        else if (waitTimerRef.current) clearInterval(waitTimerRef.current);
+      }, 1500);
+    } else {
+      if (waitTimerRef.current) clearInterval(waitTimerRef.current);
+      setWaitStage(0);
+    }
+    return () => {
+      if (waitTimerRef.current) clearInterval(waitTimerRef.current);
+    };
+  }, [sending]);
+
+  const handleFeedback = React.useCallback(
+    (msgId: string, index: number, wrong: boolean) => {
+      if (!activeId) return;
+      void api.patch(`${base}/${activeId}/messages/${msgId}/sources/${index}`, { wrong }).catch(() => {});
+    },
+    [activeId, base]
+  );
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ block: "end" });
@@ -350,14 +423,19 @@ export function KbChat({ baseId }: KbChatProps) {
                     overflowWrap: "anywhere",
                   }}
                 >
-                  <Markdown>{m.content}</Markdown>
-                  <SourceList sources={m.sources} />
+                  <Citations text={m.content} sources={m.sources} onOpen={() => {}} />
+                  <SourceList
+                    sources={m.sources}
+                    messageId={m.id}
+                    baseId={baseId}
+                    onFeedback={(idx, wrong) => handleFeedback(m.id, idx, wrong)}
+                  />
                 </div>
               )
             )}
             {sending && (
               <div role="status" style={{ alignSelf: "flex-start", fontSize: 13, color: "var(--text-muted)" }}>
-                Pensando…
+                {WAIT_STAGES[waitStage]}…
               </div>
             )}
             {error && (

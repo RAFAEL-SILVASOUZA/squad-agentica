@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Trash2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Upload, Trash2, CheckCircle2, XCircle, Clock, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { ErrorPanel } from "@/components/ui/error-panel";
 import { api, ApiError } from "@/lib/api";
+import { DocumentDrawer, type DocumentDetail } from "./document-drawer";
 import type { KnowledgeDocument } from "./types";
 
 /**
@@ -43,6 +44,8 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
   const [duplicate, setDuplicate] = React.useState<DuplicateInfo | null>(null);
   const [removing, setRemoving] = React.useState<KnowledgeDocument | null>(null);
   const [removeBusy, setRemoveBusy] = React.useState(false);
+  const [viewing, setViewing] = React.useState<DocumentDetail | null>(null);
+  const [viewLoading, setViewLoading] = React.useState(false);
   // Falha no upload: bloqueia a ação principal, então fica inline com retry.
   const [uploadError, setUploadError] = React.useState<{ message: string; detail?: string } | null>(null);
   const uploadRetryRef = React.useRef<{ file: File; replaceId?: string } | null>(null);
@@ -224,6 +227,21 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
                     status={doc.status === "ready" ? "success" : doc.status === "processing" ? "warning" : "error"}
                     label={DOC_STATUS_LABELS[doc.status] ?? doc.status}
                   />
+                  <Button
+                    size="sm"
+                    aria-label={`Ver ${doc.name}`}
+                    onClick={() => {
+                      setViewing(null);
+                      setViewLoading(true);
+                      void api
+                        .get<DocumentDetail>(`/api/knowledge/${baseId}/documents/${doc.id}`)
+                        .then((detail) => setViewing(detail))
+                        .catch(() => setViewLoading(false));
+                    }}
+                  >
+                    <Eye size={13} aria-hidden="true" />
+                    Ver
+                  </Button>
                   <Button size="sm" aria-label={`Remover ${doc.name}`} onClick={() => setRemoving(doc)}>
                     <Trash2 size={13} aria-hidden="true" />
                     Remover
@@ -262,6 +280,16 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
           Este arquivo já existe nesta base como <strong>{duplicate?.name}</strong>. Substituir a versão existente?
         </p>
       </Modal>
+
+      <DocumentDrawer
+        open={viewing !== null || viewLoading}
+        onClose={() => {
+          setViewing(null);
+          setViewLoading(false);
+        }}
+        document={viewing}
+        loading={viewLoading}
+      />
 
       <Modal
         open={removing !== null}

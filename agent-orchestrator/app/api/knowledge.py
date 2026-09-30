@@ -136,6 +136,24 @@ class KnowledgeDocumentListResponse(BaseModel):
     limit: int
 
 
+class KnowledgeDocumentDetailResponse(BaseModel):
+    id: str
+    name: str
+    size: int
+    status: str
+    chunkCount: int
+    createdAt: str
+    preview: list[str]
+
+
+class SourceFeedbackRequest(BaseModel):
+    wrong: bool
+
+
+class SourceFeedbackResponse(BaseModel):
+    feedback: dict[str, Any] | None
+
+
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
     knowledgeBaseIds: list[str] = Field(default_factory=list)
@@ -623,6 +641,95 @@ async def delete_document(
     kb.document_count = max(0, (kb.document_count or 0) - 1)
     await db.commit()
     return Response(status_code=204)
+
+
+@router.get("/{kb_id}/documents/{doc_id}", response_model=KnowledgeDocumentDetailResponse)
+async def get_document_detail(
+    kb_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> KnowledgeDocumentDetailResponse:
+    """Detalhe de um documento com preview dos primeiros chunks."""
+    kb = await _get_kb(db, user.id, kb_id)
+    result = await db.execute(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.id == doc_id,
+            KnowledgeDocument.knowledge_base_id == kb.id,
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise AppError(404, "not_found", "document_not_found")
+
+    chunks = list(
+        (
+            await db.execute(
+                select(KnowledgeChunk)
+                .where(KnowledgeChunk.document_id == doc.id)
+                .order_by(KnowledgeChunk.chunk_index)
+                .limit(3)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    preview = [c.content[:600] for c in chunks]
+
+    return KnowledgeDocumentDetailResponse(
+        id=str(doc.id),
+        name=doc.name,
+        size=doc.size,
+        status=doc.status,
+        chunkCount=doc.chunk_count,
+        createdAt=doc.created_at.isoformat() if doc.created_at else "",
+        preview=preview,
+    )
+
+
+@router.patch(
+    "/{kb_id}/conversations/{cid}/messages/{mid}/sources/{index}",
+    response_model=SourceFeedbackResponse,
+)
+async def patch_source_feedback(
+    kb_id: uuid.UUID,
+    cid: uuid.UUID,
+    mid: uuid.UUID,
+    index: int,
+    body: SourceFeedbackRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> SourceFeedbackResponse:
+    """Grava feedback de fonte em uma mensagem assistant."""
+    kb = await _get_kb(db, user.id, kb_id)
+    conversation = await _get_conversation(db, user.id, kb_id, cid)
+
+    result = await db.execute(
+        select(KnowledgeMessage).where(
+            KnowledgeMessage.id == mid,
+            KnowledgeMessage.conversation_id == conversation.id,
+        )
+    )
+    message = result.scalar_one_or_none()
+    if message is None:
+        raise AppError(404, "not_found", "message_not_found")
+
+    if message.role != "assistant":
+        raise AppError(422, "validation_error", "only_assistant_messages_accept_feedback")
+
+    sources = message.sources or []
+    if index < 0 or index >= len(sources):
+        raise AppError(422, "validation_error", "source_index_out_of_range")
+
+    now_iso = datetime.now(UTC).isoformat()
+    feedback = message.feedback if message.feedback is not None else {}
+    sources_fb = feedback.get("sources", {})
+    sources_fb[str(index)] = {"wrong": body.wrong, "at": now_iso}
+    feedback["sources"] = sources_fb
+    message.feedback = feedback
+    await db.commit()
+
+    return SourceFeedbackResponse(feedback=feedback)
 
 
 async def _get_conversation(

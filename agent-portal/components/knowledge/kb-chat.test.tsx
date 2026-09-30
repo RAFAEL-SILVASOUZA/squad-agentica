@@ -118,7 +118,7 @@ describe("KbChat", () => {
     );
   });
 
-  it("mostra Pensando… e, em erro, recarrega a conversa (pergunta salva) e oferece Tentar de novo", async () => {
+  it("mostra etapas de espera e, em erro, recarrega a conversa (pergunta salva) e oferece Tentar de novo", async () => {
     let reject: (e: unknown) => void = () => {};
     mockPost.mockImplementationOnce(() => new Promise((_, r) => { reject = r; }));
     renderChat();
@@ -135,10 +135,10 @@ describe("KbChat", () => {
     const box = screen.getByLabelText("Mensagem");
     fireEvent.change(box, { target: { value: "falha?" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(await screen.findByText("Pensando…")).toBeInTheDocument();
+    expect(await screen.findByText("Buscando trechos…")).toBeInTheDocument();
     reject(new ApiError(502, { error: "O modelo falhou.", code: "llm_error" }));
     expect(await screen.findByText("O modelo falhou.")).toBeInTheDocument();
-    expect(screen.queryByText("Pensando…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Buscando trechos…")).not.toBeInTheDocument();
     expect(mockGet.mock.calls.length).toBeGreaterThan(getsBefore);
     expect(screen.getAllByText("falha?")).toHaveLength(1);
     mockPost.mockResolvedValueOnce({ id: "m9", role: "assistant", content: "agora foi", sources: [] });
@@ -155,7 +155,7 @@ describe("KbChat", () => {
     const box = screen.getByLabelText("Mensagem");
     fireEvent.change(box, { target: { value: "oi" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    await screen.findByText("Pensando…");
+    await screen.findByText("Buscando trechos…");
     expect(screen.getByRole("button", { name: /^Conversa antiga/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Nova conversa" })).toBeDisabled();
     resolve({ id: "m9", role: "assistant", content: "pronto", sources: [] });
@@ -171,7 +171,7 @@ describe("KbChat", () => {
     const box = screen.getByLabelText("Mensagem");
     fireEvent.change(box, { target: { value: "oi" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    await screen.findByText("Pensando…");
+    await screen.findByText("Buscando trechos…");
     mockGet.mockImplementation(async (path: string) => {
       if (path.endsWith("/conversations")) return { items: [] };
       throw new Error("unexpected " + path);
@@ -185,7 +185,7 @@ describe("KbChat", () => {
     resolve({ id: "m9", role: "assistant", content: "resposta tardia", sources: [] });
     await new Promise((r) => setTimeout(r, 30));
     expect(screen.queryByText("resposta tardia")).not.toBeInTheDocument();
-    expect(screen.queryByText("Pensando…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Buscando trechos…")).not.toBeInTheDocument();
   });
 
   it("exclui uma conversa após confirmação", async () => {
