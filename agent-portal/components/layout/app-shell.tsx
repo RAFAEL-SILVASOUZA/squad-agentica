@@ -3,6 +3,9 @@
 import * as React from "react";
 import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
+import { useShortcuts } from "@/components/command-palette/use-shortcuts";
+import { CommandPalette } from "@/components/command-palette/command-palette";
+import { ShortcutsHelp } from "@/components/command-palette/shortcuts-help";
 
 /**
  * App Shell (design system §3.1).
@@ -22,6 +25,13 @@ export function AppShell({
 }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [isMobile, setIsMobile] = React.useState(false);
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const [helpOpen, setHelpOpen] = React.useState(false);
+
+  useShortcuts({
+    onPalette: () => setPaletteOpen(true),
+    onHelp: () => setHelpOpen(true),
+  });
 
   React.useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 900);
@@ -50,6 +60,7 @@ export function AppShell({
         <AppTopbar
           pendingApprovals={pendingApprovals}
           onNotificationsClick={onNotificationsClick}
+          onOpenHelp={() => setHelpOpen(true)}
         />
       </div>
 
@@ -155,6 +166,10 @@ export function AppShell({
         )}
         {children}
       </main>
+
+      {/* Paleta de comandos (Ctrl/⌘K ou "/") e ajuda de atalhos ("?") */}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

@@ -14,11 +14,13 @@ import { useCreatePipelineAndNavigate } from "@/lib/create-pipeline";
 interface AppTopbarProps {
   pendingApprovals?: number;
   onNotificationsClick?: () => void;
+  onOpenHelp?: () => void;
 }
 
 export function AppTopbar({
   pendingApprovals = 0,
   onNotificationsClick,
+  onOpenHelp,
 }: AppTopbarProps) {
   const { data: session } = useSession();
   const [theme, setTheme] = React.useState<"dark" | "light">("dark");
@@ -320,6 +322,41 @@ export function AppTopbar({
             </div>
           )}
         </div>
+
+        {/* Ajuda de atalhos (?) */}
+        <button
+          onClick={onOpenHelp}
+          aria-label="Atalhos de teclado"
+          title="Atalhos de teclado (?)"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            border: "1px solid var(--border)",
+            background: "var(--bg-card)",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "14px",
+            fontWeight: 600,
+            transition:
+              "border-color var(--transition), color var(--transition), background var(--transition)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "var(--accent)";
+            e.currentTarget.style.color = "var(--accent)";
+            e.currentTarget.style.background = "var(--accent-subtle)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.color = "var(--text-secondary)";
+            e.currentTarget.style.background = "var(--bg-card)";
+          }}
+        >
+          ?
+        </button>
 
         {/* Theme toggle */}
         <button
