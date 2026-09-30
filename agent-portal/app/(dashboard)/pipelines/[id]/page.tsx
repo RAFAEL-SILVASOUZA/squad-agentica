@@ -14,7 +14,8 @@ import {
 import { api, ApiError } from "@/lib/api";
 import type { Agent, Pipeline, PipelineNode, PipelineEdge } from "@/lib/types";
 import { FlowEditor, type FlowEditorHandle } from "@/components/FlowEditor";
-import { EdgePanel } from "@/components/EdgePanel";
+import { PropertiesPanel } from "@/components/flow/properties-panel";
+import { StepsList } from "@/components/flow/steps-list";
 import {
   validateGraph,
   errorIdSets,
@@ -53,6 +54,19 @@ type ValidationState =
   | { status: "checking" }
   | { status: "done"; errors: ValidationError[] };
 
+/** Hook: true quando a viewport é < 768px (modo lista do editor, spec 3.6). */
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
+
 export default function PipelineDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -76,8 +90,13 @@ export default function PipelineDetailPage() {
   const [workNodes, setWorkNodes] = React.useState<PipelineNode[]>([]);
   const [workEdges, setWorkEdges] = React.useState<PipelineEdge[]>([]);
 
-  // Aresta selecionada (EdgePanel)
-  const [selectedEdge, setSelectedEdge] = React.useState<PipelineEdge | null>(null);
+  // Selecao atual para o painel de propriedades (spec 3.6)
+  const [selection, setSelection] = React.useState<
+    { nodeId?: string; edgeId?: string } | null
+  >(null);
+
+  // Modo lista no celular (abaixo de 768px, spec 3.6)
+  const isMobile = useIsMobile();
 
   // Validacao
   const [validation, setValidation] = React.useState<ValidationState>({ status: "idle" });
@@ -185,23 +204,51 @@ export default function PipelineDetailPage() {
     (nodes: PipelineNode[], edges: PipelineEdge[]) => {
       setWorkNodes(nodes);
       setWorkEdges(edges);
-      // Mantem a aresta selecionada em sincronia com o grafo de trabalho
-      setSelectedEdge((prev) => {
-        if (!prev) return prev;
-        return edges.find((e) => e.id === prev.id) ?? prev;
-      });
     },
     []
   );
 
-  // Mudanca vinda do EdgePanel: espelha, revalida e sincroniza o canvas
-  // E13: sem o updateEdge no FlowEditor, a edição ficava só na pagina e o
-  // Save (que usa o estado interno do editor) nunca gravava a mudança.
-  const handleEdgeChange = React.useCallback((edge: PipelineEdge) => {
-    setSelectedEdge(edge);
-    setWorkEdges((prev) => prev.map((e) => (e.id === edge.id ? edge : e)));
-    flowEditorRef.current?.updateEdge(edge);
-  }, []);
+  // ── Painel de propriedades (spec 3.6) ────────────────────────────────
+  // Cria/atualiza uma aresta vinda do painel (ex.: entrada de nó -> data edge).
+  // Em desktop, empurra para o canvas via setGraph (o onGraphChange devolve o
+  // grafo e sincroniza workNodes/workEdges). Em mobile, atualiza direto.
+  const handlePanelEdgeChange = React.useCallback((edge: PipelineEdge) => {
+    const nextEdges = workEdges.some((e) => e.id === edge.id)
+      ? workEdges.map((e) => (e.id === edge.id ? edge : e))
+      : [...workEdges, edge];
+    if (isMobile) {
+      setWorkEdges(nextEdges);
+    } else {
+      flowEditorRef.current?.setGraph(workNodes, nextEdges);
+    }
+  }, [isMobile, workNodes, workEdges]);
+
+  // Excluir nó pelo painel.
+  const handleDeleteNode = React.useCallback((nodeId: string) => {
+    const newNodes = workNodes.filter((n) => n.id !== nodeId);
+    const newEdges = workEdges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    setWorkNodes(newNodes);
+    setWorkEdges(newEdges);
+    setSelection(null);
+    if (!isMobile) flowEditorRef.current?.setGraph(newNodes, newEdges);
+  }, [isMobile, workNodes, workEdges]);
+
+  // Excluir aresta pelo painel.
+  const handleDeleteEdge = React.useCallback((edgeId: string) => {
+    const newEdges = workEdges.filter((e) => e.id !== edgeId);
+    setWorkEdges(newEdges);
+    setSelection(null);
+    if (!isMobile) flowEditorRef.current?.setGraph(workNodes, newEdges);
+  }, [isMobile, workNodes, workEdges]);
+
+  // Mudança de grafo vinda do modo lista (StepsList, mobile).
+  const handleStepsChange = React.useCallback(
+    (nodes: PipelineNode[], edges: PipelineEdge[]) => {
+      setWorkNodes(nodes);
+      setWorkEdges(edges);
+    },
+    []
+  );
 
   // Validacao: local (imediata, mesmas regras do compiler) + servidor (debounce)
   const entryNodeId =
@@ -267,15 +314,6 @@ export default function PipelineDetailPage() {
   );
   const hasErrors = errors.length > 0;
   const ids = React.useMemo(() => errorIdSets(errors), [errors]);
-
-  // Erros da aresta selecionada (mensagens para o painel)
-  const selectedEdgeErrors = React.useMemo(
-    () =>
-      selectedEdge
-        ? errors.filter((e) => e.edgeId === selectedEdge.id).map((e) => e.message)
-        : [],
-    [errors, selectedEdge]
-  );
 
   // Executar: POST /api/pipelines/{id}/execute -> cria o run e navega para o monitor
   // Nó de entrada efetivo (o UUID nulo de pipeline recém-criada = 1º nó).
@@ -569,30 +607,52 @@ export default function PipelineDetailPage() {
         </div>
       )}
 
-      {/* Flow Editor + EdgePanel */}
-      <FlowEditor
-        ref={flowEditorRef}
-        pipeline={pipeline}
-        agents={agents}
-        onSave={handleSave}
-        onEdgeSelect={setSelectedEdge}
-        onGraphChange={handleGraphChange}
-        errorIdSets={ids}
-        disabled={pipeline.status === "running"}
-        edgePanelSlot={
-          selectedEdge ? (
-            <EdgePanel
-              key={selectedEdge.id}
-              edge={selectedEdge}
-              nodes={workNodes}
-              onChange={handleEdgeChange}
-              onClose={() => setSelectedEdge(null)}
-              errors={selectedEdgeErrors}
+      {/* Editor: modo lista no celular (spec 3.6) ou canvas + painel de propriedades */}
+      {isMobile ? (
+        <StepsList
+          pipeline={{ ...pipeline, nodes: workNodes, edges: workEdges }}
+          agents={agents}
+          onChange={handleStepsChange}
+          disabled={pipeline.status === "running"}
+        />
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <FlowEditor
+              ref={flowEditorRef}
+              pipeline={pipeline}
+              agents={agents}
+              onSave={handleSave}
+              onGraphChange={handleGraphChange}
+              onSelectionChange={setSelection}
+              errorIdSets={ids}
               disabled={pipeline.status === "running"}
             />
-          ) : null
-        }
-      />
+          </div>
+          <div style={{ width: 300, flexShrink: 0, position: "sticky", top: 12 }}>
+            <PropertiesPanel
+              pipeline={{ ...pipeline, nodes: workNodes, edges: workEdges }}
+              selection={selection}
+              onChangeNode={(node) => {
+                const nextNodes = workNodes.map((n) => (n.id === node.id ? node : n));
+                flowEditorRef.current?.setGraph(nextNodes, workEdges);
+              }}
+              onChangeEdge={handlePanelEdgeChange}
+              onDeleteNode={handleDeleteNode}
+              onDeleteEdge={handleDeleteEdge}
+              onClose={() => setSelection(null)}
+              errors={errors}
+              disabled={pipeline.status === "running"}
+            />
+          </div>
+        </div>
+      )}
       {entryNode && (
         <RunInputsModal
           open={runInputsOpen}

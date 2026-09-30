@@ -93,6 +93,33 @@ vi.mock("@/components/EdgePanel", () => ({
       <button onClick={onClose}>close panel</button>
     </div>
   ),
+  EdgePanelContent: () => <div data-testid="edge-panel-content" />,
+}));
+
+vi.mock("@/components/flow/steps-list", () => ({
+  StepsList: ({ pipeline, onChange }: { pipeline: { nodes: unknown[]; edges: unknown[] }; onChange: (n: unknown[], e: unknown[]) => void }) => (
+    <div data-testid="steps-list">
+      <span>Etapas</span>
+      <span data-testid="steps-count">{pipeline.nodes.length}</span>
+      <button
+        data-testid="mock-steps-add"
+        onClick={() =>
+          onChange(
+            [...pipeline.nodes, { id: "new", agentId: "a", position: { x: 0, y: 0 }, agentSnapshot: { name: "New", inputs: [], outputs: [], actions: [] } }],
+            pipeline.edges
+          )
+        }
+      >
+        Add agent
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/flow/properties-panel", () => ({
+  PropertiesPanel: ({ selection }: { selection: unknown }) => (
+    <div data-testid="properties-panel" data-selection={selection ? "yes" : "no"} />
+  ),
 }));
 
 const mockPipeline = {
@@ -163,6 +190,11 @@ const mockAgents = [
 describe("PipelineDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Padrao: desktop (matchMedia nao casa com mobile)
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+    );
   });
 
   it("shows loading skeleton initially", () => {
@@ -402,6 +434,50 @@ describe("PipelineDetailPage", () => {
       await waitFor(() => {
         expect(screen.getByText("Grafo válido")).toBeInTheDocument();
       }, { timeout: 3000 });
+    });
+  });
+
+  describe("modo lista no celular (abaixo de 768px, spec 3.6)", () => {
+    beforeEach(() => {
+      // matchMedia casa com mobile
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+      );
+    });
+
+    it("nao renderiza o canvas e mostra 'Etapas'", async () => {
+      mockGet.mockResolvedValue(mockPipeline);
+      mockList.mockResolvedValue({ items: mockAgents, total: 1, page: 1, limit: 100 });
+
+      render(<PipelineDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("steps-list")).toBeInTheDocument();
+      });
+      expect(screen.getByText("Etapas")).toBeInTheDocument();
+      // O canvas (FlowEditor) nao aparece no modo mobile
+      expect(screen.queryByTestId("flow-editor")).not.toBeInTheDocument();
+    });
+
+    it("'Adicionar agente' funciona no modo lista", async () => {
+      mockGet.mockResolvedValue(mockPipeline);
+      mockList.mockResolvedValue({ items: mockAgents, total: 1, page: 1, limit: 100 });
+
+      render(<PipelineDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("steps-list")).toBeInTheDocument();
+      });
+
+      // 1 no inicialmente
+      expect(screen.getByTestId("steps-count")).toHaveTextContent("1");
+
+      await userEvent.click(screen.getByTestId("mock-steps-add"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("steps-count")).toHaveTextContent("2");
+      });
     });
   });
 });

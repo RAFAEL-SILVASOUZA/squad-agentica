@@ -54,6 +54,11 @@ export interface FlowEditorProps {
    * A pagina usa para revalidacao em tempo real (fe-flow-edges).
    */
   onGraphChange?: (nodes: PipelineNode[], edges: PipelineEdge[]) => void;
+  /**
+   * Notifica a pagina da selecao atual (no ou aresta) para o painel de
+   * propriedades (spec 3.6). null quando nada esta selecionado.
+   */
+  onSelectionChange?: (selection: { nodeId?: string; edgeId?: string } | null) => void;
   /** Slot for the edge panel (fe-flow-edges will plug in here). */
   edgePanelSlot?: React.ReactNode;
   disabled?: boolean;
@@ -162,6 +167,7 @@ function FlowEditorInner({
   onEdgeSelect,
   onEdgeChange,
   onGraphChange,
+  onSelectionChange,
   edgePanelSlot,
   disabled,
   errorIdSets,
@@ -377,6 +383,14 @@ function FlowEditorInner({
       updateEdge: (edge: PipelineEdge) => {
         handleEdgeChange(edge);
       },
+      setGraph: (nodes: PipelineNode[], edges: PipelineEdge[]) => {
+        setNodes(pipelineToFlowNodes({ ...pipeline, nodes }));
+        setEdges(pipelineToFlowEdges({ ...pipeline, edges }));
+        pushHistory(
+          pipelineToFlowNodes({ ...pipeline, nodes }),
+          pipelineToFlowEdges({ ...pipeline, edges })
+        );
+      },
       focusTarget: ({ nodeId, edgeId }: { nodeId?: string; edgeId?: string }) => {
         const edge = edgeId ? edges.find((e) => e.id === edgeId) : undefined;
         const nodeIds = nodeId ? [nodeId] : edge ? [edge.source, edge.target] : [];
@@ -387,7 +401,7 @@ function FlowEditorInner({
         void fitView({ nodes: nodeIds.map((id) => ({ id })), padding: 0.4, maxZoom: 1.2, duration: 300 });
       },
     }),
-    [handleEdgeChange, edges, setNodes, setEdges, fitView]
+    [handleEdgeChange, edges, setNodes, setEdges, fitView, pipeline, pushHistory]
   );
 
   // Highlight edges with validation errors (fe-flow-edges)
@@ -451,8 +465,8 @@ function FlowEditorInner({
     return () => window.removeEventListener("keydown", handler);
   }, [handleUndo, handleRedo, handleSave]);
 
-  // Selection change → notify parent
-  const onSelectionChange = React.useCallback(
+  // Selection change → notify parent (edge panel + properties panel)
+  const handleSelectionChange = React.useCallback(
     ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
       if (onEdgeSelect) {
         if (selectedEdges.length > 0) {
@@ -472,8 +486,17 @@ function FlowEditorInner({
           onEdgeSelect(null);
         }
       }
+      if (onSelectionChange) {
+        if (selectedEdges.length > 0) {
+          onSelectionChange({ edgeId: selectedEdges[0].id });
+        } else if (selectedNodes.length > 0) {
+          onSelectionChange({ nodeId: selectedNodes[0].id });
+        } else {
+          onSelectionChange(null);
+        }
+      }
     },
-    [onEdgeSelect]
+    [onEdgeSelect, onSelectionChange]
   );
 
   // Drop handler for drag from palette
@@ -725,7 +748,7 @@ function FlowEditorInner({
         onNodesChange={onNodesChangeWrapper}
         onEdgesChange={onEdgesChangeWrapper}
         onConnect={onConnect}
-        onSelectionChange={onSelectionChange}
+        onSelectionChange={handleSelectionChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -802,6 +825,8 @@ function FlowEditorInner({
 export interface FlowEditorHandle {
   /** Atualiza uma aresta no canvas (chamado pelo EdgePanel via pagina). */
   updateEdge: (edge: PipelineEdge) => void;
+  /** Substitui o grafo inteiro no canvas (ex.: exclusao de no/aresta pelo painel). */
+  setGraph: (nodes: PipelineNode[], edges: PipelineEdge[]) => void;
   /** Seleciona um nó ou aresta e centraliza o canvas nele. */
   focusTarget: (target: { nodeId?: string; edgeId?: string }) => void;
 }

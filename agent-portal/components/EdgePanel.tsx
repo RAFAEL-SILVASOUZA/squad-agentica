@@ -46,6 +46,14 @@ export interface EdgePanelProps {
   disabled?: boolean;
 }
 
+export interface EdgePanelContentProps {
+  edge: PipelineEdge;
+  nodes: PipelineNode[];
+  onChange: (edge: PipelineEdge) => void;
+  errors?: string[];
+  disabled?: boolean;
+}
+
 const OPERATOR_LABELS: Record<EdgeCondition["operator"], string> = {
   eq: "igual a",
   neq: "diferente de",
@@ -55,14 +63,13 @@ const OPERATOR_LABELS: Record<EdgeCondition["operator"], string> = {
 
 const CHANNELS: NotificationChannel[] = ["in-app", "email", "teams", "slack"];
 
-export function EdgePanel({
+export function EdgePanelContent({
   edge,
   nodes,
   onChange,
-  onClose,
   errors,
   disabled = false,
-}: EdgePanelProps) {
+}: EdgePanelContentProps) {
   const sourceNode = nodes.find((n) => n.id === edge.source);
   const targetNode = nodes.find((n) => n.id === edge.target);
 
@@ -174,59 +181,13 @@ export function EdgePanel({
 
   return (
     <div
-      role="region"
-      aria-label={`Configuração da aresta ${sourceNode?.agentSnapshot.name ?? edge.source} para ${targetNode?.agentSnapshot.name ?? edge.target}`}
       style={{
-        width: 260,
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        boxShadow: "var(--shadow-lg)",
-        overflow: "hidden",
-        fontSize: 12,
+        padding: "12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "10px 12px",
-          borderBottom: "1px solid var(--border)",
-          fontWeight: 600,
-        }}
-      >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {sourceNode?.agentSnapshot.name ?? edge.source} →{" "}
-          {targetNode?.agentSnapshot.name ?? edge.target}
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Fechar painel da aresta"
-          style={{
-            border: "none",
-            background: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            padding: 0,
-            display: "flex",
-          }}
-        >
-          <X size={14} aria-hidden="true" />
-        </button>
-      </div>
-
-      <div
-        style={{
-          padding: "12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          maxHeight: "calc(100vh - 220px)",
-          overflowY: "auto",
-        }}
-      >
         {/* Tipo da aresta */}
         <Select
           label="Tipo"
@@ -596,9 +557,78 @@ export function EdgePanel({
           </div>
         )}
 
-        <Button size="sm" onClick={onClose} disabled={disabled}>
-          Fechar
-        </Button>
+      </div>
+  );
+}
+
+/**
+ * EdgePanel — wrapper com header + close em volta do EdgePanelContent.
+ * Mantido para o slot flutuante do FlowEditor (edgePanelSlot).
+ */
+export function EdgePanel({
+  edge,
+  nodes,
+  onChange,
+  onClose,
+  errors,
+  disabled = false,
+}: EdgePanelProps) {
+  const sourceNode = nodes.find((n) => n.id === edge.source);
+  const targetNode = nodes.find((n) => n.id === edge.target);
+
+  return (
+    <div
+      role="region"
+      aria-label={`Configuração da aresta ${sourceNode?.agentSnapshot.name ?? edge.source} para ${targetNode?.agentSnapshot.name ?? edge.target}`}
+      style={{
+        width: 260,
+        background: "var(--bg-elevated)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius)",
+        boxShadow: "var(--shadow-lg)",
+        overflow: "hidden",
+        fontSize: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 12px",
+          borderBottom: "1px solid var(--border)",
+          fontWeight: 600,
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {sourceNode?.agentSnapshot.name ?? edge.source} →{" "}
+          {targetNode?.agentSnapshot.name ?? edge.target}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fechar painel da aresta"
+          style={{
+            border: "none",
+            background: "none",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            padding: 0,
+            display: "flex",
+          }}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div style={{ maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}>
+        <EdgePanelContent
+          edge={edge}
+          nodes={nodes}
+          onChange={onChange}
+          errors={errors}
+          disabled={disabled}
+        />
       </div>
     </div>
   );
