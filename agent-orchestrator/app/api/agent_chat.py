@@ -306,7 +306,6 @@ async def agent_chat_edit(
     )
 
 
-@router.post("/chat/restore")
 @router.post("/validate")
 async def agent_validate(
     body: dict[str, Any],
