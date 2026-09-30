@@ -2,10 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, ArrowRight } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useToast } from "@/components/ui/toast";
+import { api, ApiError } from "@/lib/api";
 import type { ApprovalRequest } from "@/lib/types";
 
 /**
@@ -34,6 +37,28 @@ function timeSince(iso: string | null | undefined): string {
 }
 
 export function PendingApprovals({ items, loading = false }: PendingApprovalsProps) {
+  const { addToast } = useToast();
+  const [respondingId, setRespondingId] = React.useState<string | null>(null);
+
+  const handleRespond = React.useCallback(
+    async (approvalId: string, decision: "approved" | "rejected") => {
+      setRespondingId(approvalId);
+      try {
+        await api.post(`/api/approvals/${approvalId}/respond`, { decision, response: null });
+        addToast("success", decision === "approved" ? "Aprovação aprovada." : "Aprovação rejeitada.");
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          addToast("warning", "Já respondida ou run cancelado");
+        } else {
+          addToast("error", e instanceof Error ? e.message : "Erro ao responder");
+        }
+      } finally {
+        setRespondingId(null);
+      }
+    },
+    [addToast]
+  );
+
   if (loading) {
     return <SkeletonRows rows={2} height={64} gap={8} />;
   }
@@ -51,38 +76,33 @@ export function PendingApprovals({ items, loading = false }: PendingApprovalsPro
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
       {items.map((approval) => (
-        <Link
-          key={approval.id}
-          href="/approvals"
-          aria-label={`Abrir aprovações: ${approval.message}`}
-          style={{ display: "block", textDecoration: "none", color: "inherit" }}
-        >
-          <Card hoverable style={{ minHeight: 64 }}>
-            <div
+        <Card key={approval.id} hoverable style={{ minHeight: 64 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              aria-hidden="true"
               style={{
+                width: 28,
+                height: 28,
+                borderRadius: "var(--radius-sm)",
+                background: "var(--accent-subtle)",
+                color: "var(--accent)",
                 display: "flex",
                 alignItems: "center",
-                gap: "12px",
-                flexWrap: "wrap",
+                justifyContent: "center",
+                flexShrink: 0,
               }}
             >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "var(--radius-sm)",
-                  background: "var(--accent-subtle)",
-                  color: "var(--accent)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <CheckCircle2 size={14} aria-hidden="true" />
-              </span>
-              <div style={{ minWidth: 0, flex: 1 }}>
+              <CheckCircle2 size={14} aria-hidden="true" />
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <Link href="/approvals" style={{ textDecoration: "none", color: "inherit" }}>
                 <div
                   style={{
                     fontSize: "12px",
@@ -95,18 +115,32 @@ export function PendingApprovals({ items, loading = false }: PendingApprovalsPro
                 >
                   {approval.message}
                 </div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  Pipeline {approval.pipelineId} · {timeSince(approval.sentAt)}
-                </div>
+              </Link>
+              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                Pipeline {approval.pipelineId} · {timeSince(approval.sentAt)}
               </div>
-              <ArrowRight
-                size={14}
-                aria-hidden="true"
-                style={{ color: "var(--text-muted)", flexShrink: 0 }}
-              />
             </div>
-          </Card>
-        </Link>
+            <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+              <Button
+                size="sm"
+                onClick={() => void handleRespond(approval.id, "approved")}
+                disabled={respondingId !== null}
+                loading={respondingId === approval.id}
+                style={{ background: "var(--success-strong)", borderColor: "var(--success-strong)", color: "#fff" }}
+              >
+                <CheckCircle2 size={12} aria-hidden="true" /> Aprovar
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void handleRespond(approval.id, "rejected")}
+                disabled={respondingId !== null}
+                style={{ background: "var(--error-strong)", borderColor: "var(--error-strong)", color: "#fff" }}
+              >
+                <XCircle size={12} aria-hidden="true" /> Rejeitar
+              </Button>
+            </div>
+          </div>
+        </Card>
       ))}
     </div>
   );

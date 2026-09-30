@@ -1,6 +1,6 @@
 import * as React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { ApprovalPanel } from "./approval-panel";
 import { ToastProvider } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
@@ -266,7 +266,7 @@ describe("ApprovalPanel", () => {
     });
   });
 
-  it("calls respond with rejected when Rejeitar is clicked", async () => {
+  it("calls respond with rejected when Rejeitar is confirmed", async () => {
     const approval = makeApproval();
     mockList.mockResolvedValue({ items: [approval], total: 1, page: 1, limit: 20 });
     mockPost.mockResolvedValue({ approvalId: "appr-1", status: "rejected", respondedAt: "2026-09-26T11:00:00Z" });
@@ -275,6 +275,9 @@ describe("ApprovalPanel", () => {
       expect(screen.getByRole("button", { name: /rejeitar/i })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: /rejeitar/i }));
+    // Modal de confirmação abre; clica no Rejeitar do modal.
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rejeitar" }));
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
         "/api/approvals/appr-1/respond",

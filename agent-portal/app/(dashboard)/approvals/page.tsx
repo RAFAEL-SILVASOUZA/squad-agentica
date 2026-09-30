@@ -1,24 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { ApprovalPanel } from "@/components/approvals/approval-panel";
+import { ApprovalQueue } from "@/components/approvals/approval-queue";
+import { Tabs } from "@/components/ui/tabs";
 
 /**
- * Página de aprovações (fe-approvals, protótipo view-approvals).
- * - Header: título + subtítulo com contexto.
- * - ApprovalPanel: fila de pendentes + ações aprovar/rejeitar/argumentar/cancelar.
+ * Página de aprovações (fe-approvals, Task 16).
+ * - Tabs: Pendentes / Respondidas.
+ * - ApprovalQueue: fila com contexto, ações inline e modal de ajuda.
  * - onPendingCountChange atualiza o badge da sidebar/topbar via layout.
- *
- * Portal nasce vazio (contrato §0): sem seed ilustrativo.
  */
 export default function ApprovalsPage() {
   const [pendingCount, setPendingCount] = React.useState(0);
+  const [activeTab, setActiveTab] = React.useState("pending");
 
-  // O layout do dashboard consome pendingCount via contexto ou prop.
-  // Aqui usamos um callback que o layout injeta via React context.
   const handlePendingCountChange = React.useCallback((count: number) => {
     setPendingCount(count);
-    // Dispara um evento custom para o layout ouvir (evita prop drilling).
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("approvals:pending-count", { detail: { count } })
@@ -62,7 +59,20 @@ export default function ApprovalsPage() {
           </p>
         </div>
       </div>
-      <ApprovalPanel onPendingCountChange={handlePendingCountChange} />
+      <Tabs
+        tabs={[
+          { id: "pending", label: `Pendentes${pendingCount > 0 ? ` (${pendingCount})` : ""}` },
+          { id: "resolved", label: "Respondidas" },
+        ]}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
+      <div style={{ marginTop: "16px" }}>
+        <ApprovalQueue
+          status={activeTab === "pending" ? "pending" : "resolved"}
+          onPendingCountChange={activeTab === "pending" ? handlePendingCountChange : undefined}
+        />
+      </div>
     </div>
   );
 }

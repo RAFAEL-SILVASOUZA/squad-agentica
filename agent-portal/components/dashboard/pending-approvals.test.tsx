@@ -1,7 +1,13 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { PendingApprovals } from "./pending-approvals";
+import { ToastProvider } from "@/components/ui/toast";
 import type { ApprovalRequest } from "@/lib/types";
+
+vi.mock("@/lib/api", async (orig) => ({
+  ...(await orig<typeof import("@/lib/api")>()),
+  api: { post: vi.fn().mockResolvedValue({}) },
+}));
 
 function makeApproval(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
   return {
@@ -23,41 +29,40 @@ function makeApproval(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest
   };
 }
 
+const show = (props: { items: ApprovalRequest[]; loading?: boolean }) =>
+  render(<ToastProvider><PendingApprovals {...props} /></ToastProvider>);
+
 describe("PendingApprovals", () => {
   it("renders loading skeletons", () => {
-    const { container } = render(<PendingApprovals items={[]} loading />);
+    const { container } = show({ items: [], loading: true });
     expect(screen.queryByText("Nenhuma aprovação pendente")).not.toBeInTheDocument();
     expect(container.querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
   });
 
   it("renders empty state when no items and not loading", () => {
-    render(<PendingApprovals items={[]} />);
+    show({ items: [] });
     expect(screen.getByText("Nenhuma aprovação pendente")).toBeInTheDocument();
   });
 
   it("renders approval message and pipeline id", () => {
-    render(<PendingApprovals items={[makeApproval()]} />);
+    show({ items: [makeApproval()] });
     expect(screen.getByText("Aprovar deploy?")).toBeInTheDocument();
     expect(screen.getByText(/Pipeline pipe-1/)).toBeInTheDocument();
   });
 
   it("links to /approvals", () => {
-    render(<PendingApprovals items={[makeApproval()]} />);
-    const link = screen.getByRole("link", {
-      name: /abrir aprovações: aprovar deploy\?/i,
-    });
+    show({ items: [makeApproval()] });
+    const link = screen.getByRole("link", { name: "Aprovar deploy?" });
     expect(link).toHaveAttribute("href", "/approvals");
   });
 
   it("renders multiple approvals", () => {
-    render(
-      <PendingApprovals
-        items={[
-          makeApproval({ id: "a1", message: "Primeira" }),
-          makeApproval({ id: "a2", message: "Segunda" }),
-        ]}
-      />
-    );
+    show({
+      items: [
+        makeApproval({ id: "a1", message: "Primeira" }),
+        makeApproval({ id: "a2", message: "Segunda" }),
+      ],
+    });
     expect(screen.getByText("Primeira")).toBeInTheDocument();
     expect(screen.getByText("Segunda")).toBeInTheDocument();
   });
@@ -65,13 +70,19 @@ describe("PendingApprovals", () => {
   it("shows relative time for recent approval", () => {
     const now = new Date();
     const fiveMinAgo = new Date(now.getTime() - 5 * 60_000).toISOString();
-    render(<PendingApprovals items={[makeApproval({ sentAt: fiveMinAgo })]} />);
+    show({ items: [makeApproval({ sentAt: fiveMinAgo })] });
     expect(screen.getByText(/há 5 min/)).toBeInTheDocument();
   });
 
   it("shows 'agora' for missing sentAt", () => {
     const approval = { ...makeApproval(), sentAt: undefined } as unknown as ApprovalRequest;
-    render(<PendingApprovals items={[approval]} />);
+    show({ items: [approval] });
     expect(screen.getByText(/agora/)).toBeInTheDocument();
+  });
+
+  it("has Aprovar and Rejeitar buttons inline", () => {
+    show({ items: [makeApproval()] });
+    expect(screen.getByRole("button", { name: /Aprovar/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Rejeitar/ })).toBeInTheDocument();
   });
 });
