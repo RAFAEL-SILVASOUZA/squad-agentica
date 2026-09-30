@@ -722,8 +722,9 @@ async def patch_source_feedback(
         raise AppError(422, "validation_error", "source_index_out_of_range")
 
     now_iso = datetime.now(UTC).isoformat()
-    feedback = message.feedback if message.feedback is not None else {}
-    sources_fb = feedback.get("sources", {})
+    # Cria dicts novos para que o SQLAlchemy detecte a mudança no JSONB.
+    feedback = dict(message.feedback) if message.feedback is not None else {}
+    sources_fb = dict(feedback.get("sources", {}))
     sources_fb[str(index)] = {"wrong": body.wrong, "at": now_iso}
     feedback["sources"] = sources_fb
     message.feedback = feedback
@@ -838,6 +839,7 @@ async def get_conversation(
                 "role": message.role,
                 "content": message.content,
                 "sources": message.sources,
+                "feedback": message.feedback,
                 "createdAt": message.created_at.isoformat(),
             }
             for message in messages

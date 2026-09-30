@@ -55,6 +55,8 @@ interface StepsListProps {
   agents: Agent[];
   onChange: (nodes: PipelineNode[], edges: PipelineEdge[]) => void;
   disabled?: boolean;
+  /** Seleciona um nó para edição (abre o painel de propriedades). */
+  onSelectNode?: (nodeId: string) => void;
 }
 
 /**
@@ -64,7 +66,7 @@ interface StepsListProps {
  * Editar e Remover. Tem "Adicionar agente" e "Conectar a…" (cria flow edge).
  * O canvas nao aparece.
  */
-export function StepsList({ pipeline, agents, onChange, disabled = false }: StepsListProps) {
+export function StepsList({ pipeline, agents, onChange, disabled = false, onSelectNode }: StepsListProps) {
   const { nodes, edges } = pipeline;
   const { order, cyclic } = topoOrder(nodes, edges);
   const orderedNodes = order
@@ -227,6 +229,7 @@ export function StepsList({ pipeline, agents, onChange, disabled = false }: Step
                     type="button"
                     disabled={disabled}
                     aria-label={`Editar ${node.agentSnapshot.name}`}
+                    onClick={() => onSelectNode?.(node.id)}
                     style={{ border: "none", background: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "flex" }}
                   >
                     <Pencil size={14} aria-hidden="true" />

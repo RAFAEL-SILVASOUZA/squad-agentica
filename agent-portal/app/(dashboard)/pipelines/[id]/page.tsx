@@ -97,6 +97,7 @@ export default function PipelineDetailPage() {
 
   // Modo lista no celular (abaixo de 768px, spec 3.6)
   const isMobile = useIsMobile();
+  const [mobileSaving, setMobileSaving] = React.useState(false);
 
   // Validacao
   const [validation, setValidation] = React.useState<ValidationState>({ status: "idle" });
@@ -609,12 +610,46 @@ export default function PipelineDetailPage() {
 
       {/* Editor: modo lista no celular (spec 3.6) ou canvas + painel de propriedades */}
       {isMobile ? (
-        <StepsList
-          pipeline={{ ...pipeline, nodes: workNodes, edges: workEdges }}
-          agents={agents}
-          onChange={handleStepsChange}
-          disabled={pipeline.status === "running"}
-        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <StepsList
+            pipeline={{ ...pipeline, nodes: workNodes, edges: workEdges }}
+            agents={agents}
+            onChange={handleStepsChange}
+            disabled={pipeline.status === "running"}
+            onSelectNode={(nodeId) => setSelection({ nodeId })}
+          />
+          {selection?.nodeId && (
+            <PropertiesPanel
+              pipeline={{ ...pipeline, nodes: workNodes, edges: workEdges }}
+              selection={selection}
+              onChangeNode={(node) => {
+                const nextNodes = workNodes.map((n) => (n.id === node.id ? node : n));
+                setWorkNodes(nextNodes);
+              }}
+              onChangeEdge={handlePanelEdgeChange}
+              onDeleteNode={handleDeleteNode}
+              onDeleteEdge={handleDeleteEdge}
+              onClose={() => setSelection(null)}
+              onSelectNode={(nodeId) => setSelection({ nodeId })}
+              errors={errors}
+              disabled={pipeline.status === "running"}
+            />
+          )}
+          <Button
+            variant="primary"
+            onClick={() => {
+              setMobileSaving(true);
+              handleSave(workNodes, workEdges)
+                .catch(() => addToast("error", "Não foi possível salvar o pipeline."))
+                .finally(() => setMobileSaving(false));
+            }}
+            disabled={isRunning || mobileSaving || workNodes.length === 0}
+            loading={mobileSaving}
+            aria-label="Salvar pipeline"
+          >
+            Salvar
+          </Button>
+        </div>
       ) : (
         <div
           style={{
@@ -647,6 +682,10 @@ export default function PipelineDetailPage() {
               onDeleteNode={handleDeleteNode}
               onDeleteEdge={handleDeleteEdge}
               onClose={() => setSelection(null)}
+              onSelectNode={(nodeId) => {
+                setSelection({ nodeId });
+                flowEditorRef.current?.focusTarget({ nodeId });
+              }}
               errors={errors}
               disabled={pipeline.status === "running"}
             />

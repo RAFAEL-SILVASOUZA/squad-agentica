@@ -46,6 +46,9 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
   const [removeBusy, setRemoveBusy] = React.useState(false);
   const [viewing, setViewing] = React.useState<DocumentDetail | null>(null);
   const [viewLoading, setViewLoading] = React.useState(false);
+  const [viewError, setViewError] = React.useState<string | null>(null);
+  // Descarta respostas de cliques superados (dois cliques rápidos em "Ver").
+  const viewSeq = React.useRef(0);
   // Falha no upload: bloqueia a ação principal, então fica inline com retry.
   const [uploadError, setUploadError] = React.useState<{ message: string; detail?: string } | null>(null);
   const uploadRetryRef = React.useRef<{ file: File; replaceId?: string } | null>(null);
@@ -231,12 +234,24 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
                     size="sm"
                     aria-label={`Ver ${doc.name}`}
                     onClick={() => {
+                      const seq = ++viewSeq.current;
                       setViewing(null);
+                      setViewError(null);
                       setViewLoading(true);
                       void api
                         .get<DocumentDetail>(`/api/knowledge/${baseId}/documents/${doc.id}`)
-                        .then((detail) => setViewing(detail))
-                        .catch(() => setViewLoading(false));
+                        .then((detail) => {
+                          if (seq !== viewSeq.current) return;
+                          setViewing(detail);
+                        })
+                        .catch((e) => {
+                          if (seq !== viewSeq.current) return;
+                          setViewError(e instanceof ApiError ? e.message : "Não foi possível carregar o documento.");
+                        })
+                        .finally(() => {
+                          if (seq !== viewSeq.current) return;
+                          setViewLoading(false);
+                        });
                     }}
                   >
                     <Eye size={13} aria-hidden="true" />
@@ -282,13 +297,15 @@ export function DocumentsPanel({ baseId, onCountChange }: DocumentsPanelProps) {
       </Modal>
 
       <DocumentDrawer
-        open={viewing !== null || viewLoading}
+        open={viewing !== null || viewLoading || viewError !== null}
         onClose={() => {
           setViewing(null);
           setViewLoading(false);
+          setViewError(null);
         }}
         document={viewing}
         loading={viewLoading}
+        error={viewError}
       />
 
       <Modal

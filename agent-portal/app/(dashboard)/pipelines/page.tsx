@@ -214,8 +214,8 @@ export default function PipelinesPage() {
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && !error && pipelines.length === 0 && (
+      {/* Empty state: só quando não há pipelines E nenhum filtro ativo */}
+      {!loading && !error && pipelines.length === 0 && !runFilter && (
         <EmptyState
           icon={GitBranch}
           title="Nenhum pipeline ainda"
@@ -234,8 +234,8 @@ export default function PipelinesPage() {
         />
       )}
 
-      {/* DataTable */}
-      {!loading && !error && pipelines.length > 0 && (
+      {/* DataTable: mostra sempre que há pipelines OU filtro ativo (para o usuário limpar o filtro) */}
+      {!loading && !error && (pipelines.length > 0 || runFilter) && (
         <>
           <DataTable<PipelineRow>
             columns={[
@@ -332,6 +332,14 @@ export default function PipelinesPage() {
               { label: "Abrir", action: "open" },
               { label: "Monitor", action: "monitor" },
             ]}
+            rowActions={(p) => (
+              <PipelineActionsMenu
+                pipelineId={p.id}
+                pipelineName={p.name}
+                onDuplicated={handlePipelineDuplicated}
+                onDeleted={handlePipelineDeleted}
+              />
+            )}
             emptyMessage="Nenhuma pipeline encontrada"
           />
 

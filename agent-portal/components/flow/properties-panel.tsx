@@ -18,6 +18,8 @@ export interface PropertiesPanelProps {
   onDeleteEdge: (edgeId: string) => void;
   /** Deseleciona (fecha o painel de no/aresta). */
   onClose?: () => void;
+  /** Seleciona um nó (usado pelos botões de erro de validação). */
+  onSelectNode?: (nodeId: string) => void;
   errors?: ValidationError[];
   disabled?: boolean;
 }
@@ -38,6 +40,7 @@ export function PropertiesPanel({
   onDeleteNode,
   onDeleteEdge,
   onClose,
+  onSelectNode,
   errors = [],
   disabled = false,
 }: PropertiesPanelProps) {
@@ -155,9 +158,7 @@ export function PropertiesPanel({
                   key={i}
                   type="button"
                   onClick={() => {
-                    if (e.nodeId) {
-                      // Seleciona o nó com erro para o usuário ver no painel
-                    }
+                    if (e.nodeId) onSelectNode?.(e.nodeId);
                   }}
                   style={{
                     display: "flex",

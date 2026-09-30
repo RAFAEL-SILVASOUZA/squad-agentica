@@ -43,13 +43,14 @@ function SourceList({
   messageId,
   baseId,
   onFeedback,
+  markedWrong,
 }: {
   sources: ChatSource[];
   messageId?: string;
   baseId?: string;
   onFeedback?: (index: number, wrong: boolean) => void;
+  markedWrong?: Set<number>;
 }) {
-  const [markedWrong, setMarkedWrong] = React.useState<Set<number>>(new Set());
   if (!sources || sources.length === 0) return null;
   return (
     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -59,6 +60,7 @@ function SourceList({
       {sources.map((s, i) => (
         <details
           key={`${s.chunkId}-${i}`}
+          data-source-index={i}
           style={{
             fontSize: 12,
             border: "1px solid var(--border-subtle)",
@@ -77,9 +79,6 @@ function SourceList({
               aria-label={`Fonte errada ${i + 1}`}
               onClick={() => {
                 const wrong = !markedWrong.has(i);
-                const next = new Set(markedWrong);
-                if (wrong) next.add(i); else next.delete(i);
-                setMarkedWrong(next);
                 onFeedback(i, wrong);
               }}
               style={{
@@ -120,6 +119,7 @@ export function KbChat({ baseId }: KbChatProps) {
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [waitStage, setWaitStage] = React.useState(0);
   const bottomRef = React.useRef<HTMLDivElement>(null);
+  const messagesRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const wasSending = React.useRef(false);
   const waitTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
@@ -209,10 +209,35 @@ export function KbChat({ baseId }: KbChatProps) {
   const handleFeedback = React.useCallback(
     (msgId: string, index: number, wrong: boolean) => {
       if (!activeId) return;
-      void api.patch(`${base}/${activeId}/messages/${msgId}/sources/${index}`, { wrong }).catch(() => {});
+      // Atualiza o estado local (o botão reflete o novo valor) e persiste.
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== msgId) return m;
+          const feedback = m.feedback ? { ...m.feedback } : {};
+          const sources = { ...(feedback.sources ?? {}) };
+          sources[String(index)] = { wrong, at: new Date().toISOString() };
+          feedback.sources = sources;
+          return { ...m, feedback };
+        })
+      );
+      api
+        .patch(`${base}/${activeId}/messages/${msgId}/sources/${index}`, { wrong })
+        .catch(() => {
+          addToast("error", "Não foi possível salvar o feedback da fonte.");
+        });
     },
-    [activeId, base]
+    [activeId, base, addToast]
   );
+
+  // Citação [n]: abre o <details> da fonte correspondente na mensagem.
+  const openSourceByCitation = React.useCallback((msgId: string, index: number) => {
+    const root = messagesRef.current;
+    if (!root) return;
+    const msgEl = root.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msgEl) return;
+    const details = msgEl.querySelector(`details[data-source-index="${index}"]`);
+    if (details) (details as HTMLDetailsElement).open = true;
+  }, []);
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ block: "end" });
@@ -374,6 +399,7 @@ export function KbChat({ baseId }: KbChatProps) {
         {/* Mensagens */}
         <div style={{ flex: "999 1 360px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div
+            ref={messagesRef}
             role="log"
             aria-label="Mensagens"
             style={{
@@ -412,6 +438,7 @@ export function KbChat({ baseId }: KbChatProps) {
               ) : (
                 <div
                   key={m.id}
+                  data-message-id={m.id}
                   style={{
                     alignSelf: "flex-start",
                     maxWidth: "95%",
@@ -423,12 +450,23 @@ export function KbChat({ baseId }: KbChatProps) {
                     overflowWrap: "anywhere",
                   }}
                 >
-                  <Citations text={m.content} sources={m.sources} onOpen={() => {}} />
+                  <Citations
+                    text={m.content}
+                    sources={m.sources}
+                    onOpen={(idx) => openSourceByCitation(m.id, idx)}
+                  />
                   <SourceList
                     sources={m.sources}
                     messageId={m.id}
                     baseId={baseId}
                     onFeedback={(idx, wrong) => handleFeedback(m.id, idx, wrong)}
+                    markedWrong={
+                      new Set(
+                        Object.entries(m.feedback?.sources ?? {})
+                          .filter(([, v]) => v.wrong)
+                          .map(([k]) => parseInt(k, 10))
+                      )
+                    }
                   />
                 </div>
               )

@@ -43,6 +43,8 @@ export interface DataTableProps<T> {
   onFilterChange?: (values: Record<string, string>) => void;
   onRowMenu?: (row: T, action: string) => void;
   rowMenuItems?: DataTableRowMenuItem[];
+  /** Ações extras por linha, renderizadas ao lado do menu ⋮ (ex.: PipelineActionsMenu). */
+  rowActions?: (row: T) => React.ReactNode;
   emptyMessage?: string;
 }
 
@@ -66,6 +68,7 @@ export function DataTable<T>({
   onFilterChange,
   onRowMenu,
   rowMenuItems,
+  rowActions,
   emptyMessage = "Nenhum item encontrado",
 }: DataTableProps<T>) {
   const [search, setSearch] = React.useState("");
@@ -74,14 +77,24 @@ export function DataTable<T>({
   );
   const setFilterValues = React.useCallback(
     (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => {
-      setFilterValuesState((prev) => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        onFilterChange?.(next);
-        return next;
-      });
+      setFilterValuesState((prev) =>
+        typeof updater === "function" ? updater(prev) : updater
+      );
     },
-    [onFilterChange]
+    []
   );
+  // onFilterChange fora do setState: o updater roda 2x em StrictMode e o
+  // router.replace dentro dele duplicava a navegação. Ref para não re-disparar
+  // quando o parent re-renderiza com uma nova identidade de callback.
+  const onFilterChangeRef = React.useRef(onFilterChange);
+  onFilterChangeRef.current = onFilterChange;
+  const prevFilterValuesRef = React.useRef(filterValues);
+  React.useEffect(() => {
+    const prev = prevFilterValuesRef.current;
+    if (prev === filterValues) return;
+    prevFilterValuesRef.current = filterValues;
+    onFilterChangeRef.current?.(filterValues);
+  }, [filterValues]);
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortDir, setSortDir] = React.useState<SortDir>(null);
   const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
@@ -245,70 +258,73 @@ export function DataTable<T>({
                 <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)" }}>
                   {cellContent(row, columns[0])}
                 </span>
-                {onRowMenu && rowMenuItems && (
-                  <div style={{ position: "relative" }}>
-                    <button
-                      type="button"
-                      aria-label="Ações"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenMenuId(openMenuId === rowKey(row) ? null : rowKey(row));
-                      }}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: "var(--text-muted)",
-                        padding: "4px",
-                        display: "flex",
-                        alignItems: "center",
-                      }}
-                    >
-                      <MoreVertical size={16} aria-hidden="true" />
-                    </button>
-                    {openMenuId === rowKey(row) && (
-                      <div
-                        role="menu"
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  {rowActions && rowActions(row)}
+                  {onRowMenu && rowMenuItems && (
+                    <div style={{ position: "relative" }}>
+                      <button
+                        type="button"
+                        aria-label="Ações"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(openMenuId === rowKey(row) ? null : rowKey(row));
+                        }}
                         style={{
-                          position: "absolute",
-                          right: 0,
-                          top: "100%",
-                          background: "var(--bg-elevated)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "var(--radius-sm)",
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                          zIndex: 10,
-                          minWidth: "140px",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "var(--text-muted)",
+                          padding: "4px",
+                          display: "flex",
+                          alignItems: "center",
                         }}
                       >
-                        {rowMenuItems.map((item) => (
-                          <button
-                            key={item.action}
-                            type="button"
-                            role="menuitem"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMenuAction(row, item.action);
-                            }}
-                            style={{
-                              display: "block",
-                              width: "100%",
-                              padding: "8px 12px",
-                              fontSize: "12px",
-                              textAlign: "left",
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              color: item.danger ? "var(--error)" : "var(--text)",
-                            }}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                        <MoreVertical size={16} aria-hidden="true" />
+                      </button>
+                      {openMenuId === rowKey(row) && (
+                        <div
+                          role="menu"
+                          style={{
+                            position: "absolute",
+                            right: 0,
+                            top: "100%",
+                            background: "var(--bg-elevated)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius-sm)",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                            zIndex: 10,
+                            minWidth: "140px",
+                          }}
+                        >
+                          {rowMenuItems.map((item) => (
+                            <button
+                              key={item.action}
+                              type="button"
+                              role="menuitem"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMenuAction(row, item.action);
+                              }}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                padding: "8px 12px",
+                                fontSize: "12px",
+                                textAlign: "left",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                color: item.danger ? "var(--error)" : "var(--text)",
+                              }}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               {columns.slice(1).map((col) => (
                 <div key={col.key} style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
@@ -434,9 +450,9 @@ export function DataTable<T>({
                     )}
                   </th>
                 ))}
-                {onRowMenu && rowMenuItems && (
+                {(onRowMenu && rowMenuItems) || rowActions ? (
                   <th style={{ width: "40px" }} />
-                )}
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -450,72 +466,77 @@ export function DataTable<T>({
                       {cellContent(row, col)}
                     </td>
                   ))}
-                  {onRowMenu && rowMenuItems && (
+                  {(onRowMenu && rowMenuItems) || rowActions ? (
                     <td style={{ padding: "4px 8px", textAlign: "right" }}>
-                      <div style={{ position: "relative", display: "inline-block" }}>
-                        <button
-                          type="button"
-                          aria-label="Ações"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenMenuId(openMenuId === rowKey(row) ? null : rowKey(row));
-                          }}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            color: "var(--text-muted)",
-                            padding: "4px",
-                            display: "flex",
-                            alignItems: "center",
-                          }}
-                        >
-                          <MoreVertical size={14} aria-hidden="true" />
-                        </button>
-                        {openMenuId === rowKey(row) && (
-                          <div
-                            role="menu"
-                            style={{
-                              position: "absolute",
-                              right: 0,
-                              top: "100%",
-                              background: "var(--bg-elevated)",
-                              border: "1px solid var(--border)",
-                              borderRadius: "var(--radius-sm)",
-                              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                              zIndex: 10,
-                              minWidth: "140px",
-                            }}
-                          >
-                            {rowMenuItems.map((item) => (
-                              <button
-                                key={item.action}
-                                type="button"
-                                role="menuitem"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleMenuAction(row, item.action);
-                                }}
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                        {rowActions && rowActions(row)}
+                        {onRowMenu && rowMenuItems && (
+                          <div style={{ position: "relative", display: "inline-block" }}>
+                            <button
+                              type="button"
+                              aria-label="Ações"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuId(openMenuId === rowKey(row) ? null : rowKey(row));
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                color: "var(--text-muted)",
+                                padding: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              <MoreVertical size={14} aria-hidden="true" />
+                            </button>
+                            {openMenuId === rowKey(row) && (
+                              <div
+                                role="menu"
                                 style={{
-                                  display: "block",
-                                  width: "100%",
-                                  padding: "8px 12px",
-                                  fontSize: "12px",
-                                  textAlign: "left",
-                                  background: "none",
-                                  border: "none",
-                                  cursor: "pointer",
-                                  color: item.danger ? "var(--error)" : "var(--text)",
+                                  position: "absolute",
+                                  right: 0,
+                                  top: "100%",
+                                  background: "var(--bg-elevated)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "var(--radius-sm)",
+                                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                                  zIndex: 10,
+                                  minWidth: "140px",
                                 }}
                               >
-                                {item.label}
-                              </button>
-                            ))}
+                                {rowMenuItems.map((item) => (
+                                  <button
+                                    key={item.action}
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMenuAction(row, item.action);
+                                    }}
+                                    style={{
+                                      display: "block",
+                                      width: "100%",
+                                      padding: "8px 12px",
+                                      fontSize: "12px",
+                                      textAlign: "left",
+                                      background: "none",
+                                      border: "none",
+                                      cursor: "pointer",
+                                      color: item.danger ? "var(--error)" : "var(--text)",
+                                    }}
+                                  >
+                                    {item.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     </td>
-                  )}
+                  ) : null}
                 </tr>
               ))}
             </tbody>

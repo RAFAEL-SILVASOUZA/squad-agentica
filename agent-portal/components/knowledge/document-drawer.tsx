@@ -23,6 +23,7 @@ export interface DocumentDrawerProps {
   onClose: () => void;
   document: DocumentDetail | null;
   loading?: boolean;
+  error?: string | null;
 }
 
 function formatSize(bytes: number): string {
@@ -31,7 +32,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DocumentDrawer({ open, onClose, document, loading }: DocumentDrawerProps) {
+export function DocumentDrawer({ open, onClose, document, loading, error }: DocumentDrawerProps) {
   if (!open) return null;
 
   return (
@@ -41,6 +42,10 @@ export function DocumentDrawer({ open, onClose, document, loading }: DocumentDra
           <Skeleton width="60%" height={16} />
           <Skeleton width="40%" height={12} />
           <Skeleton width="100%" height={80} />
+        </div>
+      ) : error ? (
+        <div style={{ padding: "8px 0" }}>
+          <p style={{ fontSize: 13, color: "var(--error)", margin: 0 }}>{error}</p>
         </div>
       ) : document ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

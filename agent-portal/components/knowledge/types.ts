@@ -31,6 +31,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sources: ChatSource[];
+  feedback?: { sources?: Record<string, { wrong: boolean; at: string }> } | null;
   createdAt?: string;
 }
 
