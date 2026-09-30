@@ -319,7 +319,7 @@ describe("PipelineMonitor", () => {
     await waitFor(() => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
-    openTab("Histórico");
+    openTab(/Histórico/);
 
     // Should show both runs in history (use getAllByText because legend also has these labels)
     expect(screen.getAllByText("Concluído").length).toBeGreaterThanOrEqual(1);
@@ -347,7 +347,7 @@ describe("PipelineMonitor", () => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
 
-    openTab("Histórico");
+    openTab(/Histórico/);
     // Should show "Retomar" buttons for interrupted and failed checkpoints
     const resumeButtons = screen.getAllByRole("button", { name: /retomar/i });
     expect(resumeButtons.length).toBeGreaterThanOrEqual(2);
@@ -372,7 +372,7 @@ describe("PipelineMonitor", () => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
 
-    openTab("Histórico");
+    openTab(/Histórico/);
     const resumeBtn = screen.getByRole("button", { name: /retomar/i });
     fireEvent.click(resumeBtn);
 
@@ -474,7 +474,7 @@ describe("PipelineMonitor", () => {
       expect(screen.getByText("Test Pipeline")).toBeInTheDocument();
     });
 
-    openTab("Logs");
+    openTab(/Logs/);
     // Filtros de log por agente e por nível
     expect(screen.getByLabelText("Filtrar por agente")).toBeInTheDocument();
     expect(screen.getByLabelText("Filtrar por nível")).toBeInTheDocument();
@@ -491,7 +491,7 @@ describe("PipelineMonitor", () => {
     renderMonitor();
 
     await screen.findByText("Test Pipeline");
-    openTab("Logs");
+    openTab(/Logs/);
     expect(screen.getByText("Aguardando logs da execução…")).toBeInTheDocument();
   });
 
@@ -506,7 +506,7 @@ describe("PipelineMonitor", () => {
     renderMonitor();
 
     await screen.findByText("Test Pipeline");
-    openTab("Histórico");
+    openTab(/Histórico/);
     expect(screen.getByText("Nenhuma execução ainda.")).toBeInTheDocument();
   });
 
@@ -613,11 +613,11 @@ describe("PipelineMonitor", () => {
 
     renderMonitor();
     await screen.findByText("Test Pipeline");
-    expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Logs/ })).toHaveAttribute("aria-selected", "true");
     // O painel é rotulado pela aba ativa.
-    expect(screen.getByRole("tabpanel", { name: "Logs" })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Arquivos do projeto" })).not.toBeInTheDocument();
-    openTab("Histórico");
+    expect(screen.getByRole("tabpanel")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Arquivos/ })).not.toBeInTheDocument();
+    openTab(/Histórico/);
     expect(window.location.search).toBe("?tab=historico");
   });
 
@@ -636,13 +636,13 @@ describe("PipelineMonitor", () => {
     await act(async () => {
       wsHandler("pipeline:log")({ pipelineId: "pipe-1", nodeId: "node-1", level: "info", message: "log antigo", at: "" });
     });
-    openTab("Logs");
+    openTab(/Logs/);
     expect(screen.getByText("log antigo")).toBeInTheDocument();
 
     // O agente de entrada aqui não tem inputs: Iniciar executa direto.
     fireEvent.click(screen.getByRole("button", { name: /iniciar/i }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/execute", { inputs: {} }));
-    openTab("Logs");
+    openTab(/Logs/);
     expect(screen.queryByText("log antigo")).not.toBeInTheDocument();
   });
 
@@ -722,6 +722,39 @@ describe("PipelineMonitor", () => {
 
     expect(await screen.findByText(/Falha ao iniciar: branch 'main' não existe no repositório/)).toBeInTheDocument();
     expect(screen.queryByText("Pipeline iniciada.")).not.toBeInTheDocument();
+  });
+
+  it("shows tab counts: Logs (n), Histórico (n), Arquivos (n alterados)", async () => {
+    mockGet.mockImplementation(async (p: string) =>
+      p.startsWith("/api/runs/")
+        ? { items: [{ path: "a.txt", size: 1, binary: false, status: "modified" }, { path: "b.txt", size: 1, binary: false, status: "added" }] }
+        : makePipeline()
+    );
+    mockList
+      .mockResolvedValueOnce({ items: [makeRun({ status: "completed" }), makeRun({ id: "run-0", status: "failed" })], total: 2, page: 1, limit: 50 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, limit: 50 });
+
+    renderMonitor();
+    await waitFor(() => expect(mockWsClient.connect).toHaveBeenCalled());
+
+    // Logs: 3 logs via WS
+    await act(async () => {
+      wsHandler("pipeline:log")({ pipelineId: "pipe-1", nodeId: "node-1", level: "info", message: "l1", at: "" });
+      wsHandler("pipeline:log")({ pipelineId: "pipe-1", nodeId: "node-1", level: "info", message: "l2", at: "" });
+      wsHandler("pipeline:log")({ pipelineId: "pipe-1", nodeId: "node-2", level: "error", message: "l3", at: "" });
+    });
+
+    // Contagens nas abas
+    expect(screen.getByRole("tab", { name: /Logs \(3\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Histórico \(2\)/ })).toBeInTheDocument();
+    // Arquivos: fetch assíncrono, espera a contagem chegar.
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Arquivos \(2 alterados\)/ })).toBeInTheDocument();
+    });
+
+    // Ponto de erro na aba Logs (há erros)
+    const logsTab = screen.getByRole("tab", { name: /Logs/ });
+    expect(logsTab.querySelector('[aria-label="há erros"]')).toBeInTheDocument();
   });
 
   it("shows 409 toast when execute fails with pipeline_already_running", async () => {

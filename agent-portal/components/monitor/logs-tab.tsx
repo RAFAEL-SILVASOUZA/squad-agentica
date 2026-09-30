@@ -123,50 +123,58 @@ export function LogsTab({ logs, agents }: LogsTabProps) {
             {logs.length === 0 ? "Aguardando logs da execução…" : "Nenhum log corresponde ao filtro."}
           </div>
         ) : (
-          filtered.map((log) => (
-            <div
-              key={log.id}
-              style={{
-                display: "flex",
-                gap: 10,
-                padding: "2px 0",
-                borderBottom: "1px solid var(--border-subtle)",
-              }}
-            >
-              <span style={{ color: "var(--text-muted)", flexShrink: 0, whiteSpace: "nowrap" }}>
-                {new Date(log.at).toLocaleTimeString("pt-BR")}
-              </span>
-              <span
+          <ol
+            style={{
+              listStyle: "decimal inside",
+              margin: 0,
+              padding: 0,
+            }}
+          >
+            {filtered.map((log) => (
+              <li
+                key={log.id}
                 style={{
-                  color: LOG_LEVEL_COLORS[log.level] ?? "var(--text-secondary)",
-                  fontWeight: 600,
-                  flexShrink: 0,
-                  textTransform: "uppercase",
-                  fontSize: 10,
-                  minWidth: 42,
-                  paddingTop: 2,
+                  display: "flex",
+                  gap: 10,
+                  padding: "2px 0",
+                  borderBottom: "1px solid var(--border-subtle)",
                 }}
               >
-                {log.level}
-              </span>
-              <span
-                style={{
-                  color: "var(--text-secondary)",
-                  flexShrink: 0,
-                  width: 140,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={names.get(log.nodeId) ?? log.nodeId}
-              >
-                {names.get(log.nodeId) ?? log.nodeId}
-              </span>
-              <span style={{ color: "var(--text)", wordBreak: "break-word", whiteSpace: "pre-wrap", minWidth: 0 }}>
-                {log.message}
-              </span>
-            </div>
-          ))
+                <span style={{ color: "var(--text-muted)", flexShrink: 0, whiteSpace: "nowrap" }}>
+                  {new Date(log.at).toLocaleTimeString("pt-BR")}
+                </span>
+                <span
+                  style={{
+                    color: LOG_LEVEL_COLORS[log.level] ?? "var(--text-secondary)",
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    textTransform: "uppercase",
+                    fontSize: 10,
+                    minWidth: 42,
+                    paddingTop: 2,
+                  }}
+                >
+                  {log.level}
+                </span>
+                <span
+                  style={{
+                    color: "var(--text-secondary)",
+                    flexShrink: 0,
+                    width: 140,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={names.get(log.nodeId) ?? log.nodeId}
+                >
+                  {names.get(log.nodeId) ?? log.nodeId}
+                </span>
+                <span style={{ color: "var(--text)", wordBreak: "break-word", whiteSpace: "pre-wrap", minWidth: 0 }}>
+                  {log.message}
+                </span>
+              </li>
+            ))}
+          </ol>
         )}
       </div>
     </div>

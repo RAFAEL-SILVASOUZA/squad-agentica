@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/ui/markdown";
 import { NODE_STATUS_BADGE, NODE_STATUS_LABEL, type NodeStatus } from "./status";
+import type { TimelineEntry } from "./timeline";
 
 export interface ResultStep {
   nodeId: string;
@@ -15,6 +16,8 @@ export interface ResultStep {
 
 export interface ResultsTabProps {
   steps: ResultStep[];
+  /** Linha do tempo por nó (início, fim, duração, status). */
+  timeline?: TimelineEntry[];
   /** Agente a trazer para a vista (clique na faixa de etapas ou no grafo). */
   focusNodeId?: string;
   /** Muda a cada pedido de foco, para rolar de novo ao mesmo agente. */
@@ -150,11 +153,24 @@ function StepOutput({ output }: { output: unknown }) {
  * Aba Resultado: a saída de cada agente, na ordem do grafo, em largura total
  * e renderizada como markdown (antes ficava espremida num painel lateral).
  */
-export function ResultsTab({ steps, focusNodeId, focusKey }: ResultsTabProps) {
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms} ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return rs > 0 ? `${m} min ${rs} s` : `${m} min`;
+}
+
+export function ResultsTab({ steps, timeline, focusNodeId, focusKey }: ResultsTabProps) {
   const baseId = React.useId();
   const sectionRefs = React.useRef<Record<string, HTMLElement | null>>({});
   // Seções recolhidas (padrão: todas abertas).
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
+  const timelineByNode = React.useMemo(
+    () => new Map((timeline ?? []).map((t) => [t.nodeId, t])),
+    [timeline]
+  );
 
   const toggle = (nodeId: string) =>
     setCollapsed((prev) => {
@@ -235,6 +251,23 @@ export function ResultsTab({ steps, focusNodeId, focusKey }: ResultsTabProps) {
               <h2 id={headingId} style={{ margin: 0, flex: 1, fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
                 {step.name}
               </h2>
+              {(() => {
+                const t = timelineByNode.get(step.nodeId);
+                if (!t) return null;
+                return (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontFamily: "var(--font-mono)",
+                      color: "var(--text-muted)",
+                      whiteSpace: "nowrap",
+                    }}
+                    aria-label={`Duração: ${t.durationMs ? formatDuration(t.durationMs) : "em andamento"}`}
+                  >
+                    {t.durationMs ? formatDuration(t.durationMs) : "em execução…"}
+                  </span>
+                );
+              })()}
               <Badge
                 status={NODE_STATUS_BADGE[step.status]}
                 label={NODE_STATUS_LABEL[step.status]}

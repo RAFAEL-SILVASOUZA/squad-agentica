@@ -39,4 +39,16 @@ describe("LogsTab", () => {
     fireEvent.change(screen.getByLabelText("Filtrar por nível"), { target: { value: "error" } });
     expect(screen.getByText("Nenhum log corresponde ao filtro.")).toBeInTheDocument();
   });
+
+  it("renders logs as a numbered list with monospace font", () => {
+    render(<LogsTab logs={logs} agents={agents} />);
+    const log = screen.getByRole("log");
+    // Os logs são renderizados como <ol> (numeração)
+    const ol = log.querySelector("ol");
+    expect(ol).not.toBeNull();
+    const items = ol!.querySelectorAll("li");
+    expect(items).toHaveLength(4);
+    // Fonte monospace
+    expect(log.style.fontFamily).toContain("mono");
+  });
 });

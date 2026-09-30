@@ -9,6 +9,8 @@ import * as React from "react";
 export interface TabItem {
   id: string;
   label: string;
+  /** Mostra um ponto vermelho na aba (ex.: há erros nos logs). */
+  error?: boolean;
 }
 
 export interface TabsProps {
@@ -65,6 +67,20 @@ export function Tabs({ tabs, activeTab, onTabChange, idPrefix }: TabsProps) {
             }}
           >
             {tab.label}
+            {tab.error && (
+              <span
+                aria-label="há erros"
+                style={{
+                  display: "inline-block",
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--error)",
+                  marginLeft: 4,
+                  verticalAlign: "middle",
+                }}
+              />
+            )}
           </button>
         );
       })}

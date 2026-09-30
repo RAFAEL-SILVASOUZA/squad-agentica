@@ -25,6 +25,8 @@ export interface FilesTabProps {
   runId: string;
   /** Muda quando a lista deve ser recarregada (ex.: um nó terminou). */
   refreshKey?: number;
+  /** Reporta a contagem de arquivos alterados ao pai (para a contagem na aba). */
+  onChangedCount?: (count: number) => void;
 }
 
 const STATUS_LABEL: Record<NonNullable<RunFile["status"]>, string> = {
@@ -253,7 +255,7 @@ const codeBlock: React.CSSProperties = {
  * arquivo (novo/alterado/removido), visualização de texto, diff e
  * download do .zip. Binários e arquivos grandes não são exibidos.
  */
-export function FilesTab({ runId, refreshKey }: FilesTabProps) {
+export function FilesTab({ runId, refreshKey, onChangedCount }: FilesTabProps) {
   const [files, setFiles] = React.useState<RunFile[] | null>(null);
   // A API lista no máximo 5000 arquivos (`truncated: true` quando há mais).
   const [truncatedList, setTruncatedList] = React.useState(false);
@@ -279,13 +281,14 @@ export function FilesTab({ runId, refreshKey }: FilesTabProps) {
         setFiles(res.items);
         setTruncatedList(Boolean(res.truncated));
         setListError(null);
+        onChangedCount?.(res.items.filter((f) => f.status).length);
       }
     } catch (err) {
       if (token === listRef.current) setListError(errorText(err, "Falha ao listar os arquivos."));
     } finally {
       if (token === listRef.current) setRefreshing(false);
     }
-  }, [runId]);
+  }, [runId, onChangedCount]);
 
   // Run novo: estado do zero.
   React.useEffect(() => {

@@ -31,6 +31,7 @@ import { FilesTab } from "./files-tab";
 import { LogsTab } from "./logs-tab";
 import { HistoryTab } from "./history-tab";
 import { RunGraph } from "./run-graph";
+import { buildTimeline, type TimelineEvent } from "./timeline";
 
 export type { NodeStatus } from "./status";
 export type { LogEntry } from "./logs-tab";
@@ -81,6 +82,8 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
   const [logs, setLogs] = React.useState<LogEntry[]>([]);
   const [agentOutputs, setAgentOutputs] = React.useState<Record<string, unknown>>({});
   const [activeRun, setActiveRun] = React.useState<PipelineRun | null>(null);
+  const [statusEvents, setStatusEvents] = React.useState<TimelineEvent[]>([]);
+  const [changedFilesCount, setChangedFilesCount] = React.useState(0);
 
   // ── UI state ──
   const [activeTab, setActiveTab] = React.useState<MonitorTab>(tabFromUrl);
@@ -178,6 +181,21 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
   const refreshRunsRef = React.useRef(refreshRuns);
   refreshRunsRef.current = refreshRuns;
 
+  // Contagem de arquivos alterados (para a aba): busca independente da aba estar aberta.
+  const fetchChangedCount = React.useCallback(async (runId: string) => {
+    try {
+      const res = await api.get<{ items: { status: string | null }[] }>(`/api/runs/${runId}/files`);
+      setChangedFilesCount(res.items.filter((f) => f.status).length);
+    } catch {
+      // Não crítico.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (activeRun) void fetchChangedCount(activeRun.id);
+    else setChangedFilesCount(0);
+  }, [activeRun, filesVersion, fetchChangedCount]);
+
   // ── WebSocket connection ──
   React.useEffect(() => {
     let onStatus: ((data: Record<string, unknown>) => void) | null = null;
@@ -215,6 +233,8 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
             return;
           }
           setNodeStatuses((prev) => ({ ...prev, [event.nodeId]: event.status }));
+          // Registra o evento para a linha do tempo.
+          setStatusEvents((prev) => [...prev, { nodeId: event.nodeId, status: event.status, at: event.at }]);
           // Um agente terminou: pode ter escrito no workspace.
           if (event.status === "completed") setFilesVersion((v) => v + 1);
         };
@@ -297,6 +317,18 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
   );
   const agents = React.useMemo(() => resultSteps.map((s) => ({ nodeId: s.nodeId, name: s.name })), [resultSteps]);
 
+  // Linha do tempo por nó (eventos WS + checkpoints do run atual).
+  const timeline = React.useMemo(() => {
+    const cps = activeRun
+      ? checkpoints
+          .filter((cp) => new Date(cp.timestamp).getTime() >= new Date(activeRun.startedAt).getTime())
+          .map((cp) => ({ nodeId: cp.nodeId, timestamp: cp.timestamp, status: cp.status }))
+      : [];
+    return buildTimeline(statusEvents, cps);
+  }, [statusEvents, checkpoints, activeRun]);
+
+  const hasErrorLogs = React.useMemo(() => logs.some((l) => l.level === "error"), [logs]);
+
   const focusResult = React.useCallback(
     (nodeId: string) => {
       changeTab("resultado");
@@ -334,6 +366,8 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
         });
         setAgentOutputs({});
         setLogs([]);
+        setStatusEvents([]);
+        setChangedFilesCount(0);
         changeTab("resultado");
         const runsRes = await api.list<PipelineRun>(`/api/pipelines/${pipelineId}/runs`, { page: 1, limit: 50 });
         setRuns(runsRes.items);
@@ -523,9 +557,9 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
 
   const tabs: TabItem[] = [
     { id: "resultado", label: "Resultado" },
-    ...(activeRun ? [{ id: "arquivos", label: "Arquivos do projeto" }] : []),
-    { id: "logs", label: "Logs" },
-    { id: "historico", label: "Histórico" },
+    ...(activeRun ? [{ id: "arquivos", label: `Arquivos (${changedFilesCount} alterados)` }] : []),
+    { id: "logs", label: `Logs (${logs.length})`, error: hasErrorLogs },
+    { id: "historico", label: `Histórico (${runs.length})` },
   ];
   // "Arquivos" só existe com um run; na URL sem run, cai no Resultado.
   const shownTab: MonitorTab = activeTab === "arquivos" && !activeRun ? "resultado" : activeTab;
@@ -564,10 +598,10 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
 
       <div role="tabpanel" id="monitor-panel" aria-labelledby={`monitor-tab-${shownTab}`} style={{ paddingTop: 16 }}>
         {shownTab === "resultado" && (
-          <ResultsTab steps={resultSteps} focusNodeId={focus?.nodeId} focusKey={focus?.key} />
+          <ResultsTab steps={resultSteps} timeline={timeline} focusNodeId={focus?.nodeId} focusKey={focus?.key} />
         )}
         {shownTab === "arquivos" && activeRun && (
-          <FilesTab runId={activeRun.id} refreshKey={filesVersion} />
+          <FilesTab runId={activeRun.id} refreshKey={filesVersion} onChangedCount={setChangedFilesCount} />
         )}
         {shownTab === "logs" && <LogsTab logs={logs} agents={agents} />}
         {shownTab === "historico" && (

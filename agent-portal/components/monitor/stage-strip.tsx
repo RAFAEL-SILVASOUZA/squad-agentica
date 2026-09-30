@@ -103,70 +103,129 @@ export function buildStages(pipeline: Pipeline, statuses: Record<string, NodeSta
 
 /** Faixa horizontal de etapas; clicar num agente foca o resultado dele. */
 export function StageStrip({ steps, onSelect }: StageStripProps) {
+  const listRef = React.useRef<HTMLOListElement>(null);
+  const [overflowing, setOverflowing] = React.useState(false);
+
+  const checkOverflow = React.useCallback(() => {
+    const el = listRef.current;
+    if (el) setOverflowing(el.scrollWidth > el.clientWidth);
+  }, []);
+
+  React.useEffect(() => {
+    checkOverflow();
+    const el = listRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkOverflow);
+    let ro: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(checkOverflow);
+      ro.observe(el);
+    }
+    return () => {
+      el.removeEventListener("scroll", checkOverflow);
+      ro?.disconnect();
+    };
+  }, [checkOverflow, steps.length]);
+
+  const scrollToEnd = () => {
+    const el = listRef.current;
+    if (el) el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
+  };
+
   return (
-    <ol
-      aria-label="Etapas"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        listStyle: "none",
-        margin: 0,
-        padding: "2px 0 6px",
-        overflowX: "auto",
-      }}
-    >
-      {steps.map((step, i) => {
-        const color = STATUS_COLOR[step.status];
-        const label = NODE_STATUS_LABEL[step.status];
-        const chip: React.CSSProperties = {
-          display: "inline-flex",
+    <div style={{ position: "relative" }}>
+      <ol
+        ref={listRef}
+        aria-label="Etapas"
+        style={{
+          display: "flex",
           alignItems: "center",
           gap: 6,
-          padding: "5px 10px",
-          borderRadius: 999,
-          border: `1px solid ${step.status === "pending" ? "var(--border)" : color}`,
-          background: "var(--bg-card)",
-          color: "var(--text)",
-          fontSize: 12,
-          whiteSpace: "nowrap",
-        };
-        const dot = (
-          <span
-            aria-hidden="true"
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: color,
-              flexShrink: 0,
-              animation: step.status === "running" ? "pulse 1.5s infinite" : undefined,
-            }}
-          />
-        );
-        return (
-          <li key={step.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {i > 0 && <ChevronRight size={12} aria-hidden="true" style={{ color: "var(--text-muted)" }} />}
-            {step.kind === "agent" ? (
-              <button
-                type="button"
-                onClick={() => onSelect(step.nodeId)}
-                aria-label={`${step.name} — ${label}`}
-                title={label}
-                style={{ ...chip, cursor: "pointer" }}
-              >
-                {dot}
-                {step.name}
-              </button>
-            ) : (
-              <span style={{ ...chip, color: "var(--text-secondary)" }} title={`Aprovação — ${label}`}>
-                <Shield size={11} aria-hidden="true" style={{ color }} />
-                <span>Aprovação</span>
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+          listStyle: "none",
+          margin: 0,
+          padding: "2px 0 6px",
+          overflowX: "auto",
+        }}
+      >
+        {steps.map((step, i) => {
+          const color = STATUS_COLOR[step.status];
+          const label = NODE_STATUS_LABEL[step.status];
+          const chip: React.CSSProperties = {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 10px",
+            borderRadius: 999,
+            border: `1px solid ${step.status === "pending" ? "var(--border)" : color}`,
+            background: "var(--bg-card)",
+            color: "var(--text)",
+            fontSize: 12,
+            whiteSpace: "nowrap",
+          };
+          const dot = (
+            <span
+              aria-hidden="true"
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: color,
+                flexShrink: 0,
+                animation: step.status === "running" ? "pulse 1.5s infinite" : undefined,
+              }}
+            />
+          );
+          return (
+            <li key={step.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {i > 0 && <ChevronRight size={12} aria-hidden="true" style={{ color: "var(--text-muted)" }} />}
+              {step.kind === "agent" ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(step.nodeId)}
+                  aria-label={`${step.name} — ${label}`}
+                  title={label}
+                  style={{ ...chip, cursor: "pointer" }}
+                >
+                  {dot}
+                  {step.name}
+                </button>
+              ) : (
+                <span style={{ ...chip, color: "var(--text-secondary)" }} title={`Aprovação — ${label}`}>
+                  <Shield size={11} aria-hidden="true" style={{ color }} />
+                  <span>Aprovação</span>
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {overflowing && (
+        <button
+          type="button"
+          onClick={scrollToEnd}
+          aria-label="Mais etapas"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "50%",
+            transform: "translateY(-50%)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "4px 10px",
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--text-secondary)",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            borderRadius: 999,
+            cursor: "pointer",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+          }}
+        >
+          Mais etapas →
+        </button>
+      )}
+    </div>
   );
 }
