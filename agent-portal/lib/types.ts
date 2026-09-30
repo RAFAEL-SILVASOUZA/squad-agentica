@@ -128,6 +128,13 @@ export interface PipelineRepository {
   baseBranch: string;
 }
 
+export interface PipelineRunStats {
+  recentSucceeded: number;
+  recentFailed: number;
+  lastRunStatus: string | null;
+  lastRunAt: string | null;
+}
+
 export interface Pipeline {
   id: string;
   ownerId: string;
@@ -141,6 +148,8 @@ export interface Pipeline {
   startedAt: string | null;
   completedAt: string | null;
   repository: PipelineRepository | null;
+  runStats?: PipelineRunStats;
+  updatedAt?: string | null;
 }
 
 // ─── PipelineRun (spec §4.2) ──────────────────────────────────────────

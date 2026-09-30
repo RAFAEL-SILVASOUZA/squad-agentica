@@ -39,6 +39,8 @@ export interface DataTableProps<T> {
   rowKey: (row: T) => string;
   searchPlaceholder?: string;
   filters?: DataTableFilter[];
+  initialFilterValues?: Record<string, string>;
+  onFilterChange?: (values: Record<string, string>) => void;
   onRowMenu?: (row: T, action: string) => void;
   rowMenuItems?: DataTableRowMenuItem[];
   emptyMessage?: string;
@@ -60,12 +62,26 @@ export function DataTable<T>({
   rowKey,
   searchPlaceholder,
   filters,
+  initialFilterValues,
+  onFilterChange,
   onRowMenu,
   rowMenuItems,
   emptyMessage = "Nenhum item encontrado",
 }: DataTableProps<T>) {
   const [search, setSearch] = React.useState("");
-  const [filterValues, setFilterValues] = React.useState<Record<string, string>>({});
+  const [filterValues, setFilterValuesState] = React.useState<Record<string, string>>(
+    initialFilterValues ?? {}
+  );
+  const setFilterValues = React.useCallback(
+    (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => {
+      setFilterValuesState((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        onFilterChange?.(next);
+        return next;
+      });
+    },
+    [onFilterChange]
+  );
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortDir, setSortDir] = React.useState<SortDir>(null);
   const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);

@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -619,15 +619,85 @@ async def _load_pipeline_response(
     return _pipeline_to_dict(pipeline, nodes, edges)
 
 
+async def _compute_run_stats(
+    db: AsyncSession, pipeline_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Calcula runStats (últimos 10 runs) para um conjunto de pipelines.
+
+    Usa window function para buscar os 10 runs mais recentes por pipeline
+    numa única consulta.
+    """
+    if not pipeline_ids:
+        return {}
+
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=PipelineRun.pipeline_id,
+            order_by=PipelineRun.started_at.desc(),
+        )
+        .label("rn")
+    )
+    subq = (
+        select(
+            PipelineRun.pipeline_id,
+            PipelineRun.status,
+            PipelineRun.started_at,
+            PipelineRun.completed_at,
+            rn,
+        )
+        .where(PipelineRun.pipeline_id.in_(pipeline_ids))
+        .subquery()
+    )
+    result = await db.execute(
+        select(subq).where(subq.c.rn <= 10)
+    )
+    rows = result.all()
+
+    # Agrupa por pipeline_id
+    by_pipeline: dict[uuid.UUID, list[tuple[str, Any, Any]]] = {}
+    for row in rows:
+        pid = row.pipeline_id
+        if pid not in by_pipeline:
+            by_pipeline[pid] = []
+        by_pipeline[pid].append((row.status, row.started_at, row.completed_at))
+
+    stats: dict[uuid.UUID, dict[str, Any]] = {}
+    for pid in pipeline_ids:
+        runs = by_pipeline.get(pid, [])
+        # Ordena por started_at desc (mais recente primeiro)
+        runs.sort(key=lambda r: r[1], reverse=True)
+        recent_succeeded = sum(1 for r in runs if r[0] == "completed")
+        recent_failed = sum(1 for r in runs if r[0] == "failed")
+        last_run_status = runs[0][0] if runs else None
+        last_run_at = runs[0][1].isoformat().replace("+00:00", "Z") if runs else None
+        stats[pid] = {
+            "recentSucceeded": recent_succeeded,
+            "recentFailed": recent_failed,
+            "lastRunStatus": last_run_status,
+            "lastRunAt": last_run_at,
+        }
+    return stats
+
+
 @router.get("/pipelines")
 async def list_pipelines(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     status: str | None = None,
+    run: str | None = Query(
+        None, description="Filtro por último run: running|completed|failed|never"
+    ),
+    since: str | None = Query(None, description="Filtro por tempo: 24h"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
-    """GET /api/pipelines (spec 9.1): listagem paginada do owner."""
+    """GET /api/pipelines (spec 9.1): listagem paginada do owner.
+
+    Filtros opcionais:
+    - ``run``: ``running|completed|failed|never`` (pelo último run).
+    - ``since=24h``: pipelines com algum run nas últimas 24 h.
+    """
     stmt = select(Pipeline).where(Pipeline.owner_id == user.owner_id)
     if status:
         stmt = stmt.where(Pipeline.status == status)
@@ -635,8 +705,33 @@ async def list_pipelines(
     result = await db.execute(stmt)
     pipelines = list(result.scalars().all())
 
+    # Filtros por runStats (aplicados antes da paginação)
+    if run:
+        all_ids = [p.id for p in pipelines]
+        run_stats = await _compute_run_stats(db, all_ids)
+        pipelines = [
+            p for p in pipelines
+            if (run == "never" and run_stats.get(p.id, {}).get("lastRunStatus") is None)
+            or (run != "never" and run_stats.get(p.id, {}).get("lastRunStatus") == run)
+        ]
+    if since == "24h":
+        from datetime import timedelta
+        cutoff = datetime.now(UTC) - timedelta(hours=24)
+        recent_runs = await db.execute(
+            select(PipelineRun.pipeline_id).where(
+                PipelineRun.pipeline_id.in_([p.id for p in pipelines]),
+                PipelineRun.started_at >= cutoff,
+            )
+        )
+        recent_ids = {row[0] for row in recent_runs.all()}
+        pipelines = [p for p in pipelines if p.id in recent_ids]
+
     offset = (page - 1) * limit
     page_pipelines = pipelines[offset : offset + limit]
+
+    # runStats para a página
+    page_ids = [p.id for p in page_pipelines]
+    run_stats = await _compute_run_stats(db, page_ids)
 
     items: list[dict[str, Any]] = []
     for p in page_pipelines:
@@ -654,7 +749,9 @@ async def list_pipelines(
                 )
             ).scalars().all()
         )
-        items.append(_pipeline_to_dict(p, nodes, edges))
+        d = _pipeline_to_dict(p, nodes, edges)
+        d["runStats"] = run_stats.get(p.id)
+        items.append(d)
 
     return {"items": items, "total": len(pipelines), "page": page, "limit": limit}
 

@@ -2,29 +2,23 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { GitBranch, Plus, RefreshCw, AlertTriangle, Monitor } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { Pipeline, PipelineRun, PaginatedResponse } from "@/lib/types";
+import type { Pipeline, PaginatedResponse } from "@/lib/types";
 import { useCreatePipelineAndNavigate } from "@/lib/create-pipeline";
+import { relativeTime } from "@/lib/relative-time";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
 import { PipelineActionsMenu } from "@/components/pipelines/pipeline-actions-menu";
 
 const PAGE_SIZE = 20;
 
-/**
- * Pipelines list page.
- * Shows all pipelines with status, node/edge counts, and a CTA to create.
- * Portal starts empty (contract §0): empty state with "Criar primeiro pipeline" CTA.
- */
-
-// E11: status da pipeline em pt-BR (o valor do contrato fica em inglês).
-const PIPELINE_STATUS_LABEL: Record<string, string> = {
-  draft: "Rascunho",
+const RUN_STATUS_LABEL: Record<string, string> = {
   running: "Executando",
   paused: "Pausado",
   completed: "Concluído",
@@ -32,30 +26,21 @@ const PIPELINE_STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
-const RUN_STATUS_LABEL: Record<PipelineRun["status"], string> = {
-  running: "Executando",
-  paused: "Pausado",
-  completed: "Concluído",
-  failed: "Falhou",
-  cancelled: "Cancelado",
-};
+const RUN_FILTER_OPTIONS = [
+  { value: "running", label: "Executando" },
+  { value: "completed", label: "Concluído" },
+  { value: "failed", label: "Falhou" },
+  { value: "never", label: "Sem execuções" },
+];
 
-function timeSince(iso: string | null | undefined): string {
-  if (!iso) return "agora";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "agora";
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "agora";
-  if (minutes < 60) return `há ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `há ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `há ${days} d`;
+/** Pipeline com campo flat para o filtro client-side do DataTable. */
+interface PipelineRow extends Pipeline {
+  lastRunStatus: string;
 }
 
 export default function PipelinesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { addToast } = useToast();
 
   const [pipelines, setPipelines] = React.useState<Pipeline[]>([]);
@@ -64,64 +49,45 @@ export default function PipelinesPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
-  const [lastRuns, setLastRuns] = React.useState<Record<string, PipelineRun | null>>({});
 
-  const fetchPipelines = React.useCallback(async (pageNum: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res: PaginatedResponse<Pipeline> = await api.list<Pipeline>(
-        "/api/pipelines",
-        { page: pageNum, limit: PAGE_SIZE }
-      );
-      setPipelines(res.items);
-      setTotal(res.total);
-      setPage(pageNum);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        // E12: um 404 (endpoint ausente/corrido) NÃO é "lista vazia":
-        // mostra estado de erro com a mensagem real, não o empty state.
-        setError(err.status === 404 ? "Endpoint de pipelines indisponível (404). Verifique o backend." : err.message);
-      } else {
-        setError("Falha ao carregar pipelines");
+  // Filtro `run` vem da URL (?run=running) para deep-linking.
+  const runFilter = searchParams.get("run") ?? "";
+
+  const fetchPipelines = React.useCallback(
+    async (pageNum: number, run?: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params: Record<string, string | number> = { page: pageNum, limit: PAGE_SIZE };
+        if (run) params.run = run;
+        const res: PaginatedResponse<Pipeline> = await api.list<Pipeline>(
+          "/api/pipelines",
+          params
+        );
+        setPipelines(res.items);
+        setTotal(res.total);
+        setPage(pageNum);
+      } catch (err) {
+        if (err instanceof ApiError) {
+          setError(
+            err.status === 404
+              ? "Endpoint de pipelines indisponível (404). Verifique o backend."
+              : err.message
+          );
+        } else {
+          setError("Falha ao carregar pipelines");
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   React.useEffect(() => {
-    fetchPipelines(1);
-  }, [fetchPipelines]);
+    fetchPipelines(1, runFilter || undefined);
+  }, [fetchPipelines, runFilter]);
 
-  // Último run de cada pipeline (card: "Último run: Concluído há 5 min").
-  React.useEffect(() => {
-    let active = true;
-    if (pipelines.length === 0) {
-      setLastRuns({});
-      return;
-    }
-    (async () => {
-      const entries = await Promise.all(
-        pipelines.map(async (p) => {
-          try {
-            const res = await api.list<PipelineRun>(`/api/pipelines/${p.id}/runs`, { page: 1, limit: 1 });
-            return [p.id, res.items[0] ?? null] as const;
-          } catch {
-            return [p.id, null] as const;
-          }
-        })
-      );
-      if (active) setLastRuns(Object.fromEntries(entries));
-    })();
-    return () => {
-      active = false;
-    };
-  }, [pipelines]);
-
-  // Criação de pipeline: reusa a implementação única em lib/create-pipeline
-  // (mesmo POST, navegação para /pipelines/<id>?new=1 e toast de erro).
-  // O estado local `creating` mantém o loading do botão desta página.
   const createPipelineAndNavigate = useCreatePipelineAndNavigate();
 
   const handleCreate = React.useCallback(async () => {
@@ -142,8 +108,19 @@ export default function PipelinesPage() {
 
   const handlePipelineDeleted = React.useCallback(() => {
     addToast("success", "Pipeline excluído.");
-    void fetchPipelines(page);
-  }, [addToast, fetchPipelines, page]);
+    void fetchPipelines(page, runFilter || undefined);
+  }, [addToast, fetchPipelines, page, runFilter]);
+
+  const handleRowMenu = React.useCallback(
+    (pipeline: Pipeline, action: string) => {
+      if (action === "open") {
+        router.push(`/pipelines/${pipeline.id}`);
+      } else if (action === "monitor") {
+        router.push(`/pipelines/${pipeline.id}/run`);
+      }
+    },
+    [router]
+  );
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -213,7 +190,7 @@ export default function PipelinesPage() {
           </div>
           <Button
             size="sm"
-            onClick={() => fetchPipelines(page)}
+            onClick={() => fetchPipelines(page, runFilter || undefined)}
             aria-label="Carregar pipelines de novo"
           >
             <RefreshCw size={12} aria-hidden="true" />
@@ -257,165 +234,106 @@ export default function PipelinesPage() {
         />
       )}
 
-      {/* Pipeline cards */}
+      {/* DataTable */}
       {!loading && !error && pipelines.length > 0 && (
         <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {pipelines.map((pipeline) => {
-              const lastRun = lastRuns[pipeline.id];
-              return (
-                <div
-                  key={pipeline.id}
-                  onClick={() => router.push(`/pipelines/${pipeline.id}`)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") router.push(`/pipelines/${pipeline.id}`);
-                    if (e.key === " ") {
-                      e.preventDefault();
-                      router.push(`/pipelines/${pipeline.id}`);
-                    }
-                  }}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    padding: 16,
-                    background: "var(--bg-elevated)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius)",
-                    cursor: "pointer",
-                    transition: "border-color 0.2s",
-                    textAlign: "left",
-                    position: "relative",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                    }}
+          <DataTable<PipelineRow>
+            columns={[
+              {
+                key: "name",
+                header: "Nome",
+                sortable: true,
+                render: (p) => (
+                  <Link
+                    href={`/pipelines/${p.id}`}
+                    style={{ color: "var(--text)", fontWeight: 600, textDecoration: "none" }}
                   >
-                    <span
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: "var(--text)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        flex: 1,
-                      }}
-                    >
-                      {pipeline.name}
-                    </span>
-                    <Badge
-                      status={
-                        pipeline.status === "running"
-                          ? "running"
-                          : pipeline.status === "failed"
-                            ? "failed"
-                            : pipeline.status === "paused"
-                              ? "paused"
-                              : "neutral"
-                      }
-                      label={PIPELINE_STATUS_LABEL[pipeline.status] ?? pipeline.status}
-                    />
-                    <PipelineActionsMenu
-                      pipelineId={pipeline.id}
-                      pipelineName={pipeline.name}
-                      label={`Mais ações de ${pipeline.name}`}
-                      onDuplicated={handlePipelineDuplicated}
-                      onDeleted={handlePipelineDeleted}
-                    />
-                  </div>
-
-                  {pipeline.description && (
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "var(--text-secondary)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {pipeline.description}
-                    </span>
-                  )}
-
-                  {pipeline.repository && (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontSize: 11,
-                        color: "var(--text-secondary)",
-                      }}
-                    >
+                    {p.name}
+                  </Link>
+                ),
+              },
+              {
+                key: "repository",
+                header: "Repositório",
+                render: (p) =>
+                  p.repository ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <GitBranch size={11} aria-hidden="true" />
-                      {pipeline.repository.fullName} ({pipeline.repository.baseBranch})
+                      {p.repository.fullName}
                     </span>
-                  )}
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      marginTop: 4,
-                    }}
-                  >
-                    <span>{pipeline.nodes.length} {pipeline.nodes.length === 1 ? "nó" : "nós"}</span>
-                    <span>{pipeline.edges.length} {pipeline.edges.length === 1 ? "aresta" : "arestas"}</span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginTop: 4,
-                      paddingTop: 8,
-                      borderTop: "1px solid var(--border)",
-                    }}
-                  >
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {lastRun
-                        ? `Último run: ${RUN_STATUS_LABEL[lastRun.status] ?? lastRun.status} ${timeSince(lastRun.completedAt ?? lastRun.startedAt)}`
-                        : "Sem execuções"}
+                  ) : (
+                    <span style={{ color: "var(--text-muted)" }}>—</span>
+                  ),
+              },
+              {
+                key: "runStats",
+                header: "Últimos 10 runs",
+                render: (p) => {
+                  if (!p.runStats) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+                  return (
+                    <span style={{ fontSize: 12 }}>
+                      <span style={{ color: "var(--success, #22c55e)" }}>✓ {p.runStats.recentSucceeded}</span>
+                      {" · "}
+                      <span style={{ color: "var(--error, #ef4444)" }}>✗ {p.runStats.recentFailed}</span>
                     </span>
-                    <Link
-                      href={`/pipelines/${pipeline.id}/run`}
-                      aria-label={`Ver monitor de ${pipeline.name}`}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        fontSize: 11,
-                        color: "var(--accent)",
-                        textDecoration: "none",
-                      }}
-                    >
-                      <Monitor size={11} aria-hidden="true" />
-                      Monitor
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                },
+              },
+              {
+                key: "lastRun",
+                header: "Último run",
+                render: (p) => {
+                  if (!p.runStats?.lastRunStatus) {
+                    return <span style={{ color: "var(--text-muted)" }}>Sem execuções</span>;
+                  }
+                  const label = RUN_STATUS_LABEL[p.runStats.lastRunStatus] ?? p.runStats.lastRunStatus;
+                  const time = p.runStats.lastRunAt ? relativeTime(p.runStats.lastRunAt) : "";
+                  return (
+                    <span style={{ fontSize: 12 }}>
+                      {label} {time}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "updatedAt",
+                header: "Atualizado",
+                sortable: true,
+                render: (p) =>
+                  p.updatedAt ? (
+                    <span style={{ color: "var(--text-secondary)" }}>{relativeTime(p.updatedAt)}</span>
+                  ) : (
+                    <span style={{ color: "var(--text-muted)" }}>—</span>
+                  ),
+              },
+            ]}
+            rows={pipelines.map((p) => ({
+              ...p,
+              lastRunStatus: p.runStats?.lastRunStatus ?? "never",
+            }))}
+            rowKey={(p) => p.id}
+            searchPlaceholder="Buscar pipelines…"
+            filters={[
+              {
+                key: "lastRunStatus",
+                label: "Último run",
+                options: RUN_FILTER_OPTIONS,
+              },
+            ]}
+            initialFilterValues={runFilter ? { lastRunStatus: runFilter } : undefined}
+            onFilterChange={(values) => {
+              const run = values.lastRunStatus || "";
+              const params = new URLSearchParams();
+              if (run) params.set("run", run);
+              router.replace(`/pipelines${params.toString() ? `?${params}` : ""}`);
+            }}
+            onRowMenu={handleRowMenu}
+            rowMenuItems={[
+              { label: "Abrir", action: "open" },
+              { label: "Monitor", action: "monitor" },
+            ]}
+            emptyMessage="Nenhuma pipeline encontrada"
+          />
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -429,7 +347,7 @@ export default function PipelinesPage() {
             >
               <Button
                 size="sm"
-                onClick={() => fetchPipelines(page - 1)}
+                onClick={() => fetchPipelines(page - 1, runFilter || undefined)}
                 disabled={page <= 1}
                 aria-label="Página anterior"
               >
@@ -448,7 +366,7 @@ export default function PipelinesPage() {
               </span>
               <Button
                 size="sm"
-                onClick={() => fetchPipelines(page + 1)}
+                onClick={() => fetchPipelines(page + 1, runFilter || undefined)}
                 disabled={page >= totalPages}
                 aria-label="Próxima página"
               >

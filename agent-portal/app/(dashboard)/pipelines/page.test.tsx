@@ -1,13 +1,30 @@
 import * as React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import PipelinesPage from "./page";
+
+// jsdom não tem matchMedia; mock para o DataTable (mobile detection).
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
 
 // Mocks
 const mockPush = vi.fn();
+const mockReplace = vi.fn();
+let mockRunParam = "";
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  useSearchParams: () => new URLSearchParams(mockRunParam ? `run=${mockRunParam}` : ""),
 }));
 
 const mockAddToast = vi.fn();
@@ -18,9 +35,6 @@ vi.mock("@/components/ui/toast", () => ({
 const mockList = vi.fn();
 const mockPost = vi.fn();
 const mockDelete = vi.fn();
-// Preserva o ApiError real (mensagens traduzidas via CODE_MESSAGES) e só
-// substitui as chamadas de rede por mocks — mesmo padrão de
-// pipeline-header.test.tsx / repository-picker.test.tsx.
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof import("@/lib/api")>()),
   api: {
@@ -46,6 +60,13 @@ const mockPipelines = [
     startedAt: null,
     completedAt: null,
     repository: { integrationId: "i1", fullName: "org/api-gateway", baseBranch: "main" },
+    runStats: {
+      recentSucceeded: 7,
+      recentFailed: 2,
+      lastRunStatus: "completed",
+      lastRunAt: "2026-01-01T00:00:00Z",
+    },
+    updatedAt: "2026-01-01T00:00:00Z",
   },
   {
     id: "pipe-2",
@@ -60,24 +81,20 @@ const mockPipelines = [
     startedAt: "2026-01-01T00:00:00Z",
     completedAt: null,
     repository: null,
+    runStats: {
+      recentSucceeded: 0,
+      recentFailed: 0,
+      lastRunStatus: null,
+      lastRunAt: null,
+    },
+    updatedAt: "2026-01-01T00:00:00Z",
   },
 ];
 
-/**
- * Mock path-aware de `api.list`: `/api/pipelines` responde a paginação de
- * pipelines; `/api/pipelines/{id}/runs` responde o(s) run(s) daquele
- * pipeline. Antes deste fix (review round 1, item 4), um `mockResolvedValue`
- * único respondia às duas rotas com o mesmo payload de pipelines.
- */
-function mockPipelinesList(pipelines: typeof mockPipelines, runsByPipelineId: Record<string, unknown[]> = {}) {
+function mockPipelinesList(pipelines: typeof mockPipelines) {
   mockList.mockImplementation(async (path: string) => {
     if (path === "/api/pipelines") {
       return { items: pipelines, total: pipelines.length, page: 1, limit: 20 };
-    }
-    const match = /^\/api\/pipelines\/([^/]+)\/runs$/.exec(path);
-    if (match) {
-      const items = runsByPipelineId[match[1]] ?? [];
-      return { items, total: items.length, page: 1, limit: 1 };
     }
     return { items: [], total: 0, page: 1, limit: 100 };
   });
@@ -86,33 +103,104 @@ function mockPipelinesList(pipelines: typeof mockPipelines, runsByPipelineId: Re
 describe("PipelinesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRunParam = "";
   });
 
   it("shows loading skeleton initially", () => {
     mockList.mockReturnValue(new Promise(() => {})); // never resolves
     render(<PipelinesPage />);
-    // Skeleton elements should be present (4 skeleton cards)
     expect(document.querySelectorAll("[aria-hidden='true']").length).toBeGreaterThan(0);
   });
 
-  it("renders pipeline cards when data is loaded", async () => {
+  it("renders the table columns", async () => {
     mockPipelinesList(mockPipelines);
-
     render(<PipelinesPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Feature Dev Pipeline")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Nome")).toBeInTheDocument();
+    expect(screen.getByText("Repositório")).toBeInTheDocument();
+    expect(screen.getByText("Últimos 10 runs")).toBeInTheDocument();
+    expect(screen.getByText("Último run")).toBeInTheDocument();
+    expect(screen.getByText("Atualizado")).toBeInTheDocument();
+  });
+
+  it("shows the run stats as ✓ 7 · ✗ 2", async () => {
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Feature Dev Pipeline")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("✓ 7")).toBeInTheDocument();
+    expect(screen.getByText("✗ 2")).toBeInTheDocument();
+  });
+
+  it("shows the repository name", async () => {
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("org/api-gateway")).toBeInTheDocument();
+    });
+  });
+
+  it("shows 'Sem execuções' for a pipeline without runs", async () => {
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+
+    await waitFor(() => {
       expect(screen.getByText("QA Pipeline")).toBeInTheDocument();
     });
 
-    // Check node/edge counts
-    expect(screen.getByText("2 nós")).toBeInTheDocument();
-    expect(screen.getByText("1 aresta")).toBeInTheDocument();
+    // "Sem execuções" aparece na célula da linha e no <option> do filtro.
+    expect(screen.getAllByText("Sem execuções").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not show the run status as the pipeline status", async () => {
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Feature Dev Pipeline")).toBeInTheDocument();
+    });
+
+    // O status da pipeline (draft/running) não aparece como badge na tabela.
+    expect(screen.queryByText("Rascunho")).not.toBeInTheDocument();
+  });
+
+  it("pre-selects the run filter from ?run=running in the URL", async () => {
+    mockRunParam = "running";
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+
+    // O filtro é pré-selecionado na URL; a tabela filtra client-side.
+    const filterSelect = await screen.findByLabelText("Último run");
+    expect(filterSelect).toHaveValue("running");
+  });
+
+  it("search filters the table", async () => {
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Feature Dev Pipeline")).toBeInTheDocument();
+    });
+
+    const search = screen.getByPlaceholderText("Buscar pipelines…");
+    fireEvent.change(search, { target: { value: "QA" } });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Feature Dev Pipeline")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("QA Pipeline")).toBeInTheDocument();
   });
 
   it("shows empty state when no pipelines", async () => {
     mockPipelinesList([]);
-
     render(<PipelinesPage />);
 
     await waitFor(() => {
@@ -136,122 +224,40 @@ describe("PipelinesPage", () => {
     expect(screen.getByRole("button", { name: /de novo/i })).toBeInTheDocument();
   });
 
-  it("navigates to pipeline detail on card click", async () => {
+  it("navigates to pipeline detail on name link click", async () => {
     mockPipelinesList(mockPipelines);
-
-    const user = userEvent.setup();
     render(<PipelinesPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Feature Dev Pipeline")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText("Feature Dev Pipeline"));
+    const link = screen.getByRole("link", { name: "Feature Dev Pipeline" });
+    expect(link).toHaveAttribute("href", "/pipelines/pipe-1");
+  });
+
+  it("row menu: Abrir navigates to the pipeline detail", async () => {
+    mockPipelinesList(mockPipelines);
+    render(<PipelinesPage />);
+    await screen.findByText("Feature Dev Pipeline");
+
+    // Uma linha por pipeline; a primeira é a pipe-1.
+    const actionsButtons = screen.getAllByRole("button", { name: "Ações" });
+    fireEvent.click(actionsButtons[0]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Abrir" }));
+
     expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1");
   });
 
-  it("shows running badge for running pipeline", async () => {
+  it("row menu: Monitor navigates to the run page", async () => {
     mockPipelinesList(mockPipelines);
-
-    render(<PipelinesPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Executando")).toBeInTheDocument();
-    });
-  });
-
-  it("shows the repository and the last-run status on the card", async () => {
-    mockPipelinesList(mockPipelines, {
-      "pipe-1": [
-        {
-          id: "run-1",
-          pipelineId: "pipe-1",
-          threadId: "t1",
-          status: "completed",
-          startedAt: "2026-01-01T00:00:00Z",
-          completedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-        },
-      ],
-    });
-
-    render(<PipelinesPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("org/api-gateway (main)")).toBeInTheDocument();
-    });
-    expect(screen.getByText("Último run: Concluído há 5 min")).toBeInTheDocument();
-    // pipe-2 has no runs seeded.
-    expect(screen.getByText("Sem execuções")).toBeInTheDocument();
-  });
-
-  it("has a Monitor link to the run page for each card", async () => {
-    mockPipelinesList(mockPipelines);
-
-    render(<PipelinesPage />);
-
-    expect(await screen.findByRole("link", { name: "Ver monitor de Feature Dev Pipeline" })).toHaveAttribute(
-      "href",
-      "/pipelines/pipe-1/run"
-    );
-  });
-
-  it("menu: Duplicar calls POST duplicate and navigates to the new pipeline", async () => {
-    mockPipelinesList(mockPipelines);
-    mockPost.mockResolvedValue({ ...mockPipelines[0], id: "pipe-1-copy", name: "Feature Dev Pipeline (cópia)" });
-
     render(<PipelinesPage />);
     await screen.findByText("Feature Dev Pipeline");
 
-    fireEvent.click(screen.getByRole("button", { name: "Mais ações de Feature Dev Pipeline" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicar pipeline" }));
+    const actionsButtons = screen.getAllByRole("button", { name: "Ações" });
+    fireEvent.click(actionsButtons[0]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Monitor" }));
 
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith("/api/pipelines/pipe-1/duplicate"));
-    expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1-copy");
-  });
-
-  it("menu: Excluir -> confirm -> DELETE removes the card from the list", async () => {
-    let currentPipelines = mockPipelines;
-    mockList.mockImplementation(async (path: string) => {
-      if (path === "/api/pipelines") {
-        return { items: currentPipelines, total: currentPipelines.length, page: 1, limit: 20 };
-      }
-      return { items: [], total: 0, page: 1, limit: 100 };
-    });
-    mockDelete.mockImplementation(async () => {
-      currentPipelines = currentPipelines.filter((p) => p.id !== "pipe-1");
-    });
-
-    render(<PipelinesPage />);
-    await screen.findByText("Feature Dev Pipeline");
-
-    fireEvent.click(screen.getByRole("button", { name: "Mais ações de Feature Dev Pipeline" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Excluir pipeline" }));
-    fireEvent.click(screen.getByRole("button", { name: "Excluir" }));
-
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("/api/pipelines/pipe-1"));
-    await waitFor(() => expect(screen.queryByText("Feature Dev Pipeline")).not.toBeInTheDocument());
-    expect(screen.getByText("QA Pipeline")).toBeInTheDocument();
-    expect(mockAddToast).toHaveBeenCalledWith("success", "Pipeline excluído.");
-  });
-
-  it("menu: Excluir shows the translated error message on a 409 (graph_running)", async () => {
-    const { ApiError } = await import("@/lib/api");
-    mockPipelinesList(mockPipelines);
-    mockDelete.mockRejectedValue(new ApiError(409, { error: "conflict", code: "graph_running" }));
-
-    render(<PipelinesPage />);
-    await screen.findByText("Feature Dev Pipeline");
-
-    fireEvent.click(screen.getByRole("button", { name: "Mais ações de Feature Dev Pipeline" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Excluir pipeline" }));
-    fireEvent.click(screen.getByRole("button", { name: "Excluir" }));
-
-    await waitFor(() =>
-      expect(mockAddToast).toHaveBeenCalledWith(
-        "error",
-        "O pipeline está em execução; aguarde ou pare o run antes de editar."
-      )
-    );
-    expect(screen.getByText("Feature Dev Pipeline")).toBeInTheDocument();
+    expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1/run");
   });
 });
