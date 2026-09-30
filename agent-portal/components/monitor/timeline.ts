@@ -69,11 +69,6 @@ export function buildTimeline(
       }
     }
 
-    // Se não há startedAt mas há um status terminal, usa como endedAt.
-    if (!startedAt && endedAt) {
-      status = endedAt ? (status as NodeStatus) : "completed";
-    }
-
     const durationMs =
       startedAt && endedAt ? new Date(endedAt).getTime() - new Date(startedAt).getTime() : undefined;
 
