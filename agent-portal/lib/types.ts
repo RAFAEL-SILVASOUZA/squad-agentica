@@ -321,6 +321,10 @@ export interface Integration {
   status: "active" | "disabled";
   createdAt: string;
   updatedAt: string;
+  tokenHint?: string | null;
+  lastTestStatus?: string | null;
+  lastTestedAt?: string | null;
+  usageCount?: number;
 }
 
 // ─── Rivvn (spec §7.4) ────────────────────────────────────────────────

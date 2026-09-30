@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { api, ApiError } from "@/lib/api";
-import type { GitProvider, Integration } from "@/lib/types";
+import type { GitProvider, Integration, GitConnectionTestResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -19,8 +19,28 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
   const [token, setToken] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [testBusy, setTestBusy] = React.useState(false);
+  const [testResult, setTestResult] = React.useState<{ ok: boolean; message: string } | null>(null);
   // Falha no save da conexão: bloqueia a ação principal, então fica inline com retry.
   const [saveError, setSaveError] = React.useState<{ message: string; detail?: string } | null>(null);
+
+  async function testConnection() {
+    if (testBusy) return;
+    const cfg: Record<string, string> = {};
+    if (token.trim()) cfg.token = token.trim();
+    else if (connection) cfg.token = "***";
+    if (provider === "azure" && organization.trim()) cfg.organization = organization.trim();
+    if (!cfg.token && !connection) { setError("Digite o token para testar."); return; }
+    setTestBusy(true);
+    setTestResult(null);
+    setError("");
+    try {
+      const result = await api.post<GitConnectionTestResult>("/api/integrations/test", { type: provider, config: cfg });
+      setTestResult(result.ok ? { ok: true, message: `Conectado, ${result.repositories ?? 0} repositórios` } : { ok: false, message: result.error || "Falha ao testar conexão." });
+    } catch (e) {
+      setTestResult({ ok: false, message: e instanceof ApiError ? e.message : "Não foi possível testar a conexão." });
+    } finally { setTestBusy(false); }
+  }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -51,8 +71,9 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
       <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} disabled={busy} />
       {provider === "azure" && <Input label="Organização" value={organization} onChange={(e) => setOrganization(e.target.value)} required disabled={busy} />}
       <Input label="Token" type="password" autoComplete="new-password" value={token} onChange={(e) => setToken(e.target.value)} required={!connection} disabled={busy}
-        hint={`${provider === "github" ? "PAT com escopo repo" : "Code: Read & Write"}${connection ? ". Deixe vazio para manter o token atual." : ""}`} />
+        hint={`${provider === "github" ? "PAT com escopo repo" : "Code: Read & Write"}${connection ? ". Deixe vazio para manter o token atual." : ""} O token fica criptografado e nunca é mostrado de novo.`} />
       {error && <p role="alert" style={{ color: "var(--error)" }}>{error}</p>}
+      {testResult && <p role="status" style={{ fontSize: 12, color: testResult.ok ? "var(--success)" : "var(--error)" }}>{testResult.message}</p>}
       {saveError && (
         <ErrorPanel
           title={saveError.message}
@@ -62,6 +83,7 @@ export function GitConnectionForm({ provider, connection, onClose, onSaved }: {
       )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Button type="button" onClick={onClose} disabled={busy}>Cancelar</Button>
+        <Button type="button" onClick={() => void testConnection()} loading={testBusy} disabled={busy}>Testar</Button>
         <Button type="submit" variant="primary" loading={busy}>Salvar conexão</Button>
       </div>
     </form>

@@ -18,19 +18,21 @@ Dono: be-integrations (FASE 4). Rotas (prefixo /api):
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.core.errors import AppError
 from app.core.secrets import SecretError, decrypt_secret, encrypt_secret
-from app.db.models import Integration, User
+from app.db.models import Integration, Pipeline, User
 from app.db.session import get_db
 from app.integrations import github as github_client
-from app.integrations.git_providers import GitProviderError, provider_for
+from app.integrations.git_providers import GitProviderError, provider_for, provider_from_config
 from app.integrations.registry import IntegrationRegistry
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -69,6 +71,10 @@ class IntegrationResponse(BaseModel):
     status: str
     createdAt: str
     updatedAt: str
+    tokenHint: str | None = None
+    lastTestStatus: str | None = None
+    lastTestedAt: str | None = None
+    usageCount: int = 0
 
 
 class IntegrationListResponse(BaseModel):
@@ -106,11 +112,18 @@ class RivvnStatusResponse(BaseModel):
 
 
 class GitTestResponse(BaseModel):
-    """Response para POST /api/integrations/{id}/test."""
+    """Response para POST /api/integrations/{id}/test e POST /api/integrations/test."""
 
     ok: bool
     repositories: int | None = None
     error: str | None = None
+
+
+class IntegrationTestRequest(BaseModel):
+    """Body para POST /api/integrations/test (testar sem salvar)."""
+
+    type: str = Field(..., pattern="^(github|azure)$")
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class GitRepositoryItem(BaseModel):
@@ -197,7 +210,22 @@ async def seal_legacy_token(db: AsyncSession, integration: Integration) -> None:
         await db.refresh(integration)
 
 
-def _to_response(integration: Any) -> IntegrationResponse:
+def _token_hint(config: dict[str, Any] | None) -> str | None:
+    """Últimos 4 caracteres do token, no formato '…a1b2'."""
+    cfg = config or {}
+    token_enc = cfg.get("token_encrypted")
+    if not token_enc:
+        return None
+    try:
+        token = decrypt_secret(token_enc)
+    except SecretError:
+        return None
+    if len(token) < 4:
+        return "…"
+    return f"…{token[-4:]}"
+
+
+def _to_response(integration: Any, usage_count: int = 0) -> IntegrationResponse:
     """Converte um model Integration em IntegrationResponse (camelCase)."""
     type_val = (
         integration.type.value
@@ -209,21 +237,41 @@ def _to_response(integration: Any) -> IntegrationResponse:
         if hasattr(integration.status, "value")
         else str(integration.status)
     )
+    cfg = integration.config or {}
     return IntegrationResponse(
         id=integration.id,
         ownerId=str(integration.owner_id),
         type=type_val,
         name=integration.name,
-        config=_mask_config(integration.config),
+        config=_mask_config(cfg),
         status=status_val,
         createdAt=integration.created_at.isoformat() if integration.created_at else "",
         updatedAt=integration.updated_at.isoformat() if integration.updated_at else "",
+        tokenHint=_token_hint(cfg),
+        lastTestStatus=cfg.get("last_test_status"),
+        lastTestedAt=cfg.get("last_tested_at"),
+        usageCount=usage_count,
     )
 
 
 # ---------------------------------------------------------------------------
 # CRUD Routes
 # ---------------------------------------------------------------------------
+
+
+@router.post("/test", response_model=GitTestResponse, response_model_exclude_none=True)
+async def test_integration_unsaved(
+    body: IntegrationTestRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GitTestResponse:
+    """Testa a conexão sem salvar. Não faz nenhuma escrita no banco."""
+    try:
+        provider = provider_from_config(body.type, body.config)
+        repos = await provider.list_repos()
+    except GitProviderError as e:
+        return GitTestResponse(ok=False, error=e.message)
+    return GitTestResponse(ok=True, repositories=len(repos))
 
 
 @router.get("", response_model=IntegrationListResponse)
@@ -241,8 +289,16 @@ async def list_integrations(
     )
     for item in items:
         await seal_legacy_token(db, item)
+    # usageCount: pipelines que referenciam cada integração.
+
+    result = await db.execute(
+        select(Pipeline.git_integration_id, func.count())
+        .where(Pipeline.owner_id == user.id, Pipeline.git_integration_id.isnot(None))
+        .group_by(Pipeline.git_integration_id)
+    )
+    usage_map: dict[str, int] = {str(row[0]): row[1] for row in result.all() if row[0]}
     return IntegrationListResponse(
-        items=[_to_response(i) for i in items],
+        items=[_to_response(i, usage_map.get(str(i.id), 0)) for i in items],
         total=total,
         page=page,
         limit=limit,
@@ -360,13 +416,22 @@ async def test_git_integration(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> GitTestResponse:
-    """Testa a conexão de uma integração Git."""
+    """Testa a conexão de uma integração Git e grava last_test_status."""
     integration = await _owned_git_integration(db, user, integration_id)
     try:
         repos = await provider_for(integration).list_repos()
+        ok, error, count = True, None, len(repos)
     except GitProviderError as e:
-        return GitTestResponse(ok=False, error=e.message)
-    return GitTestResponse(ok=True, repositories=len(repos))
+        ok, error, count = False, e.message, None
+    # Grava o resultado do teste no config.
+    cfg = dict(integration.config or {})
+    cfg["last_test_status"] = "ok" if ok else "failed"
+    cfg["last_tested_at"] = datetime.now(datetime.UTC).isoformat()
+    integration.config = cfg
+    await db.commit()
+    if not ok:
+        return GitTestResponse(ok=False, error=error)
+    return GitTestResponse(ok=True, repositories=count)
 
 
 @router.get("/{integration_id}/repositories")

@@ -4,9 +4,10 @@ import * as React from "react";
 import { api, ApiError } from "@/lib/api";
 import type { GitProvider, Integration, GitConnectionTestResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { DataTable, type DataTableColumn, type DataTableRowMenuItem } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { relativeTime } from "@/lib/relative-time";
 import { GitConnectionForm } from "./git-connection-form";
 
 interface PipelineUsage { id: string; name: string; repository?: { integrationId: string } | null }
@@ -17,14 +18,21 @@ function joinNamesPtBr(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
+function formatTestStatus(lastTestStatus: string | null | undefined, lastTestedAt: string | null | undefined): string {
+  if (!lastTestStatus) return "Nunca testado";
+  const when = lastTestedAt ? relativeTime(lastTestedAt) : "";
+  if (lastTestStatus === "ok") return `● válido · ${when}`;
+  return `● falhou · ${when}`;
+}
+
 export function GitConnections({ provider }: { provider: GitProvider }) {
   const { addToast } = useToast();
   const [connections, setConnections] = React.useState<Integration[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [editing, setEditing] = React.useState<Integration | null | undefined>();
-  const [results, setResults] = React.useState<Record<string, string>>({});
   const [testing, setTesting] = React.useState<Record<string, boolean>>({});
+  const [testResults, setTestResults] = React.useState<Record<string, string>>({});
   const [deleting, setDeleting] = React.useState<Integration | null>(null);
   const [pipelines, setPipelines] = React.useState<PipelineUsage[]>([]);
   const [usageLoading, setUsageLoading] = React.useState(false);
@@ -53,8 +61,9 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
     setTesting((prev) => ({ ...prev, [connection.id]: true }));
     try {
       const result = await api.post<GitConnectionTestResult>(`/api/integrations/${connection.id}/test`);
-      setResults((prev) => ({ ...prev, [connection.id]: result.ok ? `Conectado, ${result.repositories ?? 0} repositórios` : result.error || "Falha ao testar conexão." }));
-    } catch (e) { setResults((prev) => ({ ...prev, [connection.id]: e instanceof ApiError ? e.message : "Não foi possível testar a conexão." })); }
+      setTestResults((prev) => ({ ...prev, [connection.id]: result.ok ? `Conectado, ${result.repositories ?? 0} repositórios` : result.error || "Falha ao testar conexão." }));
+      void load();
+    } catch (e) { setTestResults((prev) => ({ ...prev, [connection.id]: e instanceof ApiError ? e.message : "Não foi possível testar a conexão." })); }
     finally { setTesting((prev) => ({ ...prev, [connection.id]: false })); }
   }
 
@@ -85,19 +94,46 @@ export function GitConnections({ provider }: { provider: GitProvider }) {
     finally { setDeleteBusy(false); }
   }
 
+  const columns: DataTableColumn<Integration>[] = [
+    { key: "name", header: "Nome", sortable: true, render: (row) => <span style={{ fontWeight: 600 }}>{row.name}</span> },
+    { key: "tokenHint", header: "Token", render: (row) => row.tokenHint ? <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{row.tokenHint}</code> : <span style={{ color: "var(--text-muted)" }}>—</span> },
+    { key: "lastTestStatus", header: "Status", render: (row) => {
+      const status = formatTestStatus(row.lastTestStatus, row.lastTestedAt);
+      const color = row.lastTestStatus === "ok" ? "var(--success)" : row.lastTestStatus === "failed" ? "var(--error)" : "var(--text-muted)";
+      return <span style={{ color, fontSize: 12 }}>{status}</span>;
+    }},
+    { key: "usageCount", header: "Usos", render: (row) => <span style={{ fontSize: 12 }}>{row.usageCount} pipeline{row.usageCount !== 1 ? "s" : ""}</span> },
+  ];
+
+  const rowMenuItems: DataTableRowMenuItem[] = [
+    { label: "Testar", action: "test" },
+    { label: "Editar", action: "edit" },
+    { label: "Excluir", action: "delete", danger: true },
+  ];
+
+  function handleRowMenu(row: Integration, action: string) {
+    if (action === "test") void test(row);
+    else if (action === "edit") setEditing(row);
+    else if (action === "delete") void prepareDelete(row);
+  }
+
+  if (loading) return <p role="status">Carregando conexões...</p>;
+  if (error) return <div><p role="alert">{error}</p><Button onClick={() => void load()}>Tentar novamente</Button></div>;
+
   return <div style={{ display: "grid", gap: 16 }}>
     <div><Button variant="primary" onClick={() => setEditing(null)}>Nova conexão</Button></div>
-    {loading ? <p role="status">Carregando conexões...</p> : error ? <Card><p role="alert">{error}</p><Button onClick={() => void load()}>Tentar novamente</Button></Card> : connections.length === 0 ? <Card>Nenhuma conexão cadastrada.</Card> : connections.map((connection) => <Card key={connection.id}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center" }}>
-        <div><h2 style={{ margin: "0 0 4px", fontSize: 16, overflowWrap: "anywhere" }}>{connection.name}</h2><span>{connection.status === "active" ? "Ativa" : "Desativada"}</span></div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <Button aria-label={`Testar conexão ${connection.name}`} loading={testing[connection.id]} onClick={() => void test(connection)}>Testar conexão</Button>
-          <Button aria-label={`Editar ${connection.name}`} onClick={() => setEditing(connection)}>Editar</Button>
-          <Button aria-label={`Excluir ${connection.name}`} onClick={() => void prepareDelete(connection)}>Excluir</Button>
-        </div>
-      </div>
-      {results[connection.id] && <p role="status">{results[connection.id]}</p>}
-    </Card>)}
+    <DataTable
+      columns={columns}
+      rows={connections}
+      rowKey={(row) => row.id}
+      searchPlaceholder="Buscar conexões…"
+      onRowMenu={handleRowMenu}
+      rowMenuItems={rowMenuItems}
+      emptyMessage="Nenhuma conexão cadastrada."
+    />
+    {Object.entries(testResults).map(([id, msg]) => (
+      <p key={id} role="status" style={{ fontSize: 12, color: "var(--text-secondary)" }}>{msg}</p>
+    ))}
     {editing !== undefined && <GitConnectionForm provider={provider} connection={editing ?? undefined} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); addToast("success", "Conexão salva"); void load(); }} />}
     <Modal open={!!deleting} title="Excluir conexão" onClose={() => { if (!deleteBusy) { deletionRequest.current++; setDeleting(null); } }} footer={<>
       <Button disabled={deleteBusy} onClick={() => { deletionRequest.current++; setDeleting(null); }}>Cancelar</Button>

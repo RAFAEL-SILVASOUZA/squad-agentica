@@ -244,13 +244,39 @@ class AzureDevOpsProvider:
         return PullRequest(number, f"{self.public_url(repo)}/pullrequest/{number}")
 
 
+def provider_from_config(
+    type_: str,
+    config: dict[str, Any],
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> GitProvider:
+    """Monta um GitProvider a partir de tipo e config (sem registro salvo).
+
+    Usado pelo endpoint de teste antes de salvar. O token vem em claro
+    do config (o cliente acabou de digitar).
+    """
+    from app.core.config import settings
+
+    token = str(config.get("token", ""))
+    if type_ == "github":
+        return GitHubProvider(
+            token, settings.github_api_base, transport,
+            clone_base=settings.git_clone_base_override,
+        )
+    if type_ == "azure":
+        org = str(config.get("organization", ""))
+        if not org:
+            raise GitProviderError("Conexão Azure DevOps sem organização")
+        return AzureDevOpsProvider(token, org, transport)
+    raise GitProviderError(f"Integração '{type_}' não é um provedor Git")
+
+
 def provider_for(
     integration: Any,
     *,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> GitProvider:
     from app.api.integrations import get_integration_token
-    from app.core.config import settings
 
     token = get_integration_token(integration)
     kind = (
@@ -258,14 +284,5 @@ def provider_for(
         if hasattr(integration.type, "value")
         else integration.type
     )
-    if kind == "github":
-        return GitHubProvider(
-            token, settings.github_api_base, transport,
-            clone_base=settings.git_clone_base_override,
-        )
-    if kind == "azure":
-        org = (integration.config or {}).get("organization", "")
-        if not org:
-            raise GitProviderError("Conexão Azure DevOps sem organização")
-        return AzureDevOpsProvider(token, org, transport)
-    raise GitProviderError(f"Integração '{kind}' não é um provedor Git")
+    config = integration.config or {}
+    return provider_from_config(kind, {**config, "token": token}, transport=transport)

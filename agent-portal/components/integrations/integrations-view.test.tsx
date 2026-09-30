@@ -7,11 +7,45 @@ import { ApiError } from "@/lib/api";
 const mocks = vi.hoisted(() => ({ list: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), replace: vi.fn(), tab: "" }));
 vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api: mocks }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(mocks.tab), useRouter: () => ({ replace: mocks.replace }) }));
-const gh = { id: "1", type: "github", name: "Meu GitHub", config: { token: "***" }, status: "active" };
-const az = { id: "2", type: "azure", name: "Azure Org", config: { token: "***", organization: "org" }, status: "active" };
+const gh = { id: "1", type: "github", name: "Meu GitHub", config: { token: "***" }, status: "active", tokenHint: "…a1b2", lastTestStatus: "ok", lastTestedAt: "2026-01-01T10:00:00Z", usageCount: 2 };
+const az = { id: "2", type: "azure", name: "Azure Org", config: { token: "***", organization: "org" }, status: "active", tokenHint: "…c3d4", lastTestStatus: null, lastTestedAt: null, usageCount: 0 };
 const page = (items: unknown[]) => ({ items, total: items.length, page: 1, limit: 100 });
 const show = () => render(<ToastProvider><IntegrationsView /></ToastProvider>);
-beforeEach(() => { vi.clearAllMocks(); mocks.tab = ""; mocks.list.mockResolvedValue(page([gh, az])); });
+
+// Mock de matchMedia (DataTable usa para detectar mobile).
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.tab = "";
+  mocks.list.mockResolvedValue(page([gh, az]));
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
+
+/** Abre o menu ⋮ da linha e clica num item. */
+async function rowAction(rowName: string, action: string) {
+  // Espera a tabela renderizar (loading → dados).
+  await waitFor(() => {
+    const els = screen.queryAllByText(rowName);
+    if (!els.some((el) => el.closest("tr"))) throw new Error("row not found");
+  });
+  const spans = screen.getAllByText(rowName);
+  const span = spans.find((s) => s.closest("tr"))!;
+  const row = span.closest("tr")!;
+  const menuBtn = row.querySelector('button[aria-label="Ações"]')!;
+  fireEvent.click(menuBtn);
+  fireEvent.click(screen.getByRole("menuitem", { name: action }));
+}
 
 describe("IntegrationsView", () => {
   it("filters providers and supports keyboard tabs and query navigation", async () => {
@@ -59,19 +93,19 @@ describe("IntegrationsView", () => {
     expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
   });
   it("preserves the token when editing without a replacement", async () => {
-    show(); fireEvent.click(await screen.findByRole("button", { name: "Editar Meu GitHub" }));
+    show(); await rowAction("Meu GitHub", "Editar");
     expect(screen.getByLabelText("Token")).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: "Salvar conexão" }));
     await waitFor(() => expect(mocks.put).toHaveBeenCalledWith("/api/integrations/1", { name: "Meu GitHub", config: { token: "***" } }));
   });
   it.each([{ ok: false, error: "Token inválido ou sem acesso" }, { ok: true, repositories: 3 }])("shows the test result $ok", async (result) => {
     mocks.post.mockResolvedValue(result); show();
-    fireEvent.click(await screen.findByRole("button", { name: "Testar conexão Meu GitHub" }));
+    await rowAction("Meu GitHub", "Testar");
     expect(await screen.findByText(result.ok ? "Conectado, 3 repositórios" : result.error!)).toBeInTheDocument();
   });
   it("lists affected pipelines before confirming deletion", async () => {
     mocks.list.mockImplementation((path: string) => Promise.resolve(page(path === "/api/pipelines" ? [{ id: "p", name: "Gerador", repository: { integrationId: "1" } }] : [gh])));
-    show(); fireEvent.click(await screen.findByRole("button", { name: "Excluir Meu GitHub" }));
+    show(); await rowAction("Meu GitHub", "Excluir");
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByText("O pipeline Gerador ficará sem repositório.")).toBeInTheDocument();
     expect(mocks.delete).not.toHaveBeenCalled();
@@ -84,7 +118,7 @@ describe("IntegrationsView", () => {
       { id: "p2", name: "Revisor", repository: { integrationId: "1" } },
       { id: "p3", name: "Publicador", repository: { integrationId: "1" } },
     ] : [gh])));
-    show(); fireEvent.click(await screen.findByRole("button", { name: "Excluir Meu GitHub" }));
+    show(); await rowAction("Meu GitHub", "Excluir");
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByText("Os pipelines Gerador, Revisor e Publicador ficarão sem repositório.")).toBeInTheDocument();
   });
