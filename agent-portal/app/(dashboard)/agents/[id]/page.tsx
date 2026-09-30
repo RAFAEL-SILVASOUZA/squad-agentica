@@ -11,9 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import {
-  AgentChat,
   AgentDetail,
-  AgentPreview,
   DeleteAgentModal,
 } from "@/components/agents";
 import { api, ApiError } from "@/lib/api";
@@ -314,83 +312,27 @@ export default function AgentDetailPage() {
         </Button>
       </div>
 
-      {/* Chat de edição + formulário */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
-          gap: "16px",
-          alignItems: "start",
-        }}
-      >
-        <AgentChat
-          chatPath={`/api/agents/${agent.id}/chat`}
-          draftId={draftId}
-          onDraftId={setDraftId}
-          onConfigUpdate={handleChatConfigUpdate}
-          onStreamingChange={setChatStreaming}
-          initialAssistantMessage={`Olá! Posso ajudar a ajustar o agente "${agent.name}". O que você quer mudar?`}
-        />
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "16px",
-            minWidth: 0,
-          }}
-        >
-          {/* O chat de edição só altera o formulário; sem este aviso o usuário
-              lia "Pronto! Adicionei…" e saía sem salvar (o botão fica no fim). */}
-          {Object.keys(chatConfig).length > 0 && !chatStreaming && (
-            <div
-              role="status"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "12px",
-                padding: "10px 14px",
-                borderRadius: "var(--radius)",
-                border: "1px solid var(--warning)",
-                background: "var(--bg-card)",
-                fontSize: "13px",
-              }}
-            >
-              <span>Alterações do assistente ainda não salvas.</span>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <Button size="sm" onClick={() => setChatConfig({})} disabled={saving}>
-                  Descartar
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  loading={saving}
-                  onClick={() => void handleSaveChat()}
-                >
-                  Salvar alterações
-                </Button>
-              </div>
-            </div>
-          )}
-          {/* Preview do draft atualizado pelo chat (spec §10.1). */}
-          <AgentPreview
-            config={
-              Object.keys(chatConfig).length > 0 ? { ...agent, ...chatConfig } : agent
-            }
-            streaming={chatStreaming}
-          />
-          <AgentDetail
-            agent={
-              Object.keys(chatConfig).length > 0
-                ? ({ ...agent, ...chatConfig } as Agent)
-                : agent
-            }
-            options={options ?? { skills: [], tools: [], mcpServers: [], knowledge: [] }}
-            onSave={handleSave}
-            saving={saving}
-          />
-        </div>
-      </div>
+      {/* Detalhe do agente em abas (inclui Conversar com chat + preview) */}
+      <AgentDetail
+        agent={
+          Object.keys(chatConfig).length > 0
+            ? ({ ...agent, ...chatConfig } as Agent)
+            : agent
+        }
+        options={options ?? { skills: [], tools: [], mcpServers: [], knowledge: [] }}
+        onSave={handleSave}
+        saving={saving}
+        chatPath={`/api/agents/${agent.id}/chat`}
+        draftId={draftId}
+        onDraftId={setDraftId}
+        onConfigUpdate={handleChatConfigUpdate}
+        onStreamingChange={setChatStreaming}
+        initialAssistantMessage={`Olá! Posso ajudar a ajustar o agente "${agent.name}". O que você quer mudar?`}
+        chatConfig={chatConfig}
+        chatStreaming={chatStreaming}
+        onSaveChat={() => void handleSaveChat()}
+        onDiscardChat={() => setChatConfig({})}
+      />
 
       <DeleteAgentModal
         open={deleteOpen}

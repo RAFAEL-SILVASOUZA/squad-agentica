@@ -39,6 +39,8 @@ export interface AgentChatProps {
   initialAssistantMessage?: string;
   /** Chamado quando o streaming começa/termina (para o preview). */
   onStreamingChange?: (streaming: boolean) => void;
+  /** true para aplicar position:sticky ao campo de mensagem (mobile). */
+  stickyInput?: boolean;
 }
 
 let msgCounter = 0;
@@ -54,6 +56,7 @@ export function AgentChat({
   onConfigUpdate,
   initialAssistantMessage,
   onStreamingChange,
+  stickyInput = false,
 }: AgentChatProps) {
   const { addToast } = useToast();
   const [messages, setMessages] = React.useState<ChatMessage[]>(() =>
@@ -362,6 +365,7 @@ export function AgentChat({
           gap: "8px",
           padding: "12px 14px",
           borderTop: "1px solid var(--border)",
+          ...(stickyInput ? { position: "sticky" as const, bottom: 0, background: "var(--bg-card)" } : {}),
         }}
       >
         <label htmlFor="agent-chat-input" style={{ position: "absolute", left: -9999 }}>
@@ -385,6 +389,7 @@ export function AgentChat({
             fontFamily: "var(--font)",
             outline: "none",
             opacity: streaming || rateLimitedUntil !== null ? 0.6 : 1,
+            ...(stickyInput ? { position: "sticky" as const, bottom: 0 } : {}),
           }}
         />
         {streaming ? (

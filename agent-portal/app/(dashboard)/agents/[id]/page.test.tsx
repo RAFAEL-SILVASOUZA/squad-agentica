@@ -47,6 +47,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 // Mock do chat (SSE) para simular config_update em modo edição.
+// O onConfigUpdate agora é capturado do AgentDetail (o chat vive na aba Conversar).
 let configUpdateHandler: ((config: Partial<Agent>) => void) | null = null;
 vi.mock("@/components/agents", () => ({
   AgentChat: (props: {
@@ -63,26 +64,32 @@ vi.mock("@/components/agents", () => ({
     options: unknown;
     onSave: (payload: Record<string, unknown>) => Promise<void>;
     saving?: boolean;
-  }) => (
-    <div data-testid="agent-detail" data-agent-name={props.agent.name}>
-      <button
-        data-testid="save-agent"
-        onClick={() => props.onSave({ name: props.agent.name })}
-      >
-        Salvar
-      </button>
-    </div>
-  ),
-  AgentPreview: (props: {
-    config: Partial<Agent>;
-    streaming?: boolean;
-  }) => (
-    <div
-      data-testid="agent-preview"
-      data-streaming={String(!!props.streaming)}
-      data-preview-name={props.config.name ?? ""}
-    />
-  ),
+    chatConfig?: Partial<Agent>;
+    onConfigUpdate?: (config: Partial<Agent>) => void;
+  }) => {
+    // Captura o handler de config_update (o chat real vive na aba Conversar).
+    configUpdateHandler = props.onConfigUpdate ?? null;
+    // O preview agora vive dentro do AgentDetail (aba Conversar); o mock
+    // reflete a fusão agent + chatConfig, como o componente real faz.
+    const merged =
+      props.chatConfig && Object.keys(props.chatConfig).length > 0
+        ? ({ ...props.agent, ...props.chatConfig } as Agent)
+        : props.agent;
+    return (
+      <div data-testid="agent-detail" data-agent-name={merged.name}>
+        <div
+          data-testid="agent-preview"
+          data-preview-name={merged.name ?? ""}
+        />
+        <button
+          data-testid="save-agent"
+          onClick={() => props.onSave({ name: merged.name })}
+        >
+          Salvar
+        </button>
+      </div>
+    );
+  },
   DeleteAgentModal: (props: {
     open: boolean;
     agentName: string;

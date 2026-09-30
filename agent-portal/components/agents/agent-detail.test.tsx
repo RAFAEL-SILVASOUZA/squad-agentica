@@ -1,8 +1,39 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AgentDetail } from "./agent-detail";
 import { ToastProvider } from "@/components/ui/toast";
 import type { Agent, Skill, CustomTool, MCPServer, KnowledgeBase } from "@/lib/types";
+
+// Mock de next/navigation para os testes de tabs (?tab=).
+const mockReplace = vi.fn();
+let mockTab = "";
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(mockTab),
+  useRouter: () => ({ replace: mockReplace }),
+}));
+
+beforeEach(() => {
+  mockTab = "";
+  mockReplace.mockClear();
+  // Mock global de matchMedia (jsdom não implementa).
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -128,18 +159,125 @@ function renderDetail(props: Partial<React.ComponentProps<typeof AgentDetail>> =
   return { ...utils, onSave };
 }
 
+/** Navega para uma aba clicando no botão da tab. */
+function clickTab(name: string) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
+
 describe("AgentDetail", () => {
-  it("pre-fills fields from an existing agent", () => {
+  // ── Tabs ──────────────────────────────────────────────────────────
+
+  it("renders all five tabs", () => {
     renderDetail({ agent: makeAgent() });
+    expect(screen.getByRole("tab", { name: "Visão geral" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Conversar" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Contrato" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Mochila" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Execução" })).toBeInTheDocument();
+  });
+
+  it("opens Mochila tab when ?tab=mochila", () => {
+    mockTab = "tab=mochila";
+    renderDetail({ agent: makeAgent() });
+    expect(screen.getByRole("tab", { name: "Mochila" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+  });
+
+  it("navigates to ?tab=execucao when clicking Execução tab", () => {
+    renderDetail({ agent: makeAgent() });
+    clickTab("Execução");
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining("tab=execucao"),
+      expect.anything()
+    );
+  });
+
+  // ── Modelo ────────────────────────────────────────────────────────
+
+  it("shows the effective model once in Visão geral", () => {
+    renderDetail({
+      agent: makeAgent({ model: "gpt-4o", effectiveModel: "Qwen3.8-27B-Q8_0" }),
+    });
+    // O modelo efetivo aparece em destaque.
+    expect(screen.getByText("Qwen3.8-27B-Q8_0")).toBeInTheDocument();
+    // A linha "Configurado: …" aparece quando difere.
     expect(
-      screen.getByDisplayValue("Backend Developer")
+      screen.getByText(/Configurado: gpt-4o/)
     ).toBeInTheDocument();
+  });
+
+  it("does not show the configured model as if it were the effective one", () => {
+    renderDetail({
+      agent: makeAgent({ model: "gpt-4o", effectiveModel: "Qwen3.8-27B-Q8_0" }),
+    });
+    // "gpt-4o" não aparece como valor de input (só na linha "Configurado:").
+    expect(screen.queryByDisplayValue("gpt-4o")).not.toBeInTheDocument();
+  });
+
+  it("shows only the model when effectiveModel equals model", () => {
+    renderDetail({
+      agent: makeAgent({ model: "gpt-4o", effectiveModel: "gpt-4o" }),
+    });
+    expect(screen.getByText("gpt-4o")).toBeInTheDocument();
+    expect(screen.queryByText(/Configurado:/)).not.toBeInTheDocument();
+  });
+
+  it("has an editable 'Modelo configurado' field in Execução tab", () => {
+    renderDetail({ agent: makeAgent() });
+    clickTab("Execução");
+    const modelInput = screen.getByLabelText("Modelo configurado");
+    expect(modelInput).toHaveValue("gpt-4o");
+  });
+
+  // ── Mochila: empty-state links ────────────────────────────────────
+
+  it("shows 'Criar skill →' link when no skills in backpack", () => {
+    renderDetail({ agent: makeAgent({ skills: [] }) });
+    clickTab("Mochila");
+    const link = screen.getByRole("link", { name: /Criar skill/ });
+    expect(link).toHaveAttribute("href", "/skills?new=1");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("shows 'Criar tool →' link when no tools in backpack", () => {
+    renderDetail({ agent: makeAgent({ tools: [] }) });
+    clickTab("Mochila");
+    const link = screen.getByRole("link", { name: /Criar tool/ });
+    expect(link).toHaveAttribute("href", "/tools?new=1");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("shows 'Criar base →' link when no knowledge in backpack", () => {
+    renderDetail({ agent: makeAgent({ knowledge: [] }) });
+    clickTab("Mochila");
+    const link = screen.getByRole("link", { name: /Criar base/ });
+    expect(link).toHaveAttribute("href", "/knowledge?new=1");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  // ── Mobile sticky (matchMedia < 768px) ────────────────────────────
+
+  it("applies position:sticky to the chat input on mobile (<768px)", () => {
+    // Mock matchMedia para mobile.
+    const mockMql = { matches: true, media: "(max-width: 767px)", addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), onchange: null, dispatchEvent: vi.fn() };
+    vi.spyOn(window, "matchMedia").mockReturnValue(mockMql as unknown as MediaQueryList);
+
+    renderDetail({ agent: makeAgent(), chatPath: "/api/agents/agent-1/chat" });
+    clickTab("Conversar");
+
+    // O campo de mensagem (input do chat) deve ter position: sticky.
+    const chatInput = screen.getByLabelText("Mensagem");
+    expect(chatInput).toHaveStyle({ position: "sticky", bottom: "0" });
+  });
+
+  // ── Funcionalidade existente (mantida) ────────────────────────────
+
+  it("pre-fills identity fields from an existing agent", () => {
+    renderDetail({ agent: makeAgent() });
+    expect(screen.getByDisplayValue("Backend Developer")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Dev de APIs REST.")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("5")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("300")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("plano_aprovado")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("code_pronto")).toBeInTheDocument();
   });
 
   it("requires a name before saving", async () => {
@@ -151,33 +289,26 @@ describe("AgentDetail", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("saves with the edited name and contract", async () => {
+  it("saves with the edited name", async () => {
     const { onSave } = renderDetail({ agent: makeAgent() });
     const nameInput = screen.getByDisplayValue("Backend Developer");
     fireEvent.change(nameInput, { target: { value: "Novo Nome" } });
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
-
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
     });
     const payload = onSave.mock.calls[0][0];
     expect(payload.name).toBe("Novo Nome");
-    expect(payload.inputs).toEqual([
-      { name: "plano_aprovado", type: "object", required: true },
-    ]);
-    expect(payload.actions).toEqual(["follow", "finalize"]);
   });
 
-  it("saves a port's description in the payload", async () => {
+  it("saves a port's description in the payload (Contrato tab)", async () => {
     const { onSave } = renderDetail({ agent: makeAgent() });
-    // Edita a descrição do port de entrada via PortsEditor. O primeiro
-    // "Descrição do port 1" é o da seção Entradas (Saídas vem depois).
+    clickTab("Contrato");
     const descInputs = screen.getAllByLabelText("Descrição do port 1");
     fireEvent.change(descInputs[0], {
       target: { value: "Plano aprovado pelo cliente" },
     });
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
-
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
     });
@@ -192,12 +323,11 @@ describe("AgentDetail", () => {
     ]);
   });
 
-  it("toggles an action", async () => {
+  it("toggles an action in Contrato tab", async () => {
     const { onSave } = renderDetail({ agent: makeAgent() });
-    // "return" não está ativo no agente; clique para ativar.
+    clickTab("Contrato");
     fireEvent.click(screen.getByRole("button", { name: "Devolver" }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
-
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
     });
@@ -205,13 +335,13 @@ describe("AgentDetail", () => {
     expect(payload.actions).toContain("return");
   });
 
-  it("adds a skill from the selector", async () => {
+  it("adds a skill from the selector in Mochila tab", async () => {
     const { onSave } = renderDetail({ agent: makeAgent({ skills: [] }) });
+    clickTab("Mochila");
     const skillSelect = screen.getByLabelText("Selecionar skill");
     fireEvent.change(skillSelect, { target: { value: "sk-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Adicionar skill" }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
-
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
     });
@@ -221,19 +351,20 @@ describe("AgentDetail", () => {
 
   it("shows the skill name, not its id, on the backpack chip (E3)", () => {
     renderDetail({ agent: makeAgent({ skills: [] }) });
+    clickTab("Mochila");
     fireEvent.change(screen.getByLabelText("Selecionar skill"), { target: { value: "sk-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Adicionar skill" }));
     expect(screen.getByRole("button", { name: "Remover test-runner" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remover sk-2" })).not.toBeInTheDocument();
   });
 
-  it("adds an integration from the selector", async () => {
+  it("adds an integration from the selector in Mochila tab", async () => {
     const { onSave } = renderDetail({ agent: makeAgent({ integrations: [] }) });
+    clickTab("Mochila");
     const integSelect = screen.getByLabelText("Selecionar integração");
     fireEvent.change(integSelect, { target: { value: "gitlab" } });
     fireEvent.click(screen.getByRole("button", { name: "Adicionar integração" }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
-
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
     });
@@ -241,11 +372,11 @@ describe("AgentDetail", () => {
     expect(payload.integrations).toEqual([{ platform: "gitlab", config: {} }]);
   });
 
-  it("toggles shellAccess", async () => {
+  it("toggles shellAccess in Execução tab", async () => {
     const { onSave } = renderDetail({ agent: makeAgent({ shellAccess: false }) });
+    clickTab("Execução");
     fireEvent.click(screen.getByRole("switch", { name: "Acesso a shell" }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
-
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
     });
@@ -253,7 +384,7 @@ describe("AgentDetail", () => {
     expect(payload.shellAccess).toBe(true);
   });
 
-  it("shows empty backpack hints when no options", async () => {
+  it("shows empty backpack hints when no options (Mochila tab)", () => {
     render(
       <ToastProvider>
         <AgentDetail
@@ -262,6 +393,7 @@ describe("AgentDetail", () => {
         />
       </ToastProvider>
     );
+    clickTab("Mochila");
     expect(screen.getByText("Nenhuma skill cadastrada")).toBeInTheDocument();
     expect(screen.getByText("Nenhuma tool cadastrada")).toBeInTheDocument();
     expect(screen.getByText("Nenhum servidor cadastrado")).toBeInTheDocument();
@@ -270,7 +402,6 @@ describe("AgentDetail", () => {
 
   it("syncs the form when the agent prop changes (config_update via chat)", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    // Renderiza com o agente original.
     const { rerender } = render(
       <ToastProvider>
         <AgentDetail
@@ -284,8 +415,6 @@ describe("AgentDetail", () => {
     expect(screen.getByDisplayValue("Backend Developer")).toBeInTheDocument();
     expect(screen.getByDisplayValue("iterativo")).toBeInTheDocument();
 
-    // A pagina de edicao recebe um config_update do chat e atualiza o
-    // agent state; o formulario deve sincronizar com a nova config.
     rerender(
       <ToastProvider>
         <AgentDetail
@@ -299,7 +428,6 @@ describe("AgentDetail", () => {
     expect(screen.getByDisplayValue("Dev Ajustado")).toBeInTheDocument();
     expect(screen.getByDisplayValue("paralelo")).toBeInTheDocument();
 
-    // O save persiste a config aplicada pelo chat.
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
