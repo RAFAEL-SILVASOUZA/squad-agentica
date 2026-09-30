@@ -194,7 +194,7 @@ class TestSkillsUsageCount:
         assert items["skill-b"]["usageCount"] == 0
 
     async def test_usage_count_isolated_per_user(
-        self, library_client, other_user_client, session: AsyncSession,
+        self, library_client, session: AsyncSession,
         test_user: User, other_user_fixture: User,
     ):
         """Agentes de outro usuario nao contam no usageCount."""
@@ -242,7 +242,7 @@ class TestToolsUsageCount:
         assert items["tool-b"]["usageCount"] == 0
 
     async def test_usage_count_isolated_per_user(
-        self, library_client, other_user_client, session: AsyncSession,
+        self, library_client, session: AsyncSession,
         test_user: User, other_user_fixture: User,
     ):
         """Agentes de outro usuario nao contam no usageCount."""
@@ -286,7 +286,7 @@ class TestMCPServersUsageCount:
         assert items["mcp-b"]["usageCount"] == 0
 
     async def test_usage_count_isolated_per_user(
-        self, library_client, other_user_client, session: AsyncSession,
+        self, library_client, session: AsyncSession,
         test_user: User, other_user_fixture: User,
     ):
         """Agentes de outro usuario nao contam no usageCount."""
