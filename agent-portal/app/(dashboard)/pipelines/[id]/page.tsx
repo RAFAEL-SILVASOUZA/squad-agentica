@@ -23,6 +23,7 @@ import {
   type ValidationError,
 } from "@/components/flow/validation";
 import { Button } from "@/components/ui/button";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
@@ -416,6 +417,9 @@ export default function PipelineDetailPage() {
 
   return (
     <div>
+      {/* Breadcrumb */}
+      <Breadcrumb items={[{ label: "Pipelines", href: "/pipelines" }, { label: pipeline.name }]} />
+
       {/* Header */}
       <div
         style={{

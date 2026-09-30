@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Trash2, RefreshCw, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
@@ -264,6 +265,9 @@ export default function AgentDetailPage() {
 
   return (
     <div>
+      {/* Breadcrumb */}
+      <Breadcrumb items={[{ label: "Agentes", href: "/agents" }, { label: agent.name }]} />
+
       {/* Header */}
       <div
         style={{

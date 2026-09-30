@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { signOut, useSession } from "next-auth/react";
-import { Sun, Moon, LogOut, Bell, Settings } from "lucide-react";
+import { Sun, Moon, LogOut, Bell, ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { useCreatePipelineAndNavigate } from "@/lib/create-pipeline";
 
 /**
  * Topbar do shell (design system §2.13).
@@ -22,6 +23,7 @@ export function AppTopbar({
   const { data: session } = useSession();
   const [theme, setTheme] = React.useState<"dark" | "light">("dark");
   const [mounted, setMounted] = React.useState(false);
+  const [newMenuOpen, setNewMenuOpen] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
@@ -40,6 +42,22 @@ export function AppTopbar({
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("agent-portal-theme", next);
+  };
+
+  // Fecha o menu “+ Novo” ao clicar em uma opção ou fora dele.
+  React.useEffect(() => {
+    if (!newMenuOpen) return;
+    const onClick = () => setNewMenuOpen(false);
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [newMenuOpen]);
+
+  // Hook chamado diretamente no corpo do componente (local válido de hook).
+  const createPipelineAndNavigate = useCreatePipelineAndNavigate();
+
+  const handleCreatePipeline = () => {
+    setNewMenuOpen(false);
+    void createPipelineAndNavigate();
   };
 
   const handleLogout = async () => {
@@ -170,10 +188,138 @@ export function AppTopbar({
           )}
         </button>
 
-        {/* Integrações (ao lado do tema) */}
-        <Link href="/integrations" aria-label="Integrações" title="Integrações" style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
-          <Settings size={16} aria-hidden="true" />
-        </Link>
+        {/* + Novo (menu de criação rápida) */}
+        <div style={{ position: "relative" }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setNewMenuOpen((o) => !o);
+            }}
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
+            aria-label="Criar novo"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border)",
+              background: "var(--bg-card)",
+              color: "var(--text)",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background var(--transition), border-color var(--transition), color var(--transition)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--accent)";
+              e.currentTarget.style.color = "var(--accent)";
+              e.currentTarget.style.background = "var(--accent-subtle)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--border)";
+              e.currentTarget.style.color = "var(--text)";
+              e.currentTarget.style.background = "var(--bg-card)";
+            }}
+          >
+            <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+            Novo
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+
+          {newMenuOpen && (
+            <div
+              role="menu"
+              aria-label="Criar novo"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                right: 0,
+                zIndex: 20,
+                minWidth: 220,
+                padding: "6px",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                boxShadow: "var(--shadow-md, 0 4px 16px rgba(0,0,0,0.2))",
+              }}
+            >
+              <Link
+                role="menuitem"
+                href="/agents/new"
+                onClick={() => setNewMenuOpen(false)}
+                style={{
+                  display: "block",
+                  padding: "8px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "13px",
+                  color: "var(--text)",
+                  textDecoration: "none",
+                  background: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                Agente
+              </Link>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleCreatePipeline}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "13px",
+                  color: "var(--text)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                Pipeline
+              </button>
+              <Link
+                role="menuitem"
+                href="/knowledge?new=1"
+                onClick={() => setNewMenuOpen(false)}
+                style={{
+                  display: "block",
+                  padding: "8px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "13px",
+                  color: "var(--text)",
+                  textDecoration: "none",
+                  background: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                Base de conhecimento
+              </Link>
+            </div>
+          )}
+        </div>
 
         {/* Theme toggle */}
         <button

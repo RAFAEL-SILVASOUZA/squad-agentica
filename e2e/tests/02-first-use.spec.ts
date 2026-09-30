@@ -109,12 +109,12 @@ test.describe("Jornada 2: primeiro uso (estados vazios)", () => {
     await loginViaUI(page, user.email, PASSWORD);
     const items: Array<[string, RegExp]> = [
       ["Dashboard", /\/$/],
-      ["Novo Agente", /\/agents\/new/],
       ["Aprovações", /\/approvals/],
       ["Skills", /\/skills/],
-      ["Tools Custom", /\/tools/],
+      ["Tools", /\/tools/],
       ["MCP Servers", /\/mcp/],
       ["Knowledge", /\/knowledge/],
+      ["Integrações", /\/integrations/],
     ];
     for (const [label, url] of items) {
       await page

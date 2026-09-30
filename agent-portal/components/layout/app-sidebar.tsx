@@ -6,13 +6,13 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   LayoutGrid,
-  Bot,
   CheckCircle2,
   BookOpen,
   Wrench,
   Server,
   FileText,
   GitBranch,
+  Settings,
 } from "lucide-react";
 
 /**
@@ -42,11 +42,6 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Dashboard",
         icon: LayoutGrid,
       },
-      {
-        href: "/agents/new",
-        label: "Novo Agente",
-        icon: Bot,
-      },
     ],
   },
   {
@@ -68,29 +63,39 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Biblioteca",
-    items: [
-      {
-        href: "/skills",
-        label: "Skills",
-        icon: BookOpen,
+        items: [
+          {
+            href: "/skills",
+            label: "Skills",
+            icon: BookOpen,
+          },
+          {
+            href: "/tools",
+            label: "Tools",
+            icon: Wrench,
+          },
+          {
+            href: "/mcp",
+            label: "MCP Servers",
+            icon: Server,
+          },
+          {
+            href: "/knowledge",
+            label: "Knowledge",
+            icon: FileText,
+          },
+        ],
       },
-      {
-        href: "/tools",
-        label: "Tools Custom",
-        icon: Wrench,
+  {
+    label: "CONFIGURAÇÃO",
+        items: [
+          {
+            href: "/integrations",
+            label: "Integrações",
+            icon: Settings,
+          },
+        ],
       },
-      {
-        href: "/mcp",
-        label: "MCP Servers",
-        icon: Server,
-      },
-      {
-        href: "/knowledge",
-        label: "Knowledge",
-        icon: FileText,
-      },
-    ],
-  },
 ];
 
 export interface AppSidebarProps {

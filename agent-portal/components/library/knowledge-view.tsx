@@ -4,6 +4,7 @@ import * as React from "react";
 import { FileText, Plus, RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
@@ -250,6 +251,15 @@ export function KnowledgeView() {
 
   return (
     <div>
+      {/* Breadcrumb: “Knowledge / <base>” quando há base selecionada. */}
+      <Breadcrumb
+        items={
+          selectedBase
+            ? [{ label: "Knowledge" }, { label: selectedBase.name }]
+            : [{ label: "Knowledge" }]
+        }
+      />
+
       {content}
 
       {/* Modal criar base */}

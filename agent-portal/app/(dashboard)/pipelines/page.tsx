@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { GitBranch, Plus, RefreshCw, AlertTriangle, Monitor } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Pipeline, PipelineRun, PaginatedResponse } from "@/lib/types";
+import { useCreatePipelineAndNavigate } from "@/lib/create-pipeline";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -118,28 +119,19 @@ export default function PipelinesPage() {
     };
   }, [pipelines]);
 
+  // Criação de pipeline: reusa a implementação única em lib/create-pipeline
+  // (mesmo POST, navegação para /pipelines/<id>?new=1 e toast de erro).
+  // O estado local `creating` mantém o loading do botão desta página.
+  const createPipelineAndNavigate = useCreatePipelineAndNavigate();
+
   const handleCreate = React.useCallback(async () => {
     setCreating(true);
     try {
-      const res = await api.post<Pipeline>("/api/pipelines", {
-        name: "Novo pipeline",
-        description: "",
-        entryNodeId: "",
-        nodes: [],
-        edges: [],
-      });
-      // ?new=1: o editor já abre com o nome em edição.
-      router.push(`/pipelines/${res.id}?new=1`);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        addToast("error", err.message);
-      } else {
-        addToast("error", "Falha ao criar pipeline");
-      }
+      await createPipelineAndNavigate();
     } finally {
       setCreating(false);
     }
-  }, [router, addToast]);
+  }, [createPipelineAndNavigate]);
 
   const handlePipelineDuplicated = React.useCallback(
     (id: string) => {
