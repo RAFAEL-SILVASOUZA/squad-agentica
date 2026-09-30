@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
+import { BottomNav } from "@/components/ui/bottom-nav";
 import { useShortcuts } from "@/components/command-palette/use-shortcuts";
 import { CommandPalette } from "@/components/command-palette/command-palette";
 import { ShortcutsHelp } from "@/components/command-palette/shortcuts-help";
@@ -10,7 +12,7 @@ import { ShortcutsHelp } from "@/components/command-palette/shortcuts-help";
 /**
  * App Shell (design system §3.1).
  * Grid: topbar (56px) + sidebar (240px) + main.
- * Responsivo: sidebar recolhível em < 900px.
+ * Responsivo: sidebar recolhível em < 768px, bottom nav visível.
  */
 export interface AppShellProps {
   children: React.ReactNode;
@@ -27,6 +29,19 @@ export function AppShell({
   const [isMobile, setIsMobile] = React.useState(false);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
+  const pathname = usePathname();
+
+  // Título da tela para a topbar mobile (spec: "logo, o título da tela e ⋯").
+  const pageTitle = React.useMemo(() => {
+    if (pathname === "/") return "Início";
+    if (pathname.startsWith("/pipelines")) return "Pipelines";
+    if (pathname.startsWith("/approvals")) return "Aprovações";
+    if (pathname.startsWith("/agents")) return "Agentes";
+    if (pathname.startsWith("/knowledge")) return "Knowledge";
+    if (pathname.startsWith("/integrations")) return "Integrações";
+    if (pathname.startsWith("/library")) return "Biblioteca";
+    return "Agent Portal";
+  }, [pathname]);
 
   useShortcuts({
     onPalette: () => setPaletteOpen(true),
@@ -34,7 +49,7 @@ export function AppShell({
   });
 
   React.useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 900);
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
@@ -61,17 +76,19 @@ export function AppShell({
           pendingApprovals={pendingApprovals}
           onNotificationsClick={onNotificationsClick}
           onOpenHelp={() => setHelpOpen(true)}
+          isMobile={isMobile}
+          title={pageTitle}
         />
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar (desktop) */}
       {sidebarOpen && !isMobile && (
         <div style={{ overflow: "hidden" }}>
           <AppSidebar pendingApprovals={pendingApprovals} />
         </div>
       )}
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar overlay (aberto pelo "Mais" da bottom nav) */}
       {isMobile && sidebarOpen && (
         <div
           style={{
@@ -101,71 +118,20 @@ export function AppShell({
       <main
         style={{
           overflowY: "auto",
-          // No celular o botão de menu (absoluto em 16,16) cobria o início do
-          // conteúdo (ex.: botão Voltar): o conteúdo começa abaixo dele.
-          padding: isMobile ? "64px 16px 24px" : "24px",
+          padding: isMobile ? "16px 16px 72px" : "24px",
           position: "relative",
         }}
       >
-        {/* Mobile hamburger */}
-        {isMobile && (
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label={sidebarOpen ? "Fechar menu" : "Abrir menu"}
-            style={{
-              position: "absolute",
-              top: 16,
-              left: 16,
-              width: 36,
-              height: 36,
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border)",
-              background: "var(--bg-card)",
-              color: "var(--text)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1,
-            }}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 3,
-              }}
-            >
-              <span
-                style={{
-                  width: 16,
-                  height: 2,
-                  background: "currentColor",
-                  borderRadius: 1,
-                }}
-              />
-              <span
-                style={{
-                  width: 16,
-                  height: 2,
-                  background: "currentColor",
-                  borderRadius: 1,
-                }}
-              />
-              <span
-                style={{
-                  width: 16,
-                  height: 2,
-                  background: "currentColor",
-                  borderRadius: 1,
-                }}
-              />
-            </span>
-          </button>
-        )}
         {children}
       </main>
+
+      {/* Bottom nav (mobile) */}
+      {isMobile && (
+        <BottomNav
+          pendingApprovals={pendingApprovals}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+      )}
 
       {/* Paleta de comandos (Ctrl/⌘K ou "/") e ajuda de atalhos ("?") */}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

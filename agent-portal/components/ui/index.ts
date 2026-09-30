@@ -32,3 +32,5 @@ export { ErrorPanel } from "./error-panel";
 export type { ErrorPanelProps } from "./error-panel";
 export { Markdown } from "./markdown";
 export type { MarkdownProps } from "./markdown";
+export { BottomNav } from "./bottom-nav";
+export type { BottomNavProps } from "./bottom-nav";
