@@ -56,7 +56,9 @@ export interface Agent {
   outputs: PortDef[];
   actions: FlowAction[];
   model: string;
-  /** Modelo realmente usado (LLM_MODEL do servidor, quando definido). */
+  /** Escolha opcional de LLM por agente (adendo 8): {integrationId, model}. */
+  llm?: AgentLlmChoice | null;
+  /** Modelo realmente usado (adendo 8): agente > padrão do usuário > ambiente. */
   effectiveModel?: string;
   maxIterations: number;
   timeout: number;
@@ -312,16 +314,38 @@ export interface GitConnectionTestResult {
   error?: string;
 }
 
+// ─── LLM (adendo 8) ───────────────────────────────────────────────────
+
+/** Tipos de provedor suportados pelo backend (adendo 8.2). */
+export type LlmProviderKind = "openai" | "openai_compatible" | "mock";
+
+/** Resultado de POST /api/integrations/llm/test (não persiste). */
+export interface LlmConnectionTestResult {
+  ok: boolean;
+  latencyMs?: number;
+  model?: string;
+  embeddingDim?: number;
+  error?: string;
+}
+
+/** Escolha opcional de LLM por agente (adendo 8): {integrationId, model}. */
+export interface AgentLlmChoice {
+  integrationId: string;
+  model?: string;
+}
+
 export interface Integration {
   id: string;
   ownerId: string;
-  type: "github" | "azure" | "gitlab";
+  type: "github" | "azure" | "gitlab" | "llm";
   name: string;
   config: Record<string, unknown>;
   status: "active" | "disabled";
   createdAt: string;
   updatedAt: string;
   tokenHint?: string | null;
+  /** Últimos 4 caracteres da chave de API LLM (adendo 8); a chave nunca sai. */
+  apiKeyHint?: string | null;
   lastTestStatus?: string | null;
   lastTestedAt?: string | null;
   usageCount?: number;

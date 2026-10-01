@@ -11,7 +11,7 @@
  */
 
 import { api } from "./api";
-import type { Agent, PaginatedResponse } from "./types";
+import type { Agent, AgentLlmChoice, PaginatedResponse } from "./types";
 
 export interface AgentUpdatePayload {
   name?: string;
@@ -28,6 +28,8 @@ export interface AgentUpdatePayload {
   outputs?: Agent["outputs"];
   actions?: Agent["actions"];
   model?: string;
+  /** Escolha opcional de LLM por agente (adendo 8); null limpa a escolha. */
+  llm?: AgentLlmChoice | null;
   maxIterations?: number;
   timeout?: number;
   shellAccess?: boolean;

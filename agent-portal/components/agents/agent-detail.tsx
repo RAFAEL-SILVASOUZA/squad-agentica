@@ -21,6 +21,7 @@ import type {
   MCPServerRef,
   KnowledgeRef,
   IntegrationRef,
+  Integration,
   FlowAction,
   Skill,
   CustomTool,
@@ -50,6 +51,8 @@ export interface BackpackOptions {
   tools: CustomTool[];
   mcpServers: MCPServer[];
   knowledge: KnowledgeBase[];
+  /** Integrações LLM cadastradas (adendo 8), para o seletor de modelo. */
+  llmIntegrations?: Integration[];
 }
 
 export interface AgentDetailProps {
@@ -234,6 +237,12 @@ export function AgentDetail({
   const [prompt, setPrompt] = React.useState(agent?.prompt ?? "");
   const [strategy, setStrategy] = React.useState(agent?.strategy ?? "");
   const [model, setModel] = React.useState(agent?.model ?? "gpt-4o");
+  // Escolha opcional de LLM por agente (adendo 8): integração + modelo.
+  // Vazio = o agente usa o fallback (padrão do usuário > ambiente).
+  const [llmIntegrationId, setLlmIntegrationId] = React.useState(
+    agent?.llm?.integrationId ?? ""
+  );
+  const [llmModel, setLlmModel] = React.useState(agent?.llm?.model ?? "");
   const [maxIterations, setMaxIterations] = React.useState(
     String(agent?.maxIterations ?? 10)
   );
@@ -276,6 +285,8 @@ export function AgentDetail({
     setPrompt(agent.prompt);
     setStrategy(agent.strategy);
     setModel(agent.model);
+    setLlmIntegrationId(agent.llm?.integrationId ?? "");
+    setLlmModel(agent.llm?.model ?? "");
     setMaxIterations(String(agent.maxIterations));
     setTimeout_(String(agent.timeout));
     setShellAccess(agent.shellAccess);
@@ -297,8 +308,31 @@ export function AgentDetail({
     label: k.name,
   }));
 
+  // Modelos disponíveis na integração LLM escolhida (adendo 8).
+  const llmIntegrations = options.llmIntegrations ?? [];
+  const selectedLlmIntegration = llmIntegrations.find(
+    (i) => i.id === llmIntegrationId
+  );
+  const llmModelOptions = React.useMemo(() => {
+    if (!selectedLlmIntegration) return [] as { value: string; label: string }[];
+    const cfg = selectedLlmIntegration.config;
+    const models = Array.isArray(cfg.models)
+      ? cfg.models.map((m) => String(m)).filter(Boolean)
+      : [];
+    const defaultModel = typeof cfg.default_model === "string" ? cfg.default_model : "";
+    const set = new Set(models);
+    if (defaultModel) set.add(defaultModel);
+    return Array.from(set).map((m) => ({ value: m, label: m }));
+  }, [selectedLlmIntegration]);
+
   const nameOf = (list: { value: string; label: string }[], id: string) =>
     list.find((o) => o.value === id)?.label ?? id;
+
+  // Ao trocar a integração, o modelo escolhido pode não existir nela: limpa.
+  React.useEffect(() => {
+    if (!llmIntegrationId) return;
+    if (!llmModelOptions.some((o) => o.value === llmModel)) setLlmModel("");
+  }, [llmIntegrationId, llmModelOptions, llmModel]);
 
   const effectiveModel = agent?.effectiveModel ?? agent?.model;
   const configuredModel = agent?.model;
@@ -386,6 +420,8 @@ export function AgentDetail({
       prompt,
       strategy,
       model,
+      // Adendo 8: escolha opcional de LLM. Sem integração = fallback (usuário/ambiente).
+      llm: llmIntegrationId ? { integrationId: llmIntegrationId, ...(llmModel ? { model: llmModel } : {}) } : null,
       maxIterations: Number.isFinite(maxIter) ? maxIter : 10,
       timeout: Number.isFinite(timeoutNum) ? timeoutNum : 300,
       shellAccess,
@@ -626,6 +662,46 @@ export function AgentDetail({
       <SectionTitle>Execução</SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         <Input label="Modelo configurado" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Ex.: gpt-4o" />
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px 14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", background: "var(--bg-card)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Modelo LLM (opcional)</span>
+            {effectiveModel && (
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>em uso: <code style={{ fontFamily: "var(--font-mono)" }}>{effectiveModel}</code></span>
+            )}
+          </div>
+          {llmIntegrations.length === 0 ? (
+            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+              Nenhuma conexão LLM cadastrada. O agente usa o padrão do usuário ou do ambiente.
+              <Link href="/integrations?tab=llm" target="_blank" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 500, marginLeft: "4px" }}>Criar conexão →</Link>
+            </span>
+          ) : (
+            <>
+              <Select
+                aria-label="Conexão LLM"
+                value={llmIntegrationId}
+                onValueChange={setLlmIntegrationId}
+                options={[
+                  { value: "", label: "Padrão (usuário/ambiente)" },
+                  ...llmIntegrations.map((i) => ({ value: i.id, label: i.name })),
+                ]}
+              />
+              {llmIntegrationId && (
+                <Select
+                  aria-label="Modelo da conexão LLM"
+                  value={llmModel}
+                  onValueChange={setLlmModel}
+                  options={[
+                    { value: "", label: "Padrão da conexão" },
+                    ...llmModelOptions,
+                  ]}
+                />
+              )}
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
+                Opcional: sem escolha, o agente usa o padrão do usuário e, depois, o do ambiente.
+              </p>
+            </>
+          )}
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <Input label="Max iterações" type="number" min={1} max={1000} value={maxIterations} onChange={(e) => setMaxIterations(e.target.value)} />
           <Input label="Timeout (s)" type="number" min={1} max={3600} value={timeout} onChange={(e) => setTimeout_(e.target.value)} />

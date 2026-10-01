@@ -22,6 +22,7 @@ import type {
   CustomTool,
   MCPServer,
   KnowledgeBase,
+  Integration,
 } from "@/lib/types";
 
 /**
@@ -40,20 +41,23 @@ interface BackpackOptions {
   tools: CustomTool[];
   mcpServers: MCPServer[];
   knowledge: KnowledgeBase[];
+  llmIntegrations: Integration[];
 }
 
 async function fetchBackpackOptions(): Promise<BackpackOptions> {
-  const [skills, tools, mcp, knowledge] = await Promise.all([
+  const [skills, tools, mcp, knowledge, integrations] = await Promise.all([
     api.list<Skill>("/api/skills", { page: 1, limit: 100 }),
     api.list<CustomTool>("/api/tools", { page: 1, limit: 100 }),
     api.list<MCPServer>("/api/mcp-servers", { page: 1, limit: 100 }),
     api.list<KnowledgeBase>("/api/knowledge", { page: 1, limit: 100 }),
+    api.list<Integration>("/api/integrations", { page: 1, limit: 100 }),
   ]);
   return {
     skills: skills.items,
     tools: tools.items,
     mcpServers: mcp.items,
     knowledge: knowledge.items,
+    llmIntegrations: integrations.items.filter((i) => i.type === "llm"),
   };
 }
 
@@ -109,7 +113,7 @@ export default function AgentDetailPage() {
       const result = await fetchBackpackOptions();
       setOptions(result);
     } catch {
-      setOptions({ skills: [], tools: [], mcpServers: [], knowledge: [] });
+      setOptions({ skills: [], tools: [], mcpServers: [], knowledge: [], llmIntegrations: [] });
     }
   }, []);
 
@@ -319,7 +323,7 @@ export default function AgentDetailPage() {
             ? ({ ...agent, ...chatConfig } as Agent)
             : agent
         }
-        options={options ?? { skills: [], tools: [], mcpServers: [], knowledge: [] }}
+        options={options ?? { skills: [], tools: [], mcpServers: [], knowledge: [], llmIntegrations: [] }}
         onSave={handleSave}
         saving={saving}
         chatPath={`/api/agents/${agent.id}/chat`}

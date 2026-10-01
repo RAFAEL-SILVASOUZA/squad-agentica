@@ -4,10 +4,11 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { GitConnections } from "./git-connections";
+import { LlmConnections } from "./llm-connections";
 
-const tabs = [{ id: "github", label: "GitHub" }, { id: "azure", label: "Azure DevOps" }, { id: "outras", label: "Outras" }] as const;
+const tabs = [{ id: "github", label: "GitHub" }, { id: "azure", label: "Azure DevOps" }, { id: "llm", label: "LLM" }, { id: "outras", label: "Outras" }] as const;
 type Tab = typeof tabs[number]["id"];
-function validTab(value: string | null): Tab { return value === "azure" || value === "outras" ? value : "github"; }
+function validTab(value: string | null): Tab { return value === "azure" || value === "llm" || value === "outras" ? value : "github"; }
 
 export function IntegrationsView() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export function IntegrationsView() {
           A integração com Rivvn está disponível apenas para clientes com contrato ativo.
           Entre em contato com o comercial para habilitar.
         </p>
-      </Card> : <GitConnections key={active} provider={active} />}
+      </Card> : active === "llm" ? <LlmConnections /> : <GitConnections key={active} provider={active} />}
     </div>
   </div>;
 }
