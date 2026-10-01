@@ -119,6 +119,32 @@ a {
   outline-offset: 2px;
 }
 
+/* Scrollbar fina global (adendo 7.5): 8px, trilho transparente, polegar com
+   var(--border) que clareia no hover, cantos arredondados, nos dois temas.
+   scrollbar-width/scrollbar-color para Firefox; ::-webkit-scrollbar para
+   Chromium e Safari. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--border) 55%, white);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Animações (design system §1.6) */
 @keyframes toast-in {
   from {

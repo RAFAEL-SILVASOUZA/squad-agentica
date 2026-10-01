@@ -18,6 +18,8 @@ export { DataTable } from "./data-table";
 export type { DataTableProps, DataTableColumn, DataTableFilter, DataTableRowMenuItem } from "./data-table";
 export { Modal } from "./modal";
 export type { ModalProps } from "./modal";
+export { Popover, RowMenu } from "./popover";
+export type { PopoverProps, RowMenuProps, RowMenuItem } from "./popover";
 export { Drawer } from "./drawer";
 export type { DrawerProps } from "./drawer";
 export { Tabs } from "./tabs";

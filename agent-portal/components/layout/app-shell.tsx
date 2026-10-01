@@ -66,7 +66,7 @@ export function AppShell({
         display: "grid",
         gridTemplateColumns: sidebarOpen && !isMobile ? "240px 1fr" : "1fr",
         gridTemplateRows: "56px 1fr",
-        height: "100vh",
+        height: "100dvh",
         overflow: "hidden",
       }}
     >
@@ -118,6 +118,7 @@ export function AppShell({
       <main
         style={{
           overflowY: "auto",
+          scrollbarGutter: "stable",
           padding: isMobile ? "16px 16px 72px" : "24px",
           position: "relative",
         }}

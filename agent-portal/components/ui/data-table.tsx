@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { MoreVertical, Search, X } from "lucide-react";
+import { Search } from "lucide-react";
+import { RowMenu } from "./popover";
 
 /**
  * DataTable (design system §2.9, Task 10).
@@ -97,7 +98,6 @@ export function DataTable<T>({
   }, [filterValues]);
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortDir, setSortDir] = React.useState<SortDir>(null);
-  const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
   const [isMobile, setIsMobile] = React.useState(false);
 
   React.useEffect(() => {
@@ -107,14 +107,6 @@ export function DataTable<T>({
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, []);
-
-  // Fecha menu ao clicar fora.
-  React.useEffect(() => {
-    if (!openMenuId) return;
-    const handler = () => setOpenMenuId(null);
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, [openMenuId]);
 
   const filtered = React.useMemo(() => {
     let result = rows;
@@ -173,7 +165,6 @@ export function DataTable<T>({
   };
 
   const handleMenuAction = (row: T, action: string) => {
-    setOpenMenuId(null);
     onRowMenu?.(row, action);
   };
 
@@ -261,68 +252,11 @@ export function DataTable<T>({
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   {rowActions && rowActions(row)}
                   {onRowMenu && rowMenuItems && (
-                    <div style={{ position: "relative" }}>
-                      <button
-                        type="button"
-                        aria-label="Ações"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenMenuId(openMenuId === rowKey(row) ? null : rowKey(row));
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "var(--text-muted)",
-                          padding: "4px",
-                          display: "flex",
-                          alignItems: "center",
-                        }}
-                      >
-                        <MoreVertical size={16} aria-hidden="true" />
-                      </button>
-                      {openMenuId === rowKey(row) && (
-                        <div
-                          role="menu"
-                          style={{
-                            position: "absolute",
-                            right: 0,
-                            top: "100%",
-                            background: "var(--bg-elevated)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius-sm)",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                            zIndex: 10,
-                            minWidth: "140px",
-                          }}
-                        >
-                          {rowMenuItems.map((item) => (
-                            <button
-                              key={item.action}
-                              type="button"
-                              role="menuitem"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMenuAction(row, item.action);
-                              }}
-                              style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "8px 12px",
-                                fontSize: "12px",
-                                textAlign: "left",
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: item.danger ? "var(--error)" : "var(--text)",
-                              }}
-                            >
-                              {item.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <RowMenu
+                      items={rowMenuItems}
+                      onAction={(action) => handleMenuAction(row, action)}
+                      iconSize={16}
+                    />
                   )}
                 </div>
               </div>
@@ -471,68 +405,11 @@ export function DataTable<T>({
                       <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
                         {rowActions && rowActions(row)}
                         {onRowMenu && rowMenuItems && (
-                          <div style={{ position: "relative", display: "inline-block" }}>
-                            <button
-                              type="button"
-                              aria-label="Ações"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuId(openMenuId === rowKey(row) ? null : rowKey(row));
-                              }}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: "var(--text-muted)",
-                                padding: "4px",
-                                display: "flex",
-                                alignItems: "center",
-                              }}
-                            >
-                              <MoreVertical size={14} aria-hidden="true" />
-                            </button>
-                            {openMenuId === rowKey(row) && (
-                              <div
-                                role="menu"
-                                style={{
-                                  position: "absolute",
-                                  right: 0,
-                                  top: "100%",
-                                  background: "var(--bg-elevated)",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: "var(--radius-sm)",
-                                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                                  zIndex: 10,
-                                  minWidth: "140px",
-                                }}
-                              >
-                                {rowMenuItems.map((item) => (
-                                  <button
-                                    key={item.action}
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleMenuAction(row, item.action);
-                                    }}
-                                    style={{
-                                      display: "block",
-                                      width: "100%",
-                                      padding: "8px 12px",
-                                      fontSize: "12px",
-                                      textAlign: "left",
-                                      background: "none",
-                                      border: "none",
-                                      cursor: "pointer",
-                                      color: item.danger ? "var(--error)" : "var(--text)",
-                                    }}
-                                  >
-                                    {item.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <RowMenu
+                            items={rowMenuItems}
+                            onAction={(action) => handleMenuAction(row, action)}
+                            iconSize={14}
+                          />
                         )}
                       </div>
                     </td>
