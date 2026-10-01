@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import type { Pipeline } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { Popover } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/toast";
 
 /**
@@ -20,6 +21,11 @@ import { useToast } from "@/components/ui/toast";
  * (toast de sucesso e navegação/refetch ficam por conta de quem usa o menu,
  * já que variam entre o editor e a lista). Erros são mostrados aqui via toast.
  */
+export interface PipelineActionsMenuExtraItem {
+  label: string;
+  action: string;
+}
+
 export interface PipelineActionsMenuProps {
   pipelineId: string;
   pipelineName: string;
@@ -27,6 +33,13 @@ export interface PipelineActionsMenuProps {
   label?: string;
   onDuplicated: (id: string) => void;
   onDeleted: () => void;
+  /**
+   * Ações extras renderizadas no topo do menu (ex.: "Abrir"/"Monitor" na lista
+   * de pipelines). Opcional: o cabeçalho do editor não passa e mostra só
+   * Duplicar/Excluir. Mantém um único menu ⋮ por linha (spec: "menu ⋮ por linha").
+   */
+  extraItems?: PipelineActionsMenuExtraItem[];
+  onExtraAction?: (action: string) => void;
 }
 
 export function PipelineActionsMenu({
@@ -35,6 +48,8 @@ export function PipelineActionsMenu({
   label = "Mais ações",
   onDuplicated,
   onDeleted,
+  extraItems,
+  onExtraAction,
 }: PipelineActionsMenuProps) {
   const { addToast } = useToast();
 
@@ -43,7 +58,6 @@ export function PipelineActionsMenu({
   const [deleting, setDeleting] = React.useState(false);
   const [duplicating, setDuplicating] = React.useState(false);
 
-  const menuRef = React.useRef<HTMLDivElement>(null);
   const menuButtonRef = React.useRef<HTMLButtonElement>(null);
 
   async function handleDelete() {
@@ -73,112 +87,106 @@ export function PipelineActionsMenu({
     }
   }
 
-  // Esc/clique fora fecham o menu.
-  React.useEffect(() => {
-    if (!menuOpen) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        menuButtonRef.current?.focus();
-      }
-    }
-    function onClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    }
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onClickOutside);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onClickOutside);
-    };
-  }, [menuOpen]);
+
 
   return (
-    // Para de propagar cliques: em contextos onde o menu vive dentro de um
-    // container clicável (ex.: o card da lista, que navega ao ser clicado),
-    // abrir/usar o menu não deve também disparar a ação do container.
-    <div ref={menuRef} style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
+    <div onClick={(e) => e.stopPropagation()}>
       <button
         ref={menuButtonRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-label={label}
-        onClick={() => setMenuOpen((v) => !v)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuOpen((v) => !v);
+        }}
         style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 32,
-          height: 32,
-          background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-sm)",
-          color: "var(--text)",
+          background: "none",
+          border: "none",
           cursor: "pointer",
+          color: "var(--text-muted)",
+          padding: "4px",
+          display: "flex",
+          alignItems: "center",
         }}
       >
         <MoreVertical size={14} aria-hidden="true" />
       </button>
-      {menuOpen && (
-        <div
-          role="menu"
-          aria-label={label}
+      <Popover open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={menuButtonRef} align="end" minWidth={180}>
+        {extraItems?.map((item) => (
+          <button
+            key={item.action}
+            role="menuitem"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+              onExtraAction?.(item.action);
+            }}
+            style={{
+              display: "block",
+              width: "100%",
+              padding: "8px 12px",
+              fontSize: "12px",
+              textAlign: "left",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+        <button
+          role="menuitem"
+          type="button"
+          disabled={duplicating}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleDuplicate();
+          }}
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            right: 0,
-            zIndex: 20,
-            minWidth: 160,
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            boxShadow: "var(--shadow-lg)",
-            padding: 4,
-            display: "flex",
-            flexDirection: "column",
+            display: "block",
+            width: "100%",
+            padding: "8px 12px",
+            fontSize: "12px",
+            textAlign: "left",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text)",
+            whiteSpace: "nowrap",
           }}
         >
-          <button
-            role="menuitem"
-            type="button"
-            disabled={duplicating}
-            onClick={() => void handleDuplicate()}
-            style={{
-              textAlign: "left",
-              padding: "8px 10px",
-              background: "none",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: "var(--text)",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Duplicar pipeline
-          </button>
-          <button
-            role="menuitem"
-            type="button"
-            onClick={() => {
-              setMenuOpen(false);
-              setConfirmDelete(true);
-            }}
-            style={{
-              textAlign: "left",
-              padding: "8px 10px",
-              background: "none",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: "var(--error)",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Excluir pipeline
-          </button>
-        </div>
-      )}
+          Duplicar pipeline
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(false);
+            setConfirmDelete(true);
+          }}
+          style={{
+            display: "block",
+            width: "100%",
+            padding: "8px 12px",
+            fontSize: "12px",
+            textAlign: "left",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--error)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Excluir pipeline
+        </button>
+      </Popover>
 
       <Modal
         open={confirmDelete}

@@ -327,17 +327,17 @@ export default function PipelinesPage() {
               if (run) params.set("run", run);
               router.replace(`/pipelines${params.toString() ? `?${params}` : ""}`);
             }}
-            onRowMenu={handleRowMenu}
-            rowMenuItems={[
-              { label: "Abrir", action: "open" },
-              { label: "Monitor", action: "monitor" },
-            ]}
             rowActions={(p) => (
               <PipelineActionsMenu
                 pipelineId={p.id}
                 pipelineName={p.name}
                 onDuplicated={handlePipelineDuplicated}
                 onDeleted={handlePipelineDeleted}
+                extraItems={[
+                  { label: "Abrir", action: "open" },
+                  { label: "Monitor", action: "monitor" },
+                ]}
+                onExtraAction={(action) => handleRowMenu(p, action)}
               />
             )}
             emptyMessage="Nenhuma pipeline encontrada"

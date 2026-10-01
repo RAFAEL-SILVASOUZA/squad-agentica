@@ -242,8 +242,9 @@ describe("PipelinesPage", () => {
     await screen.findByText("Feature Dev Pipeline");
 
     // Uma linha por pipeline; a primeira é a pipe-1.
-    const actionsButtons = screen.getAllByRole("button", { name: "Ações" });
+    const actionsButtons = screen.getAllByRole("button", { name: "Mais ações" });
     fireEvent.click(actionsButtons[0]);
+    await waitFor(() => screen.getByRole("menuitem", { name: "Abrir" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Abrir" }));
 
     expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1");
@@ -254,8 +255,9 @@ describe("PipelinesPage", () => {
     render(<PipelinesPage />);
     await screen.findByText("Feature Dev Pipeline");
 
-    const actionsButtons = screen.getAllByRole("button", { name: "Ações" });
+    const actionsButtons = screen.getAllByRole("button", { name: "Mais ações" });
     fireEvent.click(actionsButtons[0]);
+    await waitFor(() => screen.getByRole("menuitem", { name: "Monitor" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Monitor" }));
 
     expect(mockPush).toHaveBeenCalledWith("/pipelines/pipe-1/run");

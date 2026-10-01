@@ -54,7 +54,7 @@ export function Modal({
   title,
   children,
   footer,
-  size = "md",
+  size = "lg",
   busy = false,
 }: ModalProps) {
   const panelRef = React.useRef<HTMLDivElement>(null);
