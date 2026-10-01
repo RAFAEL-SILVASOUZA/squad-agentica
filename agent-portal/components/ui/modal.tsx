@@ -6,10 +6,10 @@ import { X } from "lucide-react";
 
 /**
  * Modal (design system §2.10, adendo 7).
- * Overlay + painel centralizado. ESC fecha (exceto durante operação em
- * andamento), clique fora fecha, foco preso no painel e devolvido ao elemento
- * que abriu. Abaixo de 768px vira folha em tela cheia (100dvh) com cabeçalho
- * e rodapé fixos e rolagem só no miolo.
+ * Overlay + painel centralizado. Fecha apenas pelos botões (X no cabeçalho e
+ * botões do rodapé); ESC e clique no backdrop NÃO fecham. Foco preso no painel
+ * e devolvido ao elemento que abriu. Abaixo de 768px vira folha em tela cheia
+ * (100dvh) com cabeçalho e rodapé fixos e rolagem só no miolo.
  */
 export interface ModalProps {
   open: boolean;
@@ -25,7 +25,7 @@ export interface ModalProps {
    */
   size?: "sm" | "md" | "lg" | "xl";
   /**
-   * Operação em andamento (ex.: salvando). Impede que ESC feche a modal
+   * Operação em andamento (ex.: salvando). Desabilita os botões do rodapé
    * enquanto a requisição roda.
    */
   busy?: boolean;
@@ -65,11 +65,13 @@ export function Modal({
   // do campo em edição (só o 1º caractere ficava). Foco só ao abrir.
   const onCloseRef = React.useRef(onClose);
   onCloseRef.current = onClose;
-  const busyRef = React.useRef(busy);
-  busyRef.current = busy;
 
   // Folha em tela cheia abaixo de 768px (adendo 7.1).
+  // `matchMedia` não existe no jsdom; sem o guard o throw impede que o
+  // useEffect de ESC/clique-fora seja registrado (bug: modal só fechava
+  // pelos botões).
   React.useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
     const mql = window.matchMedia("(max-width: 767px)");
     setIsMobile(mql.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
@@ -84,42 +86,34 @@ export function Modal({
     const previouslyFocused = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
 
+    // Foco preso: Tab/Shift+Tab circulam dentro do painel.
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        // ESC não fecha durante uma operação em andamento (adendo 7.1).
-        if (busyRef.current) return;
-        onCloseRef.current();
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+      if (focusable.length === 0) {
+        e.preventDefault();
+        panel.focus();
         return;
       }
 
-      // Foco preso: Tab/Shift+Tab circulam dentro do painel.
-      if (e.key === "Tab") {
-        const panel = panelRef.current;
-        if (!panel) return;
-        const focusable = Array.from(
-          panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
 
-        if (focusable.length === 0) {
+      if (e.shiftKey) {
+        if (active === first || active === panel || !panel.contains(active)) {
           e.preventDefault();
-          panel.focus();
-          return;
+          last.focus();
         }
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        const active = document.activeElement as HTMLElement | null;
-
-        if (e.shiftKey) {
-          if (active === first || active === panel || !panel.contains(active)) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (active === last || !panel.contains(active)) {
-            e.preventDefault();
-            first.focus();
-          }
+      } else {
+        if (active === last || !panel.contains(active)) {
+          e.preventDefault();
+          first.focus();
         }
       }
     };
@@ -177,9 +171,6 @@ export function Modal({
         justifyContent: isMobile ? "stretch" : "center",
         background: "rgba(0,0,0,0.5)",
         animation: "toast-in 0.2s ease",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div ref={panelRef} tabIndex={-1} style={panelStyle}>

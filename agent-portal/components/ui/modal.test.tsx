@@ -34,7 +34,7 @@ describe("Modal", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("calls onClose when ESC is pressed", () => {
+  it("does NOT close on ESC (only buttons close)", () => {
     const onClose = vi.fn();
     render(
       <Modal open onClose={onClose} title="Test Modal">
@@ -42,10 +42,10 @@ describe("Modal", () => {
       </Modal>
     );
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("calls onClose when clicking overlay", () => {
+  it("does NOT close on backdrop click (only buttons close)", () => {
     const onClose = vi.fn();
     render(
       <Modal open onClose={onClose} title="Test Modal">
@@ -54,6 +54,17 @@ describe("Modal", () => {
     );
     const overlay = screen.getByRole("dialog");
     fireEvent.click(overlay);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes via the X button in the header", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} title="Test Modal">
+        <p>Content</p>
+      </Modal>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
     expect(onClose).toHaveBeenCalled();
   });
 
