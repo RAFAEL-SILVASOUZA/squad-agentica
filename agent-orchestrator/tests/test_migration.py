@@ -47,6 +47,8 @@ EXPECTED_TABLES = {
     "artifacts",
     "integrations",
     "rivvn_connections",
+    "mcp_oauth_clients",
+    "mcp_oauth_tokens",
     "alembic_version",
 }
 

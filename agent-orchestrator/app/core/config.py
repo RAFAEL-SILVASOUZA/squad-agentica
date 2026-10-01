@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # --- MCP ---
+    # Servidor MCP embutido (OAuth 2.1): base URL pública do portal e
+    # expirações dos tokens de acesso/refresh emitidos no fluxo de login.
+    mcp_base_url: str = "http://localhost"
+    mcp_token_expire_hours: int = 1
+    mcp_refresh_expire_days: int = 30
+
     # --- Worker ---
     worker_token: str = "change-me-in-prod"
     worker_url: str = "http://nginx:8081/execute"

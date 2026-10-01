@@ -938,3 +938,99 @@ class AgentDraft(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<AgentDraft {self.id}>"
+
+
+# ---------------------------------------------------------------------------
+# MCPOAuthClient (servidor MCP embutido: cliente OAuth 2.1 registrado).
+# Um cliente OAuth por app que consome o servidor MCP do portal. client_id é
+# a chave pública (String) exposta no fluxo de autorização; id (UUID) é a PK
+# interna. redirect_uris/grant_types em JSONB (listas) para flexibilidade.
+# ---------------------------------------------------------------------------
+
+
+class MCPOAuthClient(Base):
+    __tablename__ = "mcp_oauth_clients"
+    __table_args__ = (UniqueConstraint("client_id", name="uq_mcp_oauth_clients_client_id"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    # Chave pública do cliente (exposta no fluxo de autorização).
+    client_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    client_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Listas JSON-serializáveis (ex.: ["http://localhost/callback"],
+    # ["authorization_code", "refresh_token"]).
+    redirect_uris: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    grant_types: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = _created_at()
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<MCPOAuthClient {self.client_id}>"
+
+
+# ---------------------------------------------------------------------------
+# MCPOAuthToken (servidor MCP embutido: token OAuth 2.1 emitido).
+# jti (String) é a PK: identificador único do token (JWT id). user_id e
+# client_id referenciam o usuário e o cliente que geraram o token. scope
+# padrão "mcp:full". revoked_at marca revogação sem excluir o registro.
+# ---------------------------------------------------------------------------
+
+
+class MCPOAuthToken(Base):
+    __tablename__ = "mcp_oauth_tokens"
+
+    # jti: identificador único do token (JWT id), PK String.
+    jti: Mapped[str] = mapped_column(String(200), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(
+        String(200),
+        ForeignKey("mcp_oauth_clients.client_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    scope: Mapped[str] = mapped_column(String(200), nullable=False, default="mcp:full")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Revogação: NULL = ativo; preenchido = revogado (mantém o histórico).
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _created_at()
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<MCPOAuthToken {self.jti} user={self.user_id}>"
+
+
+# ---------------------------------------------------------------------------
+# MCPOAuthCode (servidor MCP embutido: código de autorização OAuth 2.1).
+# Código de uso único gerado no consent e trocado por tokens no token
+# endpoint. Expira em 5 minutos. used_at marca o uso (single-use).
+# ---------------------------------------------------------------------------
+
+
+class MCPOAuthCode(Base):
+    __tablename__ = "mcp_oauth_codes"
+
+    # code: identificador único do código de autorização (uuid4 string), PK.
+    code: Mapped[str] = mapped_column(String(200), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(
+        String(200),
+        ForeignKey("mcp_oauth_clients.client_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    redirect_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    code_challenge: Mapped[str] = mapped_column(String(500), nullable=False)
+    code_challenge_method: Mapped[str] = mapped_column(String(10), nullable=False, default="S256")
+    scope: Mapped[str] = mapped_column(String(200), nullable=False, default="mcp:full")
+    resource: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = _created_at()
+    # Uso único: NULL = não usado; preenchido = já trocado por tokens.
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<MCPOAuthCode {self.code} user={self.user_id}>"
