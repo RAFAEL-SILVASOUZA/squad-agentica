@@ -46,7 +46,7 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 class IntegrationCreateRequest(BaseModel):
     """Body para POST /api/integrations."""
 
-    type: str = Field(..., pattern="^(github|azure|gitlab|llm)$")
+    type: str = Field(..., pattern="^(github|azure|gitlab|llm|embedding)$")
     name: str = Field(..., min_length=1, max_length=200)
     config: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="active", pattern="^(active|disabled)$")
@@ -133,10 +133,27 @@ class LLMTestResponse(BaseModel):
     error: str | None = None
 
 
+class EmbeddingTestResponse(BaseModel):
+    """Response para POST /api/integrations/embedding/test (adendo 9)."""
+
+    ok: bool
+    latencyMs: int | None = None
+    model: str | None = None
+    embeddingDim: int | None = None
+    error: str | None = None
+
+
 class IntegrationTestRequest(BaseModel):
     """Body para POST /api/integrations/test (testar sem salvar)."""
 
     type: str = Field(..., pattern="^(github|azure|llm)$")
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmbeddingTestRequest(BaseModel):
+    """Body para POST /api/integrations/embedding/test (adendo 9)."""
+
+    type: str = Field(..., pattern="^embedding$")
     config: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -187,12 +204,32 @@ def _mask_config(config: dict[str, Any] | None) -> dict[str, Any]:
         if k == "api_key_encrypted":
             # A chave LLM nunca sai da API (adendo 8): o cliente vê só o hint.
             continue
+        if k == "embedding" and isinstance(v, dict):
+            # O embedding pode ter a própria chave (adendo 9): mascara como a
+            # chave da conexão (a criptografada nunca sai da API).
+            masked[k] = _mask_embedding(v)
+            continue
         lower = k.lower()
         if any(s in lower for s in _SECRET_KEYS):
             masked[k] = _MASKED
         else:
             masked[k] = v
     return masked
+
+
+def _mask_embedding(emb: dict[str, Any]) -> dict[str, Any]:
+    """Mascara a chave de API aninhada no objeto de embedding (adendo 9)."""
+    out: dict[str, Any] = {}
+    for ek, ev in emb.items():
+        if ek == "api_key_encrypted":
+            if ev:
+                out["api_key"] = _MASKED
+            continue
+        if ek == "api_key":
+            out[ek] = _MASKED
+            continue
+        out[ek] = ev
+    return out
 
 
 def _seal_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -216,6 +253,17 @@ def _seal_config(config: dict[str, Any]) -> dict[str, Any]:
             sealed["api_key_hint"] = _key_hint(str(api_key))
         except SecretError as exc:
             raise AppError(500, "internal error", "secret_key_missing") from exc
+    # O embedding pode ter a própria chave (adendo 9): criptografa
+    # embedding.api_key -> embedding.api_key_encrypted.
+    emb = sealed.get("embedding")
+    if isinstance(emb, dict):
+        emb_api_key = emb.pop("api_key", None)
+        if emb_api_key and emb_api_key != _MASKED:
+            try:
+                emb["api_key_encrypted"] = encrypt_secret(str(emb_api_key))
+            except SecretError as exc:
+                raise AppError(500, "internal error", "secret_key_missing") from exc
+        sealed["embedding"] = emb
     return sealed
 
 
@@ -386,14 +434,67 @@ async def test_llm_unsaved(
         return LLMTestResponse(ok=False, error=_safe_llm_error(exc))
 
 
+@router.post("/embedding/test", response_model=EmbeddingTestResponse, response_model_exclude_none=True)
+async def test_embedding_unsaved(
+    body: EmbeddingTestRequest,
+    user: Annotated[User, Depends(get_current_user)],
+) -> EmbeddingTestResponse:
+    """Testa uma conexão de embedding sem salvar (adendo 9).
+
+    Config flat: ``{provider_kind, base_url, api_key, model, dim, query_prefix,
+    document_prefix}``. Faz uma chamada mínima de embedding e devolve a
+    dimensão. Não grava nada no banco. A chave de API nunca é ecoada nem
+    logada. ``provider_kind=mock`` devolve sucesso sem chamada real.
+    """
+    import time
+
+    from app.core.embeddings import OpenAIEmbedder
+    from app.core.llm import LOCAL_API_KEY_PLACEHOLDER
+    from app.core.llm_providers import PROVIDER_KINDS
+
+    config = body.config or {}
+    kind = str(config.get("provider_kind") or "mock")
+    if kind not in PROVIDER_KINDS:
+        return EmbeddingTestResponse(ok=False, error="provider_kind inválido")
+    if kind == "mock":
+        return EmbeddingTestResponse(
+            ok=True, model=str(config.get("model") or None), embeddingDim=int(config.get("dim") or 1536)
+        )
+
+    model = str(config.get("model") or "")
+    if not model:
+        return EmbeddingTestResponse(ok=False, error="informe o modelo de embedding")
+
+    start = time.monotonic()
+    try:
+        embedder = OpenAIEmbedder(
+            api_key=str(config.get("api_key") or "") or LOCAL_API_KEY_PLACEHOLDER,
+            dim=int(config.get("dim") or 1536),
+            base_url=str(config.get("base_url") or ""),
+            model=model,
+            query_prefix=str(config.get("query_prefix") or ""),
+            document_prefix=str(config.get("document_prefix") or ""),
+        )
+        vec = embedder.embed("ping")
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return EmbeddingTestResponse(
+            ok=True, latencyMs=latency_ms, model=model, embeddingDim=len(vec)
+        )
+    except Exception as exc:  # noqa: BLE001 — nunca expor a chave no erro
+        return EmbeddingTestResponse(ok=False, error=_safe_llm_error(exc))
+
+
 async def _test_embedding(config: dict[str, Any], model: str) -> int | None:
     """Chamada mínima de embedding para o teste (adendo 8). Devolve a dimensão."""
     from app.core.embeddings import OpenAIEmbedder
     from app.core.llm import LOCAL_API_KEY_PLACEHOLDER
 
-    base_url = str(config.get("base_url") or "")
-    api_key = str(config.get("api_key") or "")
     embedding = config.get("embedding") or {}
+    # O embedding pode ter a própria base_url/api_key (ex.: servidor de
+    # embeddings em outra porta que o de chat); quando ausentes, herda os da
+    # conexão LLM.
+    base_url = str(embedding.get("base_url") or config.get("base_url") or "")
+    api_key = str(embedding.get("api_key") or config.get("api_key") or "")
     dim = int(embedding.get("dim") or 1536)
     embedder = OpenAIEmbedder(
         api_key=api_key or LOCAL_API_KEY_PLACEHOLDER,
@@ -505,6 +606,18 @@ async def update_integration(
             # ``token``/``api_key`` mascarados (``***``) significam "manter o
             # valor atual" (o real vive em ``*_encrypted``, nunca exposto).
             if k in ("token", "api_key") and v == _MASKED:
+                continue
+            if k == "embedding" and isinstance(v, dict):
+                # O embedding é um objeto: preserva a api_key_encrypted
+                # existente quando o novo não traz api_key (ou traz mascarada).
+                existing_emb = existing_config.get("embedding") or {}
+                emb_merged = dict(existing_emb)
+                emb_merged.update(v)
+                if "api_key" not in v or v.get("api_key") == _MASKED:
+                    emb_merged.pop("api_key", None)
+                    if existing_emb.get("api_key_encrypted"):
+                        emb_merged["api_key_encrypted"] = existing_emb["api_key_encrypted"]
+                merged[k] = emb_merged
                 continue
             if v == _MASKED and k in existing_config:
                 merged[k] = existing_config[k]

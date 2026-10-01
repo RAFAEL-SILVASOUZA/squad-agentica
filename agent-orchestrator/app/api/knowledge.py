@@ -40,6 +40,7 @@ from app.db.models import (
     KnowledgeMessage,
     User,
 )
+from app.core.ai_resolution import resolve_embedder
 from app.db.session import get_db
 from app.knowledge.embedder import get_embedder
 from app.knowledge.extract import UnreadableDocumentError, extract_text
@@ -181,8 +182,9 @@ def _get_storage() -> KnowledgeStorage:
     return get_knowledge_storage()
 
 
-def _get_rag_service() -> RagService:
-    return RagService(embedder=get_embedder())
+async def _get_rag_service(owner_id: uuid.UUID) -> RagService:
+    # Adendo 9: embedder resolvido pela integração do usuário (sem env).
+    return RagService(embedder=get_embedder(await resolve_embedder(owner_id)))
 
 
 def _kb_to_response(kb: KnowledgeBase) -> KnowledgeBaseResponse:
@@ -473,7 +475,7 @@ async def upload_document(
         ) from None
 
     storage = _get_storage()
-    rag = _get_rag_service()
+    rag = await _get_rag_service(user.id)
 
     # Cria o documento (status processing) e salva o arquivo original.
     doc = KnowledgeDocument(
@@ -921,7 +923,7 @@ async def query_knowledge(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> QueryResponse:
-    rag = _get_rag_service()
+    rag = await _get_rag_service(user.id)
     kb_ids = [uuid.UUID(k) for k in body.knowledgeBaseIds]
     chunks = await rag.query(
         db, user.id, body.query, kb_ids, top_k=body.topK

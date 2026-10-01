@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest_asyncio
 from fastapi import FastAPI
@@ -32,7 +33,7 @@ class Rag:
         )
         return self.results
 
-    async def ingest_document(self, db, kb, doc, content):
+    async def ingest_document(self, db, kb, doc, content, **_kwargs):
         doc.status = "ready"
         doc.chunk_count = 1
         kb.document_count += 1
@@ -71,12 +72,23 @@ async def chat_client(session, user, monkeypatch):
     rag = Rag()
     llm = RecordingLLM()
     import app.api.knowledge as knowledge_module
-    import app.core.llm as llm_module
+    import app.knowledge.chat as chat_module
     import app.knowledge.rag as rag_module
 
     monkeypatch.setattr(knowledge_module, "_get_storage", Storage)
-    monkeypatch.setattr(rag_module, "get_rag_service", lambda: rag)
-    monkeypatch.setattr(llm_module, "get_llm_client", lambda: llm)
+    # Adendo 9: o upload usa _get_rag_service (resolve embedder pela
+    # integração); nos testes, injeta o Rag mock.
+    monkeypatch.setattr(
+        knowledge_module, "_get_rag_service", AsyncMock(return_value=rag)
+    )
+    # Adendo 9: o chat resolve LLM/embedder pelas integrações; nos testes,
+    # injeta o Rag mock (via get_rag_service) e o LLM mock (via resolver).
+    monkeypatch.setattr(rag_module, "get_rag_service", lambda *a, **k: rag)
+    # Adendo 9: resolve_llm_client/resolve_embedder são async; AsyncMock gera
+    # a coroutine esperada pelo await. O embedder resolvido é ignorado pelo Rag
+    # mock (get_rag_service patchado); None faz get_embedder cair no mock.
+    monkeypatch.setattr(chat_module, "resolve_llm_client", AsyncMock(return_value=llm))
+    monkeypatch.setattr(chat_module, "resolve_embedder", AsyncMock(return_value=None))
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(router, prefix="/api")
@@ -209,8 +221,11 @@ class TestKnowledgeChat:
                 json={"content": "Encontre o conteúdo."},
             )
             assert response.status_code == 200
-        assert rag.queries[-2][3:] == ("agent-context-1", None)
-        assert rag.queries[-1][3:] == (None, "pipeline-context-1")
+        # Cada pergunta gera 2 chamadas: a primária (threshold da KB) e o
+        # fallback sem filtro (threshold_override=-1.0) quando a primeira vem
+        # vazia. Verifica a chamada primária de cada pergunta.
+        assert rag.queries[0][3:] == ("agent-context-1", None)
+        assert rag.queries[2][3:] == (None, "pipeline-context-1")
 
     async def test_llm_failure_returns_502_and_keeps_question(self, chat_client):
         client, rag, llm, _owner, _app = chat_client

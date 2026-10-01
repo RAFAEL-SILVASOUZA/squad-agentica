@@ -37,7 +37,10 @@ class TestGetEmbedder:
         assert embedder.embed("same text") == embedder.embed("same text")
 
     def test_embed_batch_matches_embed(self):
-        embedder = get_embedder()
+        # Contrato do wrapper: com um embedder sem prefixos de tarefa (mock),
+        # embed_batch(t) == embed(t). Usa um mock injetado porque o provider
+        # real (nomic) aplica prefixos diferentes a query/document.
+        embedder = get_embedder(embedder=MockEmbedder(dim=16))
         texts = ["a", "b", "c"]
         batch = embedder.embed_batch(texts)
         assert len(batch) == 3

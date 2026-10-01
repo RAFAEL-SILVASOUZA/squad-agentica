@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest_asyncio
 from fastapi import FastAPI
@@ -175,9 +175,9 @@ async def test_app(
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    # Patch the LLM client.
+    # Patch the LLM client (adendo 9: resolve pela integração; mock aqui).
     mock_llm = MockChatLLM()
-    with patch("app.api.agent_chat.get_llm_client", return_value=mock_llm), \
+    with patch("app.api.agent_chat.resolve_llm_client", new=AsyncMock(return_value=mock_llm)), \
          patch("app.api.agents._get_service") as mock_service_fn, \
          patch("app.api.agent_chat.AgentService") as mock_service_cls:
         service = AgentService(storage=mock_storage)
@@ -345,7 +345,7 @@ class TestConfirmation:
             '{"text": "Ok.", "config": {"type": "custom", '
             '"actions": ["follow", "finalize"]}}'
         )
-        with patch("app.api.agent_chat.get_llm_client", return_value=unnamed_llm):
+        with patch("app.api.agent_chat.resolve_llm_client", new=AsyncMock(return_value=unnamed_llm)):
             resp = await client.post(
                 "/api/agents/chat",
                 json={"message": "Quero um agente"},
@@ -382,7 +382,7 @@ class TestConfirmation:
         """Draft com contrato inválido é rejeitado na confirmação."""
         # Create a draft with invalid contract via a special LLM.
         invalid_llm = MockInvalidContractLLM()
-        with patch("app.api.agent_chat.get_llm_client", return_value=invalid_llm):
+        with patch("app.api.agent_chat.resolve_llm_client", new=AsyncMock(return_value=invalid_llm)):
             resp = await client.post(
                 "/api/agents/chat",
                 json={"message": "Quero um agente"},
@@ -462,7 +462,7 @@ class TestEditChat:
         app2.dependency_overrides[get_current_user] = override_get_current_user2
 
         mock_llm = MockChatLLM()
-        with patch("app.api.agent_chat.get_llm_client", return_value=mock_llm), \
+        with patch("app.api.agent_chat.resolve_llm_client", new=AsyncMock(return_value=mock_llm)), \
              patch("app.api.agent_chat.AgentService") as mock_service_cls:
             service = AgentService(storage=MockAgentStorage())
             mock_service_cls.return_value = service
@@ -553,7 +553,7 @@ class TestValidationInStream:
     async def test_invalid_contract_in_stream(self, client: AsyncClient):
         """LLM retorna contrato inválido: validation_error event no stream."""
         invalid_llm = MockInvalidContractLLM()
-        with patch("app.api.agent_chat.get_llm_client", return_value=invalid_llm):
+        with patch("app.api.agent_chat.resolve_llm_client", new=AsyncMock(return_value=invalid_llm)):
             response = await client.post(
                 "/api/agents/chat",
                 json={"message": "Quero um agente"},

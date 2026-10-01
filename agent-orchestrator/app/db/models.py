@@ -187,6 +187,7 @@ IntegrationType = Enum(
     "azure",
     "gitlab",
     "llm",
+    "embedding",
     native_enum=False,
     length=16,
 )

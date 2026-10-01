@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import llm
+from app.core.ai_resolution import resolve_embedder, resolve_llm_client
 from app.core.errors import AppError
 from app.db.models import (
     KnowledgeBase,
@@ -18,6 +18,7 @@ from app.db.models import (
     KnowledgeMessage,
 )
 from app.knowledge import rag as rag_module
+from app.knowledge.embedder import get_embedder
 
 NO_RESULTS = "Não encontrei nada sobre isso nesta base."
 SYSTEM_PROMPT = (
@@ -39,8 +40,10 @@ async def answer(
     e a pergunta permanece salva.
     """
     conversation_id = conversation.id
+    # Adendo 9: embedder resolvido pela integração do usuário (sem env).
+    rag = rag_module.get_rag_service(get_embedder(await resolve_embedder(owner_id)))
     try:
-        results = await rag_module.get_rag_service().query(
+        results = await rag.query(
             db,
             owner_id,
             question,
@@ -49,6 +52,21 @@ async def answer(
             agent_id=kb.scope_ref if kb.scope == "agent" else None,
             pipeline_id=kb.scope_ref if kb.scope == "pipeline" else None,
         )
+        # Se o threshold da KB filtrou tudo, refaz sem filtro (top-k) e deixa a
+        # LLM decidir se há material pra responder (o SYSTEM_PROMPT já instrui
+        # a dizer "não encontrei" quando não há). Evita o dead-end de "não
+        # encontrei nada" quando o threshold ficou restritivo pro embedding real.
+        if not results:
+            results = await rag.query(
+                db,
+                owner_id,
+                question,
+                [kb.id],
+                top_k=kb.top_k,
+                agent_id=kb.scope_ref if kb.scope == "agent" else None,
+                pipeline_id=kb.scope_ref if kb.scope == "pipeline" else None,
+                threshold_override=-1.0,
+            )
     except Exception as exc:
         await db.rollback()
         raise AppError(
@@ -105,7 +123,9 @@ async def answer(
         # Encerra a transação de leitura antes da chamada lenta ao LLM.
         await db.commit()
         try:
-            content = await llm.get_llm_client().chat(messages)
+            # Adendo 9: LLM resolvido pela integração do usuário (sem env).
+            llm_client = await resolve_llm_client(owner_id)
+            content = await llm_client.chat(messages)
         except Exception as exc:
             raise AppError(
                 502, "bad gateway", "llm_error",

@@ -38,8 +38,9 @@ from app.agents.chat.proposal import (
 from app.agents.service import AgentService
 from app.auth.dependencies import get_current_user
 from app.auth.rate_limiter import RateLimiter
+from app.core.ai_resolution import resolve_llm_client
 from app.core.errors import AppError
-from app.core.llm import LLMClient, get_llm_client
+from app.core.llm import LLMClient
 from app.db.models import User
 from app.db.session import get_db
 
@@ -134,8 +135,8 @@ async def agent_chat_create(
     draft.add_message("user", body.message)
     llm_messages = [{"role": "system", "content": system_prompt}] + draft.to_llm_messages()
 
-    # Call the LLM.
-    llm: LLMClient = get_llm_client()
+    # Call the LLM (adendo 9: resolve pela integração do usuário, sem env).
+    llm: LLMClient = await resolve_llm_client(user.id)
     raw_response = await llm.chat(llm_messages)
 
     # Parse the response.
@@ -255,8 +256,8 @@ async def agent_chat_edit(
     draft.add_message("user", body.message)
     llm_messages = [{"role": "system", "content": system_prompt}] + draft.to_llm_messages()
 
-    # Call the LLM.
-    llm: LLMClient = get_llm_client()
+    # Call the LLM (adendo 9: resolve pela integração do usuário, sem env).
+    llm: LLMClient = await resolve_llm_client(user.id, agent_llm=agent.llm)
     raw_response = await llm.chat(llm_messages)
 
     # Parse the response.

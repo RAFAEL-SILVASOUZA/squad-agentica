@@ -177,7 +177,11 @@ class TestKnowledgeDuplicateDocuments:
                     await db.commit()
                 raise RuntimeError("embedding failed")
 
-        monkeypatch.setattr(knowledge_module, "_get_rag_service", FailingRag)
+        # Adendo 9: _get_rag_service é async e recebe owner_id; factory mock.
+        async def _failing_factory(*_a, **_k):
+            return FailingRag()
+
+        monkeypatch.setattr(knowledge_module, "_get_rag_service", _failing_factory)
         response = await client.post(
             f"/api/knowledge/{kb_id}/upload?replace={original_id}",
             files={"file": ("replacement.txt", b"replace me", "text/plain")},
@@ -207,7 +211,11 @@ class TestKnowledgeDuplicateDocuments:
                     await db.commit()
                 raise RuntimeError("embedding unavailable")
 
-        monkeypatch.setattr(knowledge_module, "_get_rag_service", FailingRag)
+        # Adendo 9: _get_rag_service é async e recebe owner_id; factory mock.
+        async def _failing_factory(*_a, **_k):
+            return FailingRag()
+
+        monkeypatch.setattr(knowledge_module, "_get_rag_service", _failing_factory)
         failed = await client.post(
             f"/api/knowledge/{kb_id}/upload",
             files={"file": ("retry.txt", b"retry after failure", "text/plain")},

@@ -104,6 +104,7 @@ class RagService:
         top_k: int | None = None,
         agent_id: str | None = None,
         pipeline_id: str | None = None,
+        threshold_override: float | None = None,
     ) -> list[dict[str, Any]]:
         """Busca semântica por cosine distance com filtro por escopo e owner.
 
@@ -115,6 +116,8 @@ class RagService:
             top_k: nº de chunks (default: ``top_k`` da primeira KB).
             agent_id: contexto de agente (para escopo ``agent``).
             pipeline_id: contexto de pipeline (para escopo ``pipeline``).
+            threshold_override: se definido, substitui o ``similarity_threshold``
+                da KB (ex.: ``-1.0`` para não filtrar e devolver sempre o top-k).
 
         Returns:
             Lista de chunks ordenados por similaridade decrescente.
@@ -168,11 +171,17 @@ class RagService:
         )
         rows = (await db.execute(stmt)).all()
 
-        # Filtra por similarityThreshold (score = 1 - distance).
+        # Filtra por similarityThreshold (score = 1 - distance). O override
+        # (ex.: -1.0) desliga o filtro e devolve sempre o top-k, deixando a
+        # decisão de "há material pra responder?" com a LLM.
         out: list[dict[str, Any]] = []
         for chunk, dist in rows:
             score = 1.0 - float(dist)
-            threshold = kbs[chunk.knowledge_base_id].similarity_threshold
+            threshold = (
+                threshold_override
+                if threshold_override is not None
+                else kbs[chunk.knowledge_base_id].similarity_threshold
+            )
             if score < threshold:
                 continue
             out.append(
