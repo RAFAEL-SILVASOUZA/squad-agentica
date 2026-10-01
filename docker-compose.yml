@@ -125,6 +125,10 @@ services:
       GIT_DIRS_DIR: /var/lib/agent-portal/gitdirs
       MCP_CAPABILITY_SECRET: ${MCP_CAPABILITY_SECRET:-}
       PORTAL_BASE_URL: ${PORTAL_BASE_URL:-http://localhost}
+      # MCP Server (spec 2026-10-01-mcp-server-design.md)
+      MCP_BASE_URL: ${MCP_BASE_URL:-http://localhost}
+      MCP_TOKEN_EXPIRE_HOURS: ${MCP_TOKEN_EXPIRE_HOURS:-1}
+      MCP_REFRESH_EXPIRE_DAYS: ${MCP_REFRESH_EXPIRE_DAYS:-30}
     volumes:
       - ./agent-orchestrator:/app:ro
       - project-workspaces:/workspaces
