@@ -7,6 +7,7 @@ import {
   Trash2,
   RefreshCw,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -91,6 +92,29 @@ const EMPTY_FORM: SkillFormState = {
   requiredIntegrations: "",
 };
 
+// Contrato do endpoint POST /api/skills/generate (geração interativa por IA).
+interface GenQuestion {
+  text: string;
+  options: string[];
+}
+
+interface GenSkill {
+  name: string;
+  description: string;
+  category: string;
+  template: string;
+  variables: string[];
+  inputs: Port[];
+  outputs: Port[];
+  required_integrations: string[];
+}
+
+interface GenResponse {
+  status: "questions" | "done";
+  question: GenQuestion | null;
+  skill: GenSkill | null;
+}
+
 export function SkillsLibrary() {
   const { addToast } = useToast();
   const [skills, setSkills] = React.useState<SkillItem[]>([]);
@@ -107,6 +131,12 @@ export function SkillsLibrary() {
   const [deleting, setDeleting] = React.useState<SkillItem | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
+
+  // Geração de skill por IA (interativa): botão "AI" → mini-modais de pergunta.
+  const [genBusy, setGenBusy] = React.useState(false);
+  const [genQuestion, setGenQuestion] = React.useState<GenQuestion | null>(null);
+  const [genAnswers, setGenAnswers] = React.useState<{ question: string; answer: string }[]>([]);
+  const [genAnswer, setGenAnswer] = React.useState("");
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -202,6 +232,72 @@ export function SkillsLibrary() {
       setSaving(false);
     }
   }, [form, editingId, addToast, load]);
+
+  const applyGenerateResponse = React.useCallback(
+    (res: GenResponse) => {
+      if (res.status === "questions" && res.question) {
+        setGenQuestion(res.question);
+        setGenAnswer("");
+      } else if (res.status === "done" && res.skill) {
+        const s = res.skill;
+        setForm((f) => ({
+          ...f,
+          name: s.name,
+          description: s.description || f.description,
+          category: s.category,
+          template: s.template,
+          variables: (s.variables ?? []).join(", "),
+          inputs: s.inputs ?? [],
+          outputs: s.outputs ?? [],
+          requiredIntegrations: (s.required_integrations ?? []).join(", "),
+        }));
+        setGenQuestion(null);
+        setGenAnswers([]);
+        setPreviewTab("edit");
+        addToast("success", "Skill gerada pela IA. Revise antes de salvar.");
+      }
+    },
+    [addToast]
+  );
+
+  const startGenerate = React.useCallback(async () => {
+    setGenAnswers([]);
+    setGenAnswer("");
+    setGenBusy(true);
+    try {
+      const res = await api.post<GenResponse>("/api/skills/generate", {
+        description: form.description.trim(),
+        answers: [],
+      });
+      applyGenerateResponse(res);
+    } catch (e) {
+      addToast("error", e instanceof Error ? e.message : "Falha ao gerar skill com IA");
+    } finally {
+      setGenBusy(false);
+    }
+  }, [form.description, applyGenerateResponse, addToast]);
+
+  const answerQuestion = React.useCallback(
+    async (answer: string) => {
+      if (!genQuestion) return;
+      const nextAnswers = [...genAnswers, { question: genQuestion.text, answer }];
+      setGenAnswers(nextAnswers);
+      setGenAnswer("");
+      setGenBusy(true);
+      try {
+        const res = await api.post<GenResponse>("/api/skills/generate", {
+          description: form.description.trim(),
+          answers: nextAnswers,
+        });
+        applyGenerateResponse(res);
+      } catch (e) {
+        addToast("error", e instanceof Error ? e.message : "Falha ao gerar skill com IA");
+      } finally {
+        setGenBusy(false);
+      }
+    },
+    [genQuestion, genAnswers, form.description, applyGenerateResponse, addToast]
+  );
 
   const handleDelete = React.useCallback(async () => {
     if (!deleting) return;
@@ -376,19 +472,45 @@ export function SkillsLibrary() {
           />
 
           <div>
-            <Tabs
-              tabs={[
-                { id: "edit", label: "Editar" },
-                { id: "preview", label: "Pré-visualizar" },
-              ]}
-              activeTab={previewTab}
-              onTabChange={setPreviewTab}
-            />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "8px",
+              }}
+            >
+              <label
+                htmlFor="skill-template"
+                style={{ fontSize: "13px", fontWeight: 500, color: "var(--text)" }}
+              >
+                Template (markdown)
+              </label>
+              <Button
+                size="sm"
+                onClick={() => void startGenerate()}
+                loading={genBusy}
+                disabled={saving}
+                title="Gera a skill inteira a partir da descrição"
+              >
+                <Sparkles size={13} aria-hidden="true" />
+                Gerar com IA
+              </Button>
+            </div>
+            <div style={{ paddingTop: "8px" }}>
+              <Tabs
+                tabs={[
+                  { id: "edit", label: "Editar" },
+                  { id: "preview", label: "Pré-visualizar" },
+                ]}
+                activeTab={previewTab}
+                onTabChange={setPreviewTab}
+              />
+            </div>
             <div style={{ paddingTop: "12px" }}>
               {previewTab === "edit" ? (
                 <Textarea
                   id="skill-template"
-                  label="Template (markdown)"
                   value={form.template}
                   onChange={(e) => setForm((f) => ({ ...f, template: e.target.value }))}
                   rows={10}
@@ -457,6 +579,70 @@ export function SkillsLibrary() {
               {formError}
             </p>
           )}
+        </div>
+      </Modal>
+
+      {/* Mini-modal de pergunta da IA (empilha sobre o modal de criação) */}
+      <Modal
+        open={genQuestion !== null}
+        onClose={() => setGenQuestion(null)}
+        title="A IA tem uma pergunta"
+        size="sm"
+        busy={genBusy}
+        footer={
+          <>
+            <Button size="sm" onClick={() => setGenQuestion(null)} disabled={genBusy}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => void answerQuestion(genAnswer.trim())}
+              loading={genBusy}
+              disabled={!genAnswer.trim()}
+            >
+              Responder
+            </Button>
+          </>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <p style={{ fontSize: "13px", color: "var(--text)", margin: 0 }}>
+            {genQuestion?.text}
+          </p>
+          {genQuestion && genQuestion.options.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {genQuestion.options.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setGenAnswer(opt)}
+                  disabled={genBusy}
+                  style={{
+                    textAlign: "left",
+                    padding: "8px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    border: `1px solid ${genAnswer === opt ? "var(--accent)" : "var(--border)"}`,
+                    background: genAnswer === opt ? "var(--accent-subtle)" : "var(--bg-elevated)",
+                    color: "var(--text)",
+                    fontSize: "13px",
+                    cursor: genBusy ? "default" : "pointer",
+                    transition: "border-color var(--transition), background var(--transition)",
+                  }}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          )}
+          <Input
+            id="gen-answer"
+            label={genQuestion && genQuestion.options.length > 0 ? "Ou escreva sua resposta" : "Sua resposta"}
+            value={genAnswer}
+            onChange={(e) => setGenAnswer(e.target.value)}
+            placeholder="Digite aqui…"
+            disabled={genBusy}
+          />
         </div>
       </Modal>
 

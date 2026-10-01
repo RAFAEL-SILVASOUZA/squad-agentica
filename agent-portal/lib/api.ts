@@ -39,6 +39,8 @@ const CODE_MESSAGES: Record<string, string> = {
   ingest_error: "Falha ao processar o documento.",
   duplicate_document: "Este arquivo já existe nesta base.",
   llm_error: "O modelo não conseguiu responder agora. Tente de novo.",
+  llm_not_configured: "Nenhuma integração de LLM configurada. Cadastre uma na aba LLM de Integrações.",
+  llm_invalid_response: "A IA devolveu uma resposta inválida. Tente de novo.",
   storage_error: "Falha no armazenamento de arquivos. Tente novamente.",
   github_error: "Falha ao consultar o GitHub.",
   run_not_completed: "A execução ainda não terminou; publique depois que ela concluir.",
