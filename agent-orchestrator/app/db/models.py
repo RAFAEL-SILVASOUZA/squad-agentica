@@ -186,6 +186,7 @@ IntegrationType = Enum(
     "github",
     "azure",
     "gitlab",
+    "llm",
     native_enum=False,
     length=16,
 )
@@ -283,6 +284,9 @@ class User(Base):
         nullable=False,
         index=True,
     )
+    # Preferências do usuário (adendo 8): default_llm_integration_id e
+    # default_embedding_integration_id (UUIDs de integrações tipo "llm").
+    preferences: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = _created_at()
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -320,6 +324,10 @@ class Agent(Base):
     outputs: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     actions: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     model: Mapped[str] = mapped_column(String(100), nullable=False, default="gpt-4o")
+    # Adendo 8: escolha opcional de LLM por agente: {integrationId, model}.
+    # O campo ``model`` continua válido; sem ``llm`` vale o padrão do usuário
+    # e, depois, o padrão do ambiente (precedência: agente > usuário > env).
+    llm: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     max_iterations: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     timeout: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
     shell_access: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

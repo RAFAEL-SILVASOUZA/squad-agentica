@@ -178,3 +178,30 @@ def get_llm_client() -> LLMClient:
     if provider == "openai" and (api_key or base_url):
         return OpenAILLMClient(api_key, base_url, os.environ.get("LLM_MODEL", ""))
     return MockLLMClient()
+
+
+def build_llm_client_from_block(block: dict[str, Any] | None) -> LLMClient | None:
+    """Monta o client a partir do bloco ``llm`` do body (adendo 8).
+
+    Formato: ``{kind, baseUrl, apiKey, model}``. ``kind``: ``openai`` |
+    ``openai_compatible`` | ``mock``. O bloco e resolvido pelo orchestrator
+    (precedencia agente > usuario > ambiente) e vive apenas no body HTTP.
+
+    Devolve ``None`` quando o bloco e ausente ou incompleto (provider real
+    sem ``baseUrl`` e sem ``apiKey``), para o caller cair no fallback de
+    ambiente (``get_llm_client``). Nunca loga a chave.
+    """
+    if not isinstance(block, dict):
+        return None
+    kind = str(block.get("kind") or "").strip()
+    base_url = str(block.get("baseUrl") or "").strip()
+    api_key = str(block.get("apiKey") or "").strip()
+    model = str(block.get("model") or "").strip()
+
+    if kind == "mock":
+        return MockLLMClient()
+    if kind in ("openai", "openai_compatible"):
+        if not (base_url or api_key):
+            return None
+        return OpenAILLMClient(api_key, base_url, model)
+    return None

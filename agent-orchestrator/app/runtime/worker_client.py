@@ -79,6 +79,7 @@ class HttpWorkerClient:
         mcp_servers: list[dict[str, Any]] | None = None,
         run_id: str | None = None,
         mcp_capability: str | None = None,
+        llm: dict[str, Any] | None = None,
     ) -> WorkerResponse:
         """Execute an agent on the worker. NEVER raises (ADR-001).
 
@@ -95,6 +96,9 @@ class HttpWorkerClient:
                 (``[{serverId, tools}]``); None mantém as do artefato.
             run_id / mcp_capability: capacidade MCP do run (``runId`` e
                 ``mcpCapability``), repassada pelo worker à ponte MCP.
+            llm: Bloco ``{kind, baseUrl, apiKey, model}`` (adendo 8) com a
+                conexão de LLM resolvida; None = o worker usa o ambiente.
+                Nunca é persistido em run, checkpoint, log nem evento WS.
 
         Returns:
             WorkerResponse with status="completed" on success, or
@@ -118,6 +122,10 @@ class HttpWorkerClient:
             body["runId"] = run_id
         if mcp_capability:
             body["mcpCapability"] = mcp_capability
+        # Adendo 8: bloco llm (conexão resolvida). O worker o usa no lugar do
+        # ambiente. Nunca logado nem persistido (a chave fica só no corpo).
+        if llm is not None:
+            body["llm"] = llm
         headers = {
             "X-Worker-Token": self._worker_token,
             "Content-Type": "application/json",

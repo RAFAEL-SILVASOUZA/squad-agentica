@@ -508,6 +508,7 @@ def _pipeline_to_compiler(
             ],
             actions=snap_raw.get("actions", []),
             model=snap_raw.get("model", ""),
+            llm=snap_raw.get("llm"),
             max_iterations=snap_raw.get("maxIterations", snap_raw.get("max_iterations", 10)),
             timeout=snap_raw.get("timeout", 60),
             shell_access=snap_raw.get("shellAccess", snap_raw.get("shell_access", False)),
@@ -522,7 +523,7 @@ def _pipeline_to_compiler(
             )
         )
 
-    compiler_edges = []
+        compiler_edges = []
     for e in edges:
         condition = (
             EdgeCondition(
@@ -900,6 +901,7 @@ async def validate_pipeline_endpoint(
             ],
             actions=raw.get("actions", []),
             model=raw.get("model", ""),
+            llm=raw.get("llm"),
             max_iterations=raw.get("maxIterations", raw.get("max_iterations", 10)),
             timeout=raw.get("timeout", 60),
             shell_access=raw.get("shellAccess", raw.get("shell_access", False)),

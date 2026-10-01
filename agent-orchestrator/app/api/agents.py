@@ -18,13 +18,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.service import AgentService
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.core.errors import AppError
-from app.db.models import User
+from app.db.models import Integration, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -52,6 +53,8 @@ class AgentCreateRequest(BaseModel):
     outputs: list[dict[str, Any]] = Field(default_factory=list)
     actions: list[str] = Field(default_factory=list)
     model: str = Field(default="gpt-4o", max_length=100)
+    # Adendo 8: escolha opcional de LLM por agente: {integrationId, model}.
+    llm: dict[str, Any] | None = None
     maxIterations: int = Field(default=10, ge=1, le=1000)
     timeout: int = Field(default=300, ge=1, le=3600)
     shellAccess: bool = Field(default=False)
@@ -74,6 +77,7 @@ class AgentUpdateRequest(BaseModel):
     outputs: list[dict[str, Any]] | None = None
     actions: list[str] | None = None
     model: str | None = Field(default=None, max_length=100)
+    llm: dict[str, Any] | None = None
     maxIterations: int | None = Field(default=None, ge=1, le=1000)
     timeout: int | None = Field(default=None, ge=1, le=3600)
     shellAccess: bool | None = None
@@ -98,7 +102,9 @@ class AgentResponse(BaseModel):
     outputs: list[dict[str, Any]]
     actions: list[str]
     model: str
-    # Modelo realmente usado: LLM_MODEL do servidor sobrepoe o do agente.
+    # Adendo 8: escolha opcional de LLM por agente: {integrationId, model}.
+    llm: dict[str, Any] | None = None
+    # Modelo realmente usado (adendo 8): agente > padrão do usuário > ambiente.
     effectiveModel: str
     maxIterations: int
     timeout: int
@@ -121,8 +127,71 @@ class AgentListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _agent_to_response(agent) -> AgentResponse:
+async def _resolve_effective_model(
+    db: AsyncSession, agent, user: User | None
+) -> str:
+    """Modelo efetivo do agente (adendo 8): agente > padrão do usuário > ambiente.
+
+    1) escolha no agente (``agent.llm``): o ``model`` escolhido, ou o modelo
+       padrão da integração referenciada (adendo 8.4: se o modelo some da
+       conexão, usa o padrão da conexão);
+    2) padrão do usuário (``user.preferences['default_llm_integration_id']``);
+    3) padrão do ambiente (``LLM_MODEL``) ou o ``model`` do agente.
+
+    O ``LLM_MODEL`` do ambiente deixa de sobrescrever um modelo escolhido
+    explicitamente: só vale quando não há escolha (regra 3).
+    """
+    # 1) escolha no agente.
+    if agent.llm:
+        integration_id = str(agent.llm.get("integrationId") or "")
+        chosen_model = str(agent.llm.get("model") or "")
+        if integration_id:
+            cfg = await _llm_integration_config(db, agent.owner_id, integration_id)
+            if cfg is not None:
+                if chosen_model:
+                    return chosen_model
+                return str(cfg.get("default_model") or agent.model)
+        if chosen_model:
+            return chosen_model
+
+    # 2) padrão do usuário.
+    if user is not None and user.preferences:
+        default_id = str(user.preferences.get("default_llm_integration_id") or "")
+        if default_id:
+            cfg = await _llm_integration_config(db, agent.owner_id, default_id)
+            if cfg is not None:
+                return str(cfg.get("default_model") or agent.model)
+
+    # 3) padrão do ambiente (LLM_MODEL) ou o model do agente.
+    return settings.llm_model or agent.model
+
+
+async def _llm_integration_config(
+    db: AsyncSession, owner_id: uuid.UUID, integration_id: str
+) -> dict[str, Any] | None:
+    """Config de uma integração LLM do dono (ou None se não existir)."""
+    try:
+        iid = uuid.UUID(integration_id)
+    except (ValueError, TypeError):
+        return None
+    result = await db.execute(
+        select(Integration).where(
+            Integration.id == iid,
+            Integration.owner_id == owner_id,
+            Integration.type == "llm",
+        )
+    )
+    integration = result.scalar_one_or_none()
+    if integration is None:
+        return None
+    return integration.config or {}
+
+
+async def _agent_to_response(
+    agent, db: AsyncSession, user: User | None = None
+) -> AgentResponse:
     """Converte o model SQLAlchemy para o schema de resposta (camelCase)."""
+    effective_model = await _resolve_effective_model(db, agent, user)
     return AgentResponse(
         id=str(agent.id),
         ownerId=str(agent.owner_id),
@@ -140,7 +209,8 @@ def _agent_to_response(agent) -> AgentResponse:
         outputs=agent.outputs,
         actions=agent.actions,
         model=agent.model,
-        effectiveModel=settings.llm_model or agent.model,
+        llm=agent.llm,
+        effectiveModel=effective_model,
         maxIterations=agent.max_iterations,
         timeout=agent.timeout,
         shellAccess=agent.shell_access,
@@ -169,7 +239,7 @@ async def create_agent(
     service = _get_service()
     data = body.model_dump(exclude_none=True)
     agent = await service.create_agent(db, user.id, data)
-    return _agent_to_response(agent)
+    return await _agent_to_response(agent, db, user)
 
 
 @router.get("", response_model=AgentListResponse)
@@ -184,7 +254,7 @@ async def list_agents(
     service = _get_service()
     agents, total = await service.list_agents(db, user.id, page=page, limit=limit, type_filter=type)
     return AgentListResponse(
-        items=[_agent_to_response(a) for a in agents],
+        items=[await _agent_to_response(a, db, user) for a in agents],
         total=total,
         page=page,
         limit=limit,
@@ -200,7 +270,7 @@ async def get_agent(
     """Obtém um agente por id."""
     service = _get_service()
     agent = await service.get_agent(db, user.id, agent_id)
-    return _agent_to_response(agent)
+    return await _agent_to_response(agent, db, user)
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)
@@ -217,7 +287,7 @@ async def update_agent(
         details = {"errors": [{"rule": "body", "message": "At least one field must be provided"}]}
         raise AppError(400, "validation error", "empty_update", details)
     agent = await service.update_agent(db, user.id, agent_id, data)
-    return _agent_to_response(agent)
+    return await _agent_to_response(agent, db, user)
 
 
 @router.delete("/{agent_id}", status_code=204)

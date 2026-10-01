@@ -71,16 +71,16 @@ class IntegrationRegistry:
     ) -> Integration:
         """Cria uma integração.
 
-        Tipos suportados: "github", "azure" (Azure DevOps).
+        Tipos suportados: "github", "azure" (Azure DevOps), "llm" (adendo 8).
         """
         # Validação de tipo
-        valid_types = {"github", "azure"}
+        valid_types = {"github", "azure", "llm"}
         if type not in valid_types:
             raise AppError(
                 400,
                 "validation error",
                 "invalid_integration_type",
-                {"message": f"Tipo '{type}' não suportado. Use 'github' ou 'azure'."},
+                {"message": f"Tipo '{type}' não suportado. Use 'github', 'azure' ou 'llm'."},
             )
 
         # Validação de config para azure

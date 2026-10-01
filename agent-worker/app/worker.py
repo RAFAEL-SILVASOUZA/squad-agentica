@@ -28,7 +28,7 @@ from typing import Any
 import httpx
 import yaml
 
-from app.core.llm import LLMClient, get_llm_client
+from app.core.llm import LLMClient, build_llm_client_from_block, get_llm_client
 from app.minio_client import AgentArtifactClient, get_artifact_client
 from app.workspace_guard import (
     WorkspaceEscapeError,
@@ -863,6 +863,7 @@ async def execute_agent(
     timeout: int = 60,
     *,
     llm: LLMClient | None = None,
+    llm_block: dict[str, Any] | None = None,
     artifact_client: AgentArtifactClient | None = None,
     workspace_dir: str | None = None,
     owner_id: str | None = None,
@@ -877,7 +878,9 @@ async def execute_agent(
         node_id: ID do no na pipeline (para logs).
         inputs: dados de entrada.
         timeout: timeout em segundos para a execucao.
-        llm: client LLM (injetavel para testes).
+        llm: client LLM (injetavel para testes); tem precedencia sobre o bloco.
+        llm_block: bloco ``{kind, baseUrl, apiKey, model}`` do body (adendo 8);
+            quando presente e completo, monta o client no lugar do ambiente.
         artifact_client: client de artefatos (injetavel para testes).
         workspace_dir: workspace do run (spec 14.1); confina as ferramentas de
             arquivo/shell. Se None, usa o default de ``current_workspace``.
@@ -914,7 +917,13 @@ async def execute_agent(
         user_message = _build_user_message(inputs)
 
         # 5. Loop de LLM com tool calls.
-        llm_client = llm or get_llm_client()
+        #    Client: injetado > bloco do body (adendo 8) > ambiente (fallback).
+        #    O bloco e resolvido pelo orchestrator (agente > usuario > ambiente);
+        #    ausente/incompleto -> None -> cai no ambiente. Nunca loga a chave.
+        llm_client = llm or build_llm_client_from_block(llm_block) or get_llm_client()
+        #    Modelo: bloco > snapshot > padrao do client (env LLM_MODEL).
+        block_model = str((llm_block or {}).get("model") or "").strip()
+        run_model = block_model or snapshot.model
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -951,7 +960,7 @@ async def execute_agent(
                 response = await asyncio.wait_for(
                     llm_client.chat(
                         messages,
-                        model=snapshot.model,
+                        model=run_model,
                         tools=tools_for_llm if tools_for_llm else None,
                     ),
                     timeout=remaining,

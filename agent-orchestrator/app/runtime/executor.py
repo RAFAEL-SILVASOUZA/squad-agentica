@@ -49,7 +49,9 @@ from app.compiler.graph_builder import (
     compile_pipeline,
 )
 from app.compiler.state import initial_state
-from app.db.models import Agent, Artifact, Checkpoint
+from app.core.llm_providers import build_worker_llm_block, connection_from_config
+from app.core.secrets import SecretError, decrypt_secret
+from app.db.models import Agent, Artifact, Checkpoint, Integration, User
 from app.db.session import async_session_factory
 from app.mcp.registry import resolve_mcp_refs
 from app.runtime.checkpoint import make_thread_id
@@ -256,6 +258,76 @@ async def resolve_pipeline_mcp(
         )
         return {}
     return resolved
+
+
+async def resolve_node_llm_block(
+    owner_id: str, agent_llm: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Resolve o bloco ``llm`` de um nó (adendo 8). Nunca levanta (ADR-001).
+
+    Precedência (adendo 8.2): 1) escolha no agente (``agent_llm``);
+    2) padrão do usuário (``users.preferences['default_llm_integration_id']``);
+    3) padrão do ambiente (o worker usa o próprio ambiente como fallback).
+
+    Devolve o bloco ``{kind, baseUrl, apiKey, model}`` quando há escolha
+    explícita (agente ou padrão do usuário) que mapeia para uma integração
+    ``llm`` existente do dono. Sem escolha explícita, devolve ``None`` e o
+    worker cai no ambiente (fallback). O bloco NUNCA é persistido em run,
+    checkpoint, log nem evento WebSocket.
+    """
+    try:
+        owner_uuid = uuid.UUID(str(owner_id))
+    except (ValueError, TypeError):
+        return None
+    try:
+        async with async_session_factory() as session:
+            user = (
+                await session.execute(select(User).where(User.id == owner_uuid))
+            ).scalar_one_or_none()
+            prefs = user.preferences if user is not None else None
+
+            result = await session.execute(
+                select(Integration).where(
+                    Integration.owner_id == owner_uuid,
+                    Integration.type == "llm",
+                )
+            )
+            llm_configs: dict[str, dict[str, Any]] = {}
+            for integ in result.scalars().all():
+                cfg = dict(integ.config or {})
+                if cfg.get("api_key_encrypted"):
+                    try:
+                        cfg["api_key"] = decrypt_secret(cfg["api_key_encrypted"])
+                    except SecretError:
+                        cfg["api_key"] = ""
+                llm_configs[str(integ.id)] = cfg
+
+            # 1) escolha no agente.
+            if agent_llm:
+                integration_id = str(agent_llm.get("integrationId") or "")
+                cfg = llm_configs.get(integration_id)
+                if cfg is not None:
+                    conn = connection_from_config(cfg)
+                    chosen_model = str(agent_llm.get("model") or "")
+                    if chosen_model:
+                        conn.model = chosen_model
+                    return build_worker_llm_block(conn)
+
+            # 2) padrão do usuário.
+            if prefs:
+                default_id = str(prefs.get("default_llm_integration_id") or "")
+                cfg = llm_configs.get(default_id)
+                if cfg is not None:
+                    return build_worker_llm_block(connection_from_config(cfg))
+
+            # 3) sem escolha explícita: o worker usa o ambiente (fallback).
+            return None
+    except Exception:  # noqa: BLE001 — o run segue com o fallback do ambiente
+        logger.warning(
+            "Falha ao resolver bloco llm do nó; usando fallback do ambiente",
+            exc_info=True,
+        )
+        return None
 
 
 def _artifact_type_for(port_name: str, value: Any) -> str:

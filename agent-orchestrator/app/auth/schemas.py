@@ -100,3 +100,34 @@ class UserResponse(BaseModel):
     id: str
     email: str
     name: str
+
+
+class PreferencesRequest(BaseModel):
+    """PUT /api/auth/preferences body (adendo 8).
+
+    Campo ausente = não mexer; ``null`` = limpar a escolha. O endpoint usa
+    ``model_fields_set`` para distinguir os dois casos (o default de ``None``
+    sozinho não permite).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    default_llm_integration_id: str | None = Field(
+        default=None, alias="defaultLlmIntegrationId"
+    )
+    default_embedding_integration_id: str | None = Field(
+        default=None, alias="defaultEmbeddingIntegrationId"
+    )
+
+
+class PreferencesResponse(BaseModel):
+    """GET/PUT /api/auth/preferences response (adendo 8)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    default_llm_integration_id: str | None = Field(
+        default=None, alias="defaultLlmIntegrationId"
+    )
+    default_embedding_integration_id: str | None = Field(
+        default=None, alias="defaultEmbeddingIntegrationId"
+    )

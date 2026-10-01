@@ -58,6 +58,7 @@ def agent_to_yaml(agent: Agent, mcp_servers: list[dict[str, Any]] | None = None)
         "outputs": agent.outputs,
         "actions": agent.actions,
         "model": agent.model,
+        "llm": agent.llm,
         "maxIterations": agent.max_iterations,
         "timeout": agent.timeout,
         "shellAccess": agent.shell_access,
@@ -133,6 +134,7 @@ class AgentService:
             outputs=outputs,
             actions=actions,
             model=data.get("model", "gpt-4o"),
+            llm=data.get("llm"),
             max_iterations=data.get("maxIterations", 10),
             timeout=data.get("timeout", 300),
             shell_access=data.get("shellAccess", False),
@@ -261,6 +263,8 @@ class AgentService:
             agent.actions = data["actions"]
         if "model" in data:
             agent.model = data["model"]
+        if "llm" in data:
+            agent.llm = data["llm"]
         if "maxIterations" in data:
             agent.max_iterations = data["maxIterations"]
         if "timeout" in data:

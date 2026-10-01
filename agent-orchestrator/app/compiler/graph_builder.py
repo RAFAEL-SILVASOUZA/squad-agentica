@@ -93,6 +93,7 @@ class WorkerClient(Protocol):
         mcp_servers: list[dict[str, Any]] | None = None,
         run_id: str | None = None,
         mcp_capability: str | None = None,
+        llm: dict[str, Any] | None = None,
     ) -> WorkerResponse:
         """Executa o agente no worker. Nunca levanta exceção (ADR-001).
 
@@ -102,6 +103,9 @@ class WorkerClient(Protocol):
         None = o worker usa as do artefato do agente.
         ``run_id``/``mcp_capability``: capacidade HMAC do run que o worker
         apenas repassa à ponte MCP (/internal/mcp) — revisão final I4.
+        ``llm``: bloco ``{kind, baseUrl, apiKey, model}`` (adendo 8) com a
+        conexão de LLM resolvida; None = o worker usa o ambiente (fallback).
+        Nunca é persistido em run, checkpoint, log nem evento WebSocket.
         """
         ...
 
@@ -145,6 +149,8 @@ class AgentSnapshot:
     outputs: list[PortDef] = field(default_factory=list)
     actions: list[str] = field(default_factory=list)
     model: str = ""
+    # Adendo 8: escolha opcional de LLM por agente: {integrationId, model}.
+    llm: dict[str, Any] | None = None
     max_iterations: int = 10
     timeout: int = 60
     shell_access: bool = False
@@ -242,6 +248,7 @@ def _parse_agent_snapshot(d: dict[str, Any]) -> AgentSnapshot:
         outputs=[_parse_port_def(p) for p in d.get("outputs", [])],
         actions=d.get("actions", []),
         model=d.get("model", ""),
+        llm=d.get("llm"),
         max_iterations=d.get("maxIterations", d.get("max_iterations", 10)),
         timeout=d.get("timeout", 60),
         shell_access=d.get("shellAccess", d.get("shell_access", False)),
@@ -382,6 +389,14 @@ def _make_agent_node(
                     run_id, state["owner_id"], state.get("workspace_dir") or None
                 ),
             }
+        # Adendo 8: bloco llm resolvido por nó (agente > usuário > ambiente).
+        # Nunca persistido em run/checkpoint/log/WS; None = o worker usa o
+        # ambiente (fallback). Import lazy: evita ciclo executor <-> graph_builder.
+        llm_block: dict[str, Any] | None = None
+        if state.get("owner_id"):
+            from app.runtime.executor import resolve_node_llm_block  # noqa: PLC0415
+
+            llm_block = await resolve_node_llm_block(state["owner_id"], agent.llm)
         try:
             resp = await worker_client.execute(
                 agent_id=agent.agent_id,
@@ -392,6 +407,7 @@ def _make_agent_node(
                 **({"owner_id": state["owner_id"]} if state.get("owner_id") else {}),
                 **mcp_kwargs,
                 **({"mcp_servers": mcp_servers} if mcp_servers is not None else {}),
+                **({"llm": llm_block} if llm_block is not None else {}),
             )
         except Exception as exc:  # noqa: BLE001 — rede de segurança
             logger.exception("worker_client.execute raised unexpectedly for node %s", node_id)

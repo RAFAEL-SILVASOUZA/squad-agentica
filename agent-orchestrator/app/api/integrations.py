@@ -46,7 +46,7 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 class IntegrationCreateRequest(BaseModel):
     """Body para POST /api/integrations."""
 
-    type: str = Field(..., pattern="^(github|azure|gitlab)$")
+    type: str = Field(..., pattern="^(github|azure|gitlab|llm)$")
     name: str = Field(..., min_length=1, max_length=200)
     config: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="active", pattern="^(active|disabled)$")
@@ -72,6 +72,7 @@ class IntegrationResponse(BaseModel):
     createdAt: str
     updatedAt: str
     tokenHint: str | None = None
+    apiKeyHint: str | None = None
     lastTestStatus: str | None = None
     lastTestedAt: str | None = None
     usageCount: int = 0
@@ -119,10 +120,23 @@ class GitTestResponse(BaseModel):
     error: str | None = None
 
 
+class LLMTestResponse(BaseModel):
+    """Response para POST /api/integrations/llm/test (adendo 8).
+
+    Não persiste nada. A chave de API nunca é ecoada nem logada.
+    """
+
+    ok: bool
+    latencyMs: int | None = None
+    model: str | None = None
+    embeddingDim: int | None = None
+    error: str | None = None
+
+
 class IntegrationTestRequest(BaseModel):
     """Body para POST /api/integrations/test (testar sem salvar)."""
 
-    type: str = Field(..., pattern="^(github|azure)$")
+    type: str = Field(..., pattern="^(github|azure|llm)$")
     config: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -170,6 +184,9 @@ def _mask_config(config: dict[str, Any] | None) -> dict[str, Any]:
             if v:
                 masked["token"] = _MASKED
             continue
+        if k == "api_key_encrypted":
+            # A chave LLM nunca sai da API (adendo 8): o cliente vê só o hint.
+            continue
         lower = k.lower()
         if any(s in lower for s in _SECRET_KEYS):
             masked[k] = _MASKED
@@ -179,7 +196,12 @@ def _mask_config(config: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _seal_config(config: dict[str, Any]) -> dict[str, Any]:
-    """Troca ``token`` em claro por ``token_encrypted`` (Fernet)."""
+    """Troca segredos em claro por suas versões criptografadas (Fernet).
+
+    - ``token`` (Git) -> ``token_encrypted``.
+    - ``api_key`` (LLM, adendo 8) -> ``api_key_encrypted`` + ``api_key_hint``
+      (últimos 4 caracteres). A chave em claro nunca fica no config salvo.
+    """
     sealed = dict(config)
     token = sealed.pop("token", None)
     if token and token != _MASKED:
@@ -187,7 +209,45 @@ def _seal_config(config: dict[str, Any]) -> dict[str, Any]:
             sealed["token_encrypted"] = encrypt_secret(str(token))
         except SecretError as exc:
             raise AppError(500, "internal error", "secret_key_missing") from exc
+    api_key = sealed.pop("api_key", None)
+    if api_key and api_key != _MASKED:
+        try:
+            sealed["api_key_encrypted"] = encrypt_secret(str(api_key))
+            sealed["api_key_hint"] = _key_hint(str(api_key))
+        except SecretError as exc:
+            raise AppError(500, "internal error", "secret_key_missing") from exc
     return sealed
+
+
+def _key_hint(api_key: str) -> str:
+    """Últimos 4 caracteres da chave de API, no formato '…a1b2' (adendo 8)."""
+    if len(api_key) < 4:
+        return "…"
+    return f"…{api_key[-4:]}"
+
+
+def get_integration_api_key(integration: Integration) -> str:
+    """Chave de API em claro de uma integração LLM (nunca devolver ao cliente)."""
+    cfg = integration.config or {}
+    if cfg.get("api_key_encrypted"):
+        try:
+            return decrypt_secret(cfg["api_key_encrypted"])
+        except SecretError as exc:
+            raise AppError(500, "internal error", "secret_key_missing") from exc
+    return str(cfg.get("api_key", ""))
+
+
+def _api_key_hint(config: dict[str, Any] | None) -> str | None:
+    """Últimos 4 caracteres da chave de API LLM (adendo 8)."""
+    cfg = config or {}
+    if cfg.get("api_key_hint"):
+        return str(cfg["api_key_hint"])
+    if cfg.get("api_key_encrypted"):
+        try:
+            return _key_hint(decrypt_secret(cfg["api_key_encrypted"]))
+        except SecretError:
+            return None
+    return None
 
 
 def get_integration_token(integration: Integration) -> str:
@@ -248,6 +308,7 @@ def _to_response(integration: Any, usage_count: int = 0) -> IntegrationResponse:
         createdAt=integration.created_at.isoformat() if integration.created_at else "",
         updatedAt=integration.updated_at.isoformat() if integration.updated_at else "",
         tokenHint=_token_hint(cfg),
+        apiKeyHint=_api_key_hint(cfg),
         lastTestStatus=cfg.get("last_test_status"),
         lastTestedAt=cfg.get("last_tested_at"),
         usageCount=usage_count,
@@ -272,6 +333,91 @@ async def test_integration_unsaved(
     except GitProviderError as e:
         return GitTestResponse(ok=False, error=e.message)
     return GitTestResponse(ok=True, repositories=len(repos))
+
+
+@router.post("/llm/test", response_model=LLMTestResponse, response_model_exclude_none=True)
+async def test_llm_unsaved(
+    body: IntegrationTestRequest,
+    user: Annotated[User, Depends(get_current_user)],
+) -> LLMTestResponse:
+    """Testa uma conexão LLM sem salvar (adendo 8).
+
+    Faz uma chamada mínima de chat e, se houver embeddings configurados, uma
+    de embedding. Não grava nada no banco. A chave de API nunca é ecoada nem
+    logada; erros são traduzidos sem expor a chave. ``provider_kind=mock``
+    devolve sucesso sem chamada real.
+    """
+    import time
+
+    from app.core.llm_providers import (
+        PROVIDER_KINDS,
+        build_llm_client,
+        connection_from_config,
+    )
+
+    config = body.config or {}
+    kind = str(config.get("provider_kind") or "mock")
+    if kind not in PROVIDER_KINDS:
+        return LLMTestResponse(ok=False, error="provider_kind inválido")
+
+    start = time.monotonic()
+    try:
+        connection = connection_from_config(config)
+        client = build_llm_client(connection)
+        model = str(config.get("model") or connection.model or "")
+        await client.chat(
+            [{"role": "user", "content": "ping"}], model=model or None
+        )
+        latency_ms = int((time.monotonic() - start) * 1000)
+
+        embedding_dim: int | None = None
+        embedding = config.get("embedding") or {}
+        embedding_model = str(embedding.get("model") or "")
+        if embedding_model:
+            embedding_dim = await _test_embedding(config, embedding_model)
+
+        return LLMTestResponse(
+            ok=True,
+            latencyMs=latency_ms,
+            model=model or None,
+            embeddingDim=embedding_dim,
+        )
+    except Exception as exc:  # noqa: BLE001 — nunca expor a chave no erro
+        return LLMTestResponse(ok=False, error=_safe_llm_error(exc))
+
+
+async def _test_embedding(config: dict[str, Any], model: str) -> int | None:
+    """Chamada mínima de embedding para o teste (adendo 8). Devolve a dimensão."""
+    from app.core.embeddings import OpenAIEmbedder
+    from app.core.llm import LOCAL_API_KEY_PLACEHOLDER
+
+    base_url = str(config.get("base_url") or "")
+    api_key = str(config.get("api_key") or "")
+    embedding = config.get("embedding") or {}
+    dim = int(embedding.get("dim") or 1536)
+    embedder = OpenAIEmbedder(
+        api_key=api_key or LOCAL_API_KEY_PLACEHOLDER,
+        dim=dim,
+        base_url=base_url,
+        model=model,
+        query_prefix=str(embedding.get("query_prefix") or ""),
+        document_prefix=str(embedding.get("document_prefix") or ""),
+    )
+    vec = embedder.embed("ping")
+    return len(vec)
+
+
+def _safe_llm_error(exc: Exception) -> str:
+    """Mensagem de erro traduzida, sem expor a chave de API (adendo 8).
+
+    A mensagem do SDK raramente inclui a chave, mas garantimos que nenhum
+    token longo (padrão ``sk-...``) vaza no texto devolvido.
+    """
+    import re
+
+    msg = str(exc)
+    msg = re.sub(r"sk-[A-Za-z0-9]{16,}", "***", msg)
+    return f"falha no teste da conexão LLM: {msg[:300]}" if msg else "falha no teste da conexão LLM"
 
 
 @router.get("", response_model=IntegrationListResponse)
@@ -356,7 +502,9 @@ async def update_integration(
         existing_config = existing.config or {}
         merged = dict(existing_config)
         for k, v in body.config.items():
-            if k == "token" and v == _MASKED:
+            # ``token``/``api_key`` mascarados (``***``) significam "manter o
+            # valor atual" (o real vive em ``*_encrypted``, nunca exposto).
+            if k in ("token", "api_key") and v == _MASKED:
                 continue
             if v == _MASKED and k in existing_config:
                 merged[k] = existing_config[k]

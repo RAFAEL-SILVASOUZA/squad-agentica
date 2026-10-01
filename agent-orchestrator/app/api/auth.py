@@ -32,6 +32,8 @@ from app.auth.rate_limiter import login_rate_limiter
 from app.auth.refresh_store import refresh_store
 from app.auth.schemas import (
     LoginRequest,
+    PreferencesRequest,
+    PreferencesResponse,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -191,3 +193,46 @@ async def me(
 ) -> UserResponse:
     """Return the current authenticated user's profile."""
     return UserResponse(id=str(user.id), email=user.email, name=user.name)
+
+
+@router.get("/preferences", response_model=PreferencesResponse)
+async def get_preferences(
+    user: Annotated[User, Depends(get_current_user)],
+) -> PreferencesResponse:
+    """Retorna as preferências do usuário (adendo 8).
+
+    ``default_llm_integration_id`` e ``default_embedding_integration_id``
+    (UUIDs de integrações tipo ``llm``); ``None`` quando não definido.
+    """
+    prefs = user.preferences or {}
+    return PreferencesResponse(
+        defaultLlmIntegrationId=prefs.get("default_llm_integration_id"),
+        defaultEmbeddingIntegrationId=prefs.get("default_embedding_integration_id"),
+    )
+
+
+@router.put("/preferences", response_model=PreferencesResponse)
+async def update_preferences(
+    body: PreferencesRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PreferencesResponse:
+    """Atualiza as preferências do usuário (adendo 8).
+
+    Campo ausente no body = "não mexer"; ``null`` explícito = limpar a
+    escolha (o agente cai no padrão seguinte). ``model_fields_set`` distingue
+    os dois casos (o default de ``None`` sozinho não permite).
+    """
+    prefs = dict(user.preferences or {})
+    if "default_llm_integration_id" in body.model_fields_set:
+        prefs["default_llm_integration_id"] = body.default_llm_integration_id
+    if "default_embedding_integration_id" in body.model_fields_set:
+        prefs["default_embedding_integration_id"] = body.default_embedding_integration_id
+    user.preferences = prefs
+    await db.commit()
+    await db.refresh(user)
+    prefs = user.preferences or {}
+    return PreferencesResponse(
+        defaultLlmIntegrationId=prefs.get("default_llm_integration_id"),
+        defaultEmbeddingIntegrationId=prefs.get("default_embedding_integration_id"),
+    )

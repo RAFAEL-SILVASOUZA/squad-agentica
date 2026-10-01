@@ -67,6 +67,9 @@ class ExecuteRequest(BaseModel):
     # Capacidade MCP do run (emitida pelo orchestrator; só repassada à ponte).
     runId: str | None = None
     mcpCapability: str | None = None
+    # Conexão de LLM resolvida pelo orchestrator (adendo 8): {kind, baseUrl,
+    # apiKey, model}. Vive só no body; nunca é logada nem persistida.
+    llm: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +175,7 @@ async def execute(request: Request) -> JSONResponse:
         timeout=req.timeout,
         workspace_dir=workspace_dir,
         owner_id=req.ownerId,
+        llm_block=req.llm,
         **execute_options,
     )
 
