@@ -80,6 +80,11 @@ const NAV_SECTIONS: NavSection[] = [
             icon: Server,
           },
           {
+            href: "/mcp/server",
+            label: "Servidor MCP",
+            icon: Server,
+          },
+          {
             href: "/knowledge",
             label: "Knowledge",
             icon: FileText,
