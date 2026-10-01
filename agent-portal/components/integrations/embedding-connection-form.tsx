@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { Integration, LlmProviderKind, LlmConnectionTestResult } from "@/lib/types";
+import type { Integration, LlmProviderKind, EmbeddingConnectionTestResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -16,37 +15,35 @@ const PROVIDER_KINDS: { value: LlmProviderKind; label: string }[] = [
   { value: "mock", label: "Mock (desenvolvimento, sem rede)" },
 ];
 
-/** Lê um valor do config de uma integração LLM como string. */
+/** Lê um valor do config de uma integração como string. */
 function strOf(config: Record<string, unknown> | undefined, key: string): string {
   const v = config?.[key];
   return typeof v === "string" ? v : "";
 }
 
 /**
- * Formulário de criação/edição de conexão LLM (adendo 8).
+ * Formulário de criação/edição de conexão de embedding (adendo 9).
  *
- * - provider_kind, base_url, api_key (password), models (lista), embeddings (opcional).
- * - A chave é enviada em claro no create/update; a API a sela (Fernet) e devolve
- *   só o hint (últimos 4). Ao editar, deixar a chave vazia mantém a atual.
- * - "Testar conexão" chama POST /api/integrations/llm/test (não persiste, não ecoa a chave).
+ * Cadastro separado da conexão LLM: o embedding tem a própria base_url,
+ * api_key e modelo (ex.: servidor de embeddings em outra porta que o de chat).
+ * Config flat: {provider_kind, base_url, api_key, model, dim, query_prefix,
+ * document_prefix}. A chave é enviada em claro no create/update; a API a sela
+ * (Fernet) e devolve só o hint. Ao editar, deixar a chave vazia mantém a atual.
+ * "Testar conexão" chama POST /api/integrations/embedding/test (não persiste).
  */
-export function LlmConnectionForm({ connection, onClose, onSaved }: {
+export function EmbeddingConnectionForm({ connection, onClose, onSaved }: {
   connection?: Integration;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = React.useState(connection?.name ?? "");
   const [providerKind, setProviderKind] = React.useState<LlmProviderKind>(
-    (connection?.config.provider_kind as LlmProviderKind) ?? "openai"
+    (connection?.config.provider_kind as LlmProviderKind) ?? "openai_compatible"
   );
   const [baseUrl, setBaseUrl] = React.useState(strOf(connection?.config, "base_url"));
   const [apiKey, setApiKey] = React.useState("");
-  const [models, setModels] = React.useState<string[]>(
-    Array.isArray(connection?.config.models)
-      ? connection.config.models.map((m) => String(m)).filter(Boolean)
-      : []
-  );
-  const [modelDraft, setModelDraft] = React.useState("");
+  const [model, setModel] = React.useState(strOf(connection?.config, "model"));
+  const [dim, setDim] = React.useState(strOf(connection?.config, "dim"));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [testBusy, setTestBusy] = React.useState(false);
@@ -55,32 +52,24 @@ export function LlmConnectionForm({ connection, onClose, onSaved }: {
 
   const isMock = providerKind === "mock";
 
-  function addModel() {
-    const value = modelDraft.trim();
-    if (!value || models.includes(value)) return;
-    setModels((prev) => [...prev, value]);
-    setModelDraft("");
-  }
-
-  function removeModel(model: string) {
-    setModels((prev) => prev.filter((m) => m !== model));
-  }
-
-  /** Monta o config de teste (não persiste). Usa o 1º modelo como alvo. */
+  /** Monta o config de teste (não persiste). */
   function buildTestConfig() {
     const config: Record<string, unknown> = {
       provider_kind: providerKind,
       base_url: baseUrl.trim(),
-      model: models[0] ?? "",
+      model: model.trim(),
     };
-    // O endpoint de teste lê a chave em claro do config (não resolve a chave
-    // criptografada salva), então só enviamos a chave quando foi digitada.
+    if (dim.trim()) config.dim = Number(dim.trim());
     if (!isMock && apiKey.trim()) config.api_key = apiKey.trim();
     return config;
   }
 
   async function testConnection() {
     if (testBusy) return;
+    if (!model.trim()) {
+      setError("Informe o modelo de embedding para testar.");
+      return;
+    }
     if (!isMock && !apiKey.trim()) {
       setError("Digite a chave de API para testar.");
       return;
@@ -89,8 +78,8 @@ export function LlmConnectionForm({ connection, onClose, onSaved }: {
     setTestResult(null);
     setError("");
     try {
-      const result = await api.post<LlmConnectionTestResult>("/api/integrations/llm/test", {
-        type: "llm",
+      const result = await api.post<EmbeddingConnectionTestResult>("/api/integrations/embedding/test", {
+        type: "embedding",
         config: buildTestConfig(),
       });
       if (result.ok) {
@@ -113,6 +102,10 @@ export function LlmConnectionForm({ connection, onClose, onSaved }: {
       setError("Informe um nome para a conexão.");
       return;
     }
+    if (!model.trim()) {
+      setError("Informe o modelo de embedding.");
+      return;
+    }
     if (!isMock && !apiKey.trim() && !connection) {
       setError("Digite a chave de API.");
       return;
@@ -124,14 +117,14 @@ export function LlmConnectionForm({ connection, onClose, onSaved }: {
     const config: Record<string, unknown> = {
       provider_kind: providerKind,
       base_url: baseUrl.trim(),
-      models,
+      model: model.trim(),
     };
-    if (models.length) config.default_model = models[0];
+    if (dim.trim()) config.dim = Number(dim.trim());
     if (!isMock) config.api_key = apiKey.trim() || (connection ? "***" : "");
 
     try {
       if (connection) await api.put(`/api/integrations/${connection.id}`, { name: name.trim(), config });
-      else await api.post("/api/integrations", { type: "llm", name: name.trim(), config });
+      else await api.post("/api/integrations", { type: "embedding", name: name.trim(), config });
       setApiKey("");
       onSaved();
     } catch (e) {
@@ -144,33 +137,15 @@ export function LlmConnectionForm({ connection, onClose, onSaved }: {
     }
   }
 
-  return <Modal open onClose={() => { if (!busy) onClose(); }} title={connection ? "Editar conexão LLM" : "Nova conexão LLM"} size="lg">
+  return <Modal open onClose={() => { if (!busy) onClose(); }} title={connection ? "Editar conexão de embedding" : "Nova conexão de embedding"} size="lg">
     <form onSubmit={(event) => void save(event)} style={{ display: "grid", gap: 16 }}>
-      <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} disabled={busy} placeholder="Ex.: OpenAI principal" />
+      <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} disabled={busy} placeholder="Ex.: Nomic embeddings" />
       <Select label="Provedor" value={providerKind} onValueChange={(v) => setProviderKind(v as LlmProviderKind)} options={PROVIDER_KINDS} disabled={busy} />
-      <Input label="Base URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} disabled={busy || isMock} placeholder="Ex.: http://localhost:11434/v1" hint={isMock ? "O mock não usa base URL." : "Opcional para OpenAI; obrigatório para servidores compatíveis."} />
+      <Input label="Base URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} disabled={busy || isMock} placeholder="Ex.: http://192.168.18.4:4321/v1" hint={isMock ? "O mock não usa base URL." : "Obrigatório para servidores compatíveis."} />
       <Input label="Chave de API" type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required={!connection && !isMock} disabled={busy || isMock}
         hint={isMock ? "O mock não usa chave." : `${connection ? "Deixe vazio para manter a chave atual." : ""} A chave fica criptografada e nunca é mostrada de novo.`} />
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text)" }}>Modelos</span>
-        <div style={{ display: "flex", gap: "6px" }}>
-          <Input aria-label="Modelo" value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} placeholder="Ex.: gpt-4o-mini" disabled={busy}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addModel(); } }} />
-          <Button type="button" size="sm" onClick={addModel} disabled={busy || !modelDraft.trim()} aria-label="Adicionar modelo"><Plus size={12} aria-hidden="true" /></Button>
-        </div>
-        {models.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", alignItems: "center" }}>
-            {models.map((m) => (
-              <span key={m} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "var(--text)", background: "var(--bg-hover)", border: "1px solid var(--border-subtle)", borderRadius: "10px", padding: "2px 8px" }}>
-                {m}
-                <button type="button" onClick={() => removeModel(m)} aria-label={`Remover ${m}`} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
-                  <X size={11} aria-hidden="true" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      <Input label="Modelo" value={model} onChange={(e) => setModel(e.target.value)} required disabled={busy} placeholder="Ex.: nomic-embed-text-v1.5" hint="Modelo de embedding usado para as bases de conhecimento." />
+      <Input label="Dimensão" type="number" value={dim} onChange={(e) => setDim(e.target.value)} disabled={busy} placeholder="Ex.: 768" hint="Opcional. Se vazio, usa a dimensão padrão (1536). O vetor é completado com zeros até a dimensão da coluna." />
       {error && <p role="alert" style={{ color: "var(--error)" }}>{error}</p>}
       {testResult && <p role="status" style={{ fontSize: 12, color: testResult.ok ? "var(--success)" : "var(--error)" }}>{testResult.message}</p>}
       {saveError && (

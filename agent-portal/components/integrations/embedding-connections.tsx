@@ -8,30 +8,17 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn, type DataTableRowMenuItem } from "@/components/ui/data-table";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import { LlmConnectionForm } from "./llm-connection-form";
-
-/** Junta nomes em lista pt-BR: "A", "A e B", "A, B e C". */
-function joinNamesPtBr(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? "";
-  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
-}
-
-/** Extrai os ids de modelo do config de uma integração LLM. */
-function modelsOf(config: Record<string, unknown>): string[] {
-  const models = config.models;
-  if (Array.isArray(models)) return models.map((m) => String(m)).filter(Boolean);
-  const single = config.model;
-  return typeof single === "string" && single ? [single] : [];
-}
+import { EmbeddingConnectionForm } from "./embedding-connection-form";
 
 /**
- * Lista e gerencia integrações LLM (adendo 8).
+ * Lista e gerencia integrações de embedding (adendo 9).
  *
- * - Criação/edição via LlmConnectionForm (modal), com teste de conexão inline.
- * - A chave de API nunca é devolvida pela API; a tabela mostra só o hint.
- * - Exclusão com confirmação em modal (sem window.confirm).
+ * Cadastro separado da conexão LLM: cada conexão de embedding tem a própria
+ * base_url, api_key e modelo. Criação/edição via EmbeddingConnectionForm
+ * (modal), com teste de conexão inline. A chave de API nunca é devolvida pela
+ * API; a tabela mostra só o hint. Exclusão com confirmação em modal.
  */
-export function LlmConnections() {
+export function EmbeddingConnections() {
   const { addToast } = useToast();
   const [connections, setConnections] = React.useState<Integration[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -40,7 +27,7 @@ export function LlmConnections() {
   const [deleting, setDeleting] = React.useState<Integration | null>(null);
   const [deleteError, setDeleteError] = React.useState("");
   const [deleteBusy, setDeleteBusy] = React.useState(false);
-  const [defaultLlmId, setDefaultLlmId] = React.useState<string | null>(null);
+  const [defaultEmbeddingId, setDefaultEmbeddingId] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -54,12 +41,11 @@ export function LlmConnections() {
         if (!res.items.length || items.length >= res.total) break;
         page++;
       }
-      setConnections(items.filter((item) => item.type === "llm"));
-      // Padrão de LLM (para o badge "Padrão").
-      const prefs = await api.get<{ defaultLlmIntegrationId?: string | null }>("/api/auth/preferences");
-      setDefaultLlmId(prefs.defaultLlmIntegrationId ?? null);
+      setConnections(items.filter((item) => item.type === "embedding"));
+      const prefs = await api.get<{ defaultEmbeddingIntegrationId?: string | null }>("/api/auth/preferences");
+      setDefaultEmbeddingId(prefs.defaultEmbeddingIntegrationId ?? null);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Não foi possível carregar as conexões LLM.");
+      setError(e instanceof ApiError ? e.message : "Não foi possível carregar as conexões de embedding.");
     } finally {
       setLoading(false);
     }
@@ -75,7 +61,7 @@ export function LlmConnections() {
     try {
       await api.delete(`/api/integrations/${deleting.id}`);
       setDeleting(null);
-      addToast("success", "Conexão LLM excluída");
+      addToast("success", "Conexão de embedding excluída");
       await load();
     } catch (e) {
       setDeleteError(e instanceof ApiError ? e.message : "Não foi possível excluir a conexão. Feche e tente novamente.");
@@ -84,12 +70,12 @@ export function LlmConnections() {
     }
   }
 
-  /** Define a conexão como padrão de LLM (chat). */
+  /** Define a conexão como padrão de embedding. */
   async function setDefault(row: Integration) {
     try {
-      await api.put("/api/auth/preferences", { default_llm_integration_id: row.id });
-      setDefaultLlmId(row.id);
-      addToast("success", "Conexão definida como padrão de LLM");
+      await api.put("/api/auth/preferences", { default_embedding_integration_id: row.id });
+      setDefaultEmbeddingId(row.id);
+      addToast("success", "Conexão definida como padrão de embedding");
     } catch (e) {
       addToast("error", e instanceof ApiError ? e.message : "Não foi possível definir o padrão.");
     }
@@ -99,13 +85,17 @@ export function LlmConnections() {
     { key: "name", header: "Nome", sortable: true, render: (row) => (
       <span style={{ fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
         {row.name}
-        {row.id === defaultLlmId && <Badge status="info" label="Padrão" />}
+        {row.id === defaultEmbeddingId && <Badge status="success" label="Padrão" />}
       </span>
     ) },
     { key: "provider", header: "Provedor", render: (row) => <span style={{ fontSize: 12 }}>{String(row.config.provider_kind ?? "—")}</span> },
-    { key: "models", header: "Modelos", render: (row) => {
-      const models = modelsOf(row.config);
-      return models.length ? <span style={{ fontSize: 12 }}>{joinNamesPtBr(models)}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>;
+    { key: "model", header: "Modelo", render: (row) => {
+      const model = row.config.model;
+      return typeof model === "string" && model ? <span style={{ fontSize: 12 }}>{model}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>;
+    }},
+    { key: "baseUrl", header: "Base URL", render: (row) => {
+      const url = row.config.base_url;
+      return typeof url === "string" && url ? <span style={{ fontSize: 12 }}>{url}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>;
     }},
     { key: "apiKeyHint", header: "Chave", render: (row) => row.apiKeyHint ? <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{row.apiKeyHint}</code> : <span style={{ color: "var(--text-muted)" }}>—</span> },
   ];
@@ -122,22 +112,22 @@ export function LlmConnections() {
     else if (action === "default") void setDefault(row);
   }
 
-  if (loading) return <p role="status">Carregando conexões LLM...</p>;
+  if (loading) return <p role="status">Carregando conexões de embedding...</p>;
   if (error) return <div><p role="alert">{error}</p><Button onClick={() => void load()}>Tentar novamente</Button></div>;
 
   return <div style={{ display: "grid", gap: 16 }}>
-    <div><Button variant="primary" onClick={() => setEditing(null)}>Nova conexão LLM</Button></div>
+    <div><Button variant="primary" onClick={() => setEditing(null)}>Nova conexão de embedding</Button></div>
     <DataTable
       columns={columns}
       rows={connections}
       rowKey={(row) => row.id}
-      searchPlaceholder="Buscar conexões LLM…"
+      searchPlaceholder="Buscar conexões de embedding…"
       onRowMenu={handleRowMenu}
       rowMenuItems={rowMenuItems}
-      emptyMessage="Nenhuma conexão LLM cadastrada."
+      emptyMessage="Nenhuma conexão de embedding cadastrada."
     />
-    {editing !== undefined && <LlmConnectionForm connection={editing ?? undefined} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); addToast("success", "Conexão LLM salva"); void load(); }} />}
-    <Modal open={!!deleting} title="Excluir conexão LLM" onClose={() => { if (!deleteBusy) setDeleting(null); }} footer={<>
+    {editing !== undefined && <EmbeddingConnectionForm connection={editing ?? undefined} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); addToast("success", "Conexão de embedding salva"); void load(); }} />}
+    <Modal open={!!deleting} title="Excluir conexão de embedding" onClose={() => { if (!deleteBusy) setDeleting(null); }} footer={<>
       <Button disabled={deleteBusy} onClick={() => setDeleting(null)}>Cancelar</Button>
       <Button disabled={!!deleteError} loading={deleteBusy} onClick={() => void remove()}>Excluir conexão</Button>
     </>}>

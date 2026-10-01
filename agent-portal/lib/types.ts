@@ -328,6 +328,15 @@ export interface LlmConnectionTestResult {
   error?: string;
 }
 
+/** Resultado de POST /api/integrations/embedding/test (adendo 9, não persiste). */
+export interface EmbeddingConnectionTestResult {
+  ok: boolean;
+  latencyMs?: number;
+  model?: string;
+  embeddingDim?: number;
+  error?: string;
+}
+
 /** Escolha opcional de LLM por agente (adendo 8): {integrationId, model}. */
 export interface AgentLlmChoice {
   integrationId: string;
@@ -337,7 +346,7 @@ export interface AgentLlmChoice {
 export interface Integration {
   id: string;
   ownerId: string;
-  type: "github" | "azure" | "gitlab" | "llm";
+  type: "github" | "azure" | "gitlab" | "llm" | "embedding";
   name: string;
   config: Record<string, unknown>;
   status: "active" | "disabled";
