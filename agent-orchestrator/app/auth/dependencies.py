@@ -33,6 +33,13 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/auth/refresh",
         "/health",
         "/api/health",
+        # OAuth 2.1 endpoints (MCP server): public (no user auth required).
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-authorization-server",
+        "/oauth/register",
+        "/oauth/authorize",
+        "/oauth/token",
+        "/oauth/revoke",
     }
 )
 
