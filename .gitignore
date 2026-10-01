@@ -40,3 +40,9 @@ Thumbs.db
 # Docker volumes / dados
 postgres-data/
 minio-data/
+
+# Temporarios / ferramentas
+.vite/
+.codex/
+conversa-conv-*.md
+task*-review-package.diff
