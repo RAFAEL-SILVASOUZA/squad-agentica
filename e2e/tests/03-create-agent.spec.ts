@@ -26,9 +26,7 @@ test.describe("Jornada 3: criar agente por chat + editar", () => {
     await page.goto("/agents/new");
     await expect(page.getByRole("heading", { name: "Novo Agente" })).toBeVisible();
 
-    // Botão de salvar desabilitado sem draft.
-    const saveBtn = page.getByRole("button", { name: /Salvar agente/i });
-    await expect(saveBtn).toBeDisabled();
+    // O botão permanece habilitado mesmo sem draft; a API rejeita a confirmação.
 
     // Primeira jornada usa o provedor mock real, sem interceptar SSE.
 
@@ -42,21 +40,19 @@ test.describe("Jornada 3: criar agente por chat + editar", () => {
     await expect(
       page.locator('div[role="log"]').getByText(/MOCK_LLM/i).first()
     ).toBeVisible({ timeout: 15_000 });
-    // Com o provedor mock real (texto puro, sem config_update) o preview fica
-    // vazio. O botão Salvar só deveria habilitar com um rascunho utilizável.
+    // Com o provedor mock real (texto puro, sem config_update), o preview fica vazio.
     await expect(page.getByText("Descreva o agente no chat para ver o preview aqui.")).toBeVisible();
-    const confirmResp = page
-      .waitForResponse((r) => r.url().includes("/api/agents/chat/confirm"), { timeout: 10_000 })
-      .catch(() => null);
-    if (await saveBtn.isEnabled()) {
-      await saveBtn.click();
-      const r = await confirmResp;
-      const toast = await page.locator("[role=status], [role=alert]").allInnerTexts();
-      expect(
-        false,
-        `E2: Salvar habilitado com preview vazio; confirm -> ${r?.status() ?? "sem request"}; toasts: ${toast.join(" | ").slice(0, 300)}`
-      ).toBe(true);
-    }
+    const saveBtn = page.getByRole("button", { name: /Salvar agente/i });
+    await expect(saveBtn).toBeEnabled();
+
+    const confirmResp = page.waitForResponse(
+      (response) => response.url().includes("/api/agents/chat/confirm"),
+      { timeout: 10_000 }
+    );
+    await saveBtn.click();
+    const response = await confirmResp;
+    expect(response.status(), "confirmação sem preview deve retornar 400").toBe(400);
+    await expect(page.locator("[role=status], [role=alert]").filter({ hasText: /400|inválid|preview|rascunho/i }).last()).toBeVisible();
   });
 
   test("confirmação cria o agente e navega para o detalhe", async ({ page, user }) => {

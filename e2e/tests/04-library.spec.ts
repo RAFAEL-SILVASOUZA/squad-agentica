@@ -41,19 +41,24 @@ test.describe("Jornada 4a: skill", () => {
     await page.setViewportSize({ width: 1280, height: 1600 });
     await createBtn.click();
 
-    // Card aparece com o nome.
+    // Skill aparece na tabela.
     await expect(page.getByText(name).first()).toBeVisible({ timeout: 20_000 });
     await expect(dialog).toHaveCount(0);
 
-    // Abre o editor via card e edita a descrição.
-    await page.getByText(name).first().click();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    // Abre o editor pelo menu de ações da linha e edita a descrição.
+    const skillRow = page.getByRole("row").filter({ hasText: name });
+    await skillRow.getByRole("button", { name: "Ações" }).click();
+    await page.getByRole("menuitem", { name: "Editar" }).click();
+    const editDialog = page.getByRole("dialog");
+    await expect(editDialog).toBeVisible();
     await page.locator("#skill-description").fill("desc editada pela E2E");
-    await page.getByRole("dialog").getByRole("button", { name: /Salvar/i }).click();
-    await expect(page.getByText(/atualizada/i).first()).toBeVisible({ timeout: 15_000 });
+    await editDialog.getByRole("button", { name: /Salvar alterações/i }).click();
+    await expect(page.getByText(/Skill atualizada/i).first()).toBeVisible({ timeout: 15_000 });
 
-    // Exclusão com modal de confirmação (sem window.confirm).
-    await page.getByRole("button", { name: new RegExp(`Excluir skill ${name}`) }).click();
+    // Exclusão com modal de confirmação (sem window.confirm), pelo menu da linha.
+    const updatedSkillRow = page.getByRole("row").filter({ hasText: name });
+    await updatedSkillRow.getByRole("button", { name: "Ações" }).click();
+    await page.getByRole("menuitem", { name: "Excluir" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.getByRole("dialog").getByRole("button", { name: /Excluir|Confirmar/i }).click();
     await expect(page.getByText(name)).toHaveCount(0, { timeout: 20_000 });

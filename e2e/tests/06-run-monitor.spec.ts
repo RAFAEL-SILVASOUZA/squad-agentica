@@ -49,7 +49,10 @@ test.describe("Jornada 6: executar e monitor", () => {
       await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({ timeout: 30_000 });
       const stages = page.getByRole("list", { name: "Etapas" });
       await expect(stages.getByRole("button")).toHaveCount(2, { timeout: 30_000 });
-      await expect(page.getByRole("tab", { name: "Resultado" })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("tab", { name: /^Resultado$/ })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("tab", { name: /Arquivos/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /Logs/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /Histórico/ })).toBeVisible();
 
       // Iniciar execução: o formulário pede as entradas do agente de entrada
       // (backend real: POST .../execute com { inputs }).
@@ -79,11 +82,12 @@ test.describe("Jornada 6: executar e monitor", () => {
       // emitir eventos por nó; o teste coleta e documenta.
       await expect.poll(() => ofChannel(ws.frames, "pipeline:status", seeded.id)
         .filter((event: any) => !event.nodeId).at(-1)?.status, { timeout: 30_000 }).toBe("completed");
-      // A aba Resultado mostra a saída do 1º agente em largura total.
-      await expect(page.getByRole("region", { name: a1.name })).not.toContainText(/Aguardando execução|Em execução/, {
-        timeout: 30_000,
-      });
+      // A aba Resultado mostra as seções dos agentes e a linha do tempo do run.
+      await expect(page.getByRole("heading", { name: a1.name })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("heading", { name: a2.name })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("tab", { name: /^Resultado$/ })).toHaveAttribute("aria-selected", "true");
       await expect(stages.getByRole("button", { name: new RegExp(`${a1.name}.*Concluído`) })).toBeVisible();
+      await expect(page.getByRole("region", { name: a1.name })).toHaveCount(0);
       const statusEvents = ofChannel(ws.frames, "pipeline:status", seeded.id);
       const logEvents = ofChannel(ws.frames, "pipeline:log", seeded.id);
       const outputEvents = ofChannel(ws.frames, "agent:output", seeded.id);
@@ -149,19 +153,25 @@ test.describe("Jornada 6: executar e monitor", () => {
       await page.goto(`/pipelines/${seeded.id}/run`);
       await expect(page.getByRole("heading", { name: seeded.name })).toBeVisible({ timeout: 30_000 });
 
+      // As abas atuais do monitor incluem Resultado, Arquivos, Logs e Histórico.
+      await expect(page.getByRole("tab", { name: /^Resultado$/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /Arquivos/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /Logs/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /Histórico/ })).toBeVisible();
+
       // "Ver grafo" abre o grafo somente leitura num modal.
       await page.getByRole("button", { name: "Ver grafo" }).click();
-      const graph = page.getByRole("dialog", { name: /grafo/i });
+      const graph = page.getByRole("dialog", { name: /Grafo da pipeline/i });
       await expect(graph.locator(".react-flow__node")).toHaveCount(2, { timeout: 30_000 });
 
       // Clique num nó fecha o modal e foca o resultado do agente.
       await graph.locator(".react-flow__node").first().click();
       await expect(graph).toBeHidden();
-      await expect(page.getByRole("tab", { name: "Resultado" })).toHaveAttribute("aria-selected", "true");
-      await expect(page.getByRole("region").first()).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Resultado$/ })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("heading", { name: a1.name })).toBeVisible();
 
       // Aba Logs (vai para a URL) com filtros por agente e por nível.
-      await page.getByRole("tab", { name: "Logs" }).click();
+      await page.getByRole("tab", { name: /Logs/ }).click();
       await expect(page).toHaveURL(/\?tab=logs/);
       await expect(page.getByLabel("Filtrar por agente")).toBeVisible();
       await expect(page.getByLabel(/Filtrar por n.vel/i)).toBeVisible();

@@ -44,12 +44,13 @@ for (const width of [1280, 390]) {
       });
     }
     if (width === 390) {
-      await page.getByRole("button", { name: "Abrir menu", exact: true }).click();
+      // Mobile: a navegação é pela BottomNav (Task 17). "Mais" abre a sidebar
+      // overlay (Navegação principal) com o resto dos links.
+      await page.getByRole("button", { name: "Mais", exact: true }).click();
       const nav = page.getByRole("navigation", { name: "Navegação principal" });
       await expect(nav).toBeVisible();
       await nav.locator('a[href="/skills"]').click();
       await expect(page).toHaveURL(/\/skills$/);
-      await page.keyboard.press("Escape");
     }
     await info.attach("screen-audit", {body: JSON.stringify(audit, null, 2), contentType: "application/json"});
     expect.soft(pageErrors, "exceções JS").toEqual([]);
