@@ -15,7 +15,7 @@ import importlib
 import logging
 import pkgutil
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -117,19 +117,27 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from app.db.session import async_session_factory
     from app.runtime.executor import register_approval_hook
 
+    from app.mcp_server.server import mcp_lifespan
+
     register_approval_hook(build_approval_hook(async_session_factory))
     await get_executor()
     logger.info("startup: checkpointer pronto e hook de aprovação registrado")
     purge_task = asyncio.create_task(_purge_loop(), name="workspace-purge-loop")
-    try:
-        yield
-    finally:
-        from app.api.pipeline_runs import shutdown_executor
+    # MCP (Task 2): o session manager do FastMCP roda em paralelo ao resto do
+    # startup/shutdown. O AsyncExitStack garante que, em qualquer caminho de
+    # saída (sucesso ou exceção), o lifespan do MCP seja encerrado junto com
+    # o purge_task e o executor, preservando o comportamento original.
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(mcp_lifespan())
+        try:
+            yield
+        finally:
+            from app.api.pipeline_runs import shutdown_executor
 
-        purge_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await purge_task
-        await shutdown_executor()
+            purge_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await purge_task
+            await shutdown_executor()
 
 
 app = FastAPI(
@@ -174,7 +182,16 @@ def _discover_routers() -> None:
         module = importlib.import_module(f"app.api.{module_info.name}")
         router = getattr(module, "router", None)
         if router is not None:
-            app.include_router(router, prefix="" if module_info.name == "internal_mcp" else "/api")
+            prefix = "" if module_info.name in ("internal_mcp", "oauth") else "/api"
+            app.include_router(router, prefix=prefix)
 
 
 _discover_routers()
+
+# MCP (Task 2+3): monta o app ASGI do servidor MCP (Streamable HTTP) em /mcp.
+# O endpoint real fica em /mcp/mcp. O lifespan do MCP já foi composto no
+# _lifespan acima (AsyncExitStack + mcp_lifespan). O middleware de auth MCP
+# (Task 3) valida o token Bearer antes de encaminhar ao FastMCP.
+from app.mcp_server.server import mcp_auth_app  # noqa: E402
+
+app.mount("/mcp", mcp_auth_app())

@@ -39,6 +39,10 @@ def apply_global_auth(app: FastAPI) -> None:
             if request.url.path.startswith("/internal/mcp/"):
                 return await call_next(request)
 
+            # MCP server tem seu próprio middleware ASGI de auth (Task 3).
+            if request.url.path.startswith("/mcp/"):
+                return await call_next(request)
+
             # Validate the Bearer token.
             from app.auth.dependencies import _bearer
 
