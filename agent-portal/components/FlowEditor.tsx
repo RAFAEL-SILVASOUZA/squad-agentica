@@ -84,8 +84,8 @@ function pipelineToFlowNodes(pipeline: Pipeline): Node<AgentNodeData>[] {
     data: {
       label: pn.label ?? pn.agentSnapshot.name,
       agentSnapshot: pn.agentSnapshot,
-      inputs: pn.agentSnapshot.inputs,
-      outputs: pn.agentSnapshot.outputs,
+      inputs: pn.agentSnapshot.inputs ?? [],
+      outputs: pn.agentSnapshot.outputs ?? [],
       isEntry: pn.id === pipeline.entryNodeId,
     },
   }));

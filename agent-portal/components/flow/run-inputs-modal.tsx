@@ -35,6 +35,9 @@ export function RunInputsModal({
   const [values, setValues] = React.useState<Record<string, string>>({});
   const [error, setError] = React.useState<string | null>(null);
 
+  // Defensivo: pipelines criadas via MCP podem ter agentSnapshot sem inputs.
+  const safeInputs = inputs ?? [];
+
   React.useEffect(() => {
     if (open) {
       setValues({});
@@ -43,13 +46,13 @@ export function RunInputsModal({
   }, [open]);
 
   const submit = () => {
-    const missing = inputs.filter((p) => p.required && !(values[p.name] ?? "").trim());
+    const missing = safeInputs.filter((p) => p.required && !(values[p.name] ?? "").trim());
     if (missing.length > 0) {
       setError(`Preencha: ${missing.map((p) => p.name).join(", ")}.`);
       return;
     }
     const filled: Record<string, string> = {};
-    for (const p of inputs) {
+    for (const p of safeInputs) {
       const v = (values[p.name] ?? "").trim();
       if (v) filled[p.name] = v;
     }
@@ -84,7 +87,7 @@ export function RunInputsModal({
               : "Sem repositório: baixe o resultado em .zip"}
           </p>
         )}
-        {inputs.map((port) => (
+        {safeInputs.map((port) => (
           <Textarea
             key={port.name}
             id={`run-input-${port.name}`}

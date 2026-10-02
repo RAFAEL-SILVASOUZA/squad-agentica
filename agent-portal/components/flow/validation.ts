@@ -108,7 +108,7 @@ export function validateGraph(
     // O nó de entrada recebe os inputs no disparo da execução (spec regra 6
     // vale para agentes target).
     if (node.id === effectiveEntry) continue;
-    const requiredInputs = node.agentSnapshot.inputs.filter((p) => p.required);
+    const requiredInputs = (node.agentSnapshot.inputs ?? []).filter((p) => p.required);
     for (const input of requiredInputs) {
       const covered = dataEdges.some(
         (e) => e.target === node.id && e.dataMapping?.targetInput === input.name
@@ -116,7 +116,7 @@ export function validateGraph(
       if (!covered) {
         errors.push({
           rule: 6,
-          message: `input required "${input.name}" de "${node.agentSnapshot.name}" não é atendido por nenhuma data edge`,
+          message: `input required "${input.name}" de "${node.agentSnapshot?.name ?? "nó"}" não é atendido por nenhuma data edge`,
           nodeId: node.id,
         });
       }
@@ -133,7 +133,7 @@ export function validateGraph(
     if (!hasIncoming) {
       errors.push({
         rule: 8,
-        message: `"${node.agentSnapshot.name}" é um nó órfão: sem flow edge nem data edge de entrada`,
+        message: `"${node.agentSnapshot?.name ?? "nó"}" é um nó órfão: sem flow edge nem data edge de entrada`,
         nodeId: node.id,
       });
     }

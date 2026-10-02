@@ -123,6 +123,45 @@ class TestCreatePipeline:
         assert result["nodes"][0]["agentId"] == agent_id
         assert result["edges"] == []
 
+    async def test_create_pipeline_rejects_orphan_nodes(self, mcp_env: User):
+        """create_pipeline com nós sem edges de entrada é rejeitada (regra 8).
+
+        Cenário real: client MCP criou 10 nós e 0 edges -> 9 nós órfãos.
+        """
+        agent_id = str(uuid.uuid4())
+        nodes = [
+            {"id": str(uuid.uuid4()), "agentId": agent_id,
+             "agentSnapshot": {"agentId": agent_id, "name": f"Agente {i}"}}
+            for i in range(3)
+        ]
+        with pytest.raises(ToolError) as exc_info:
+            await create_pipeline(name="Pipeline Órfãos", nodes=nodes, edges=[])
+        assert "Grafo inválido" in exc_info.value.message
+        assert "regra 8" in exc_info.value.message
+
+    async def test_create_pipeline_accepts_connected_graph(self, mcp_env: User):
+        """create_pipeline com grafo conectado (entry -> B -> C) é aceita."""
+        agent_id = str(uuid.uuid4())
+        a, b, c = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        result = await create_pipeline(
+            name="Pipeline Conectada",
+            entry_node_id=a,
+            nodes=[
+                {"id": a, "agentId": agent_id,
+                 "agentSnapshot": {"agentId": agent_id, "name": "A"}},
+                {"id": b, "agentId": agent_id,
+                 "agentSnapshot": {"agentId": agent_id, "name": "B"}},
+                {"id": c, "agentId": agent_id,
+                 "agentSnapshot": {"agentId": agent_id, "name": "C"}},
+            ],
+            edges=[
+                {"id": str(uuid.uuid4()), "type": "flow", "source": a, "target": b},
+                {"id": str(uuid.uuid4()), "type": "flow", "source": b, "target": c},
+            ],
+        )
+        assert len(result["nodes"]) == 3
+        assert len(result["edges"]) == 2
+
 
 class TestListPipelines:
     async def test_list_pipelines_empty(self, mcp_env: User):
@@ -195,6 +234,19 @@ class TestUpdatePipeline:
         with pytest.raises(ToolError) as exc_info:
             await update_pipeline(created["id"])
         assert "Nenhum campo" in exc_info.value.message
+
+    async def test_update_pipeline_rejects_orphan_nodes(self, mcp_env: User):
+        """update_pipeline com grafo de nós órfãos é rejeitada (regra 8)."""
+        created = await create_pipeline(name="Base")
+        agent_id = str(uuid.uuid4())
+        nodes = [
+            {"id": str(uuid.uuid4()), "agentId": agent_id,
+             "agentSnapshot": {"agentId": agent_id, "name": f"Agente {i}"}}
+            for i in range(2)
+        ]
+        with pytest.raises(ToolError) as exc_info:
+            await update_pipeline(created["id"], nodes=nodes, edges=[])
+        assert "Grafo inválido" in exc_info.value.message
 
 
 class TestDeletePipeline:

@@ -60,6 +60,118 @@ def _parse_uuid(value: str) -> uuid.UUID:
         raise ToolError("ID inválido.") from None
 
 
+def _build_compiler_pipeline(
+    pipeline_id: str,
+    name: str,
+    entry_node_id: str,
+    node_fields: list[dict[str, Any]],
+    edge_fields: list[dict[str, Any]],
+    description: str = "",
+) -> CompilerPipeline:
+    """Constrói um CompilerPipeline a partir dos campos já validados.
+
+    Reutilizado por validate_pipeline, create_pipeline e update_pipeline.
+    """
+    compiler_nodes: list[CompilerNode] = []
+    for f in node_fields:
+        raw = f["agent_snapshot"]
+        snap = AgentSnapshot(
+            agent_id=str(raw.get("agentId", f["agent_id"])),
+            version=raw.get("version", 1),
+            name=raw.get("name", ""),
+            description=raw.get("description", ""),
+            prompt=raw.get("prompt", ""),
+            strategy=raw.get("strategy", ""),
+            skills=raw.get("skills", []),
+            tools=raw.get("tools", []),
+            mcp_servers=raw.get("mcpServers", raw.get("mcp_servers", [])),
+            knowledge=raw.get("knowledge", []),
+            integrations=raw.get("integrations", []),
+            inputs=[
+                PortDef(
+                    name=pt.get("name", ""),
+                    type=pt.get("type", "string"),
+                    required=pt.get("required", False),
+                    description=pt.get("description", ""),
+                )
+                for pt in raw.get("inputs", [])
+            ],
+            outputs=[
+                PortDef(
+                    name=pt.get("name", ""),
+                    type=pt.get("type", "string"),
+                    required=pt.get("required", False),
+                    description=pt.get("description", ""),
+                )
+                for pt in raw.get("outputs", [])
+            ],
+            actions=raw.get("actions", []),
+            model=raw.get("model", ""),
+            llm=raw.get("llm"),
+            max_iterations=raw.get("maxIterations", raw.get("max_iterations", 10)),
+            timeout=raw.get("timeout", 60),
+            shell_access=raw.get("shellAccess", raw.get("shell_access", False)),
+        )
+        compiler_nodes.append(
+            CompilerNode(
+                id=str(f["id"]),
+                agent_id=str(f["agent_id"]),
+                agent_snapshot=snap,
+                position=f.get("position") or {},
+                label=f.get("label"),
+            )
+        )
+
+    compiler_edges: list[CompilerEdge] = []
+    for f in edge_fields:
+        condition_raw = f.get("condition")
+        mapping_raw = f.get("data_mapping")
+        compiler_edges.append(
+            CompilerEdge(
+                id=str(f["id"]),
+                type=f["type"],
+                source=str(f["source"]),
+                target=str(f["target"]),
+                condition=(
+                    EdgeCondition(
+                        field=condition_raw.get("field", "action"),
+                        operator=condition_raw.get("operator", "eq"),
+                        value=condition_raw.get("value", "follow"),
+                    )
+                    if condition_raw
+                    else None
+                ),
+                label=f.get("label"),
+                requires_approval=f.get("requires_approval", False),
+                approval_channel=f.get("approval_channel"),
+                approval_message=f.get("approval_message"),
+                data_mapping=(
+                    DataMapping(
+                        source_output=mapping_raw.get(
+                            "sourceOutput", mapping_raw.get("source_output", "")
+                        ),
+                        target_input=mapping_raw.get(
+                            "targetInput", mapping_raw.get("target_input", "")
+                        ),
+                    )
+                    if mapping_raw
+                    else None
+                ),
+                reject_target=f.get("reject_target"),
+            )
+        )
+
+    return CompilerPipeline(
+        id=str(pipeline_id),
+        name=name,
+        entry_node_id=str(entry_node_id),
+        nodes=compiler_nodes,
+        edges=compiler_edges,
+        description=description,
+        status="draft",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
@@ -74,10 +186,53 @@ async def create_pipeline(
     edges: list[dict[str, Any]] | None = None,
     repository: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Cria um novo pipeline com grafo opcional (nós e arestas).
+    """Cria um novo pipeline com grafo (nós e arestas).
 
-    O grafo é validado pelo mesmo validador usado pela API REST. Se
-    ``repository`` for fornecido, deve conter ``integrationId``,
+    O grafo é validado pelo validador de 11 regras (spec 4.2) ANTES de
+    persistir. Se houver erros, a criação é rejeitada com a lista de erros.
+
+    Schema de ``nodes`` (cada item):
+        {
+            "id": "<uuid ou string local>",
+            "agentId": "<uuid do agente>",
+            "agentSnapshot": {
+                "agentId": "<uuid>",
+                "version": 1,
+                "name": "Nome do agente",
+                "description": "...",
+                "prompt": "...",
+                "strategy": "...",
+                "inputs": [{"name": "...", "type": "string", "required": true, "description": "..."}],
+                "outputs": [{"name": "...", "type": "string", "required": false, "description": "..."}],
+                "actions": ["follow", "finalize"],
+                "model": "...",
+                "maxIterations": 10,
+                "timeout": 60,
+                "shellAccess": false
+            },
+            "position": {"x": 0, "y": 0},
+            "label": "rótulo opcional"
+        }
+
+    Schema de ``edges`` (cada item):
+        {
+            "id": "<uuid ou string local>",
+            "type": "flow" | "data",
+            "source": "<id do nó de origem>",
+            "target": "<id do nó de destino>",
+            "condition": {"field": "action", "operator": "eq", "value": "follow"},
+            "label": "rótulo opcional",
+            "requiresApproval": false,
+            "dataMapping": {"sourceOutput": "...", "targetInput": "..."}
+        }
+
+    Regras de validação (resumo):
+    - Todo nó (exceto entry) precisa de pelo menos uma edge de entrada.
+    - entryNodeId deve referenciar um nó existente.
+    - Data edges exigem dataMapping com sourceOutput e targetInput válidos.
+    - Inputs required (exceto no entry) devem ser atendidos por data edges.
+
+    Se ``repository`` for fornecido, deve conter ``integrationId``,
     ``fullName`` e ``baseBranch``.
     """
     user = get_current_mcp_user()
@@ -96,11 +251,35 @@ async def create_pipeline(
 
     pipeline_id = uuid.uuid4()
 
+    try:
+        fields, node_fields, edge_fields = _build_pipeline_from_body(
+            body, pipeline_id=pipeline_id
+        )
+    except AppError as e:
+        raise ToolError(f"Erro ao criar pipeline: {e.error}") from e
+
+    # Validação de grafo (11 regras) antes de persistir.
+    if node_fields:
+        compiler_pipeline = _build_compiler_pipeline(
+            str(pipeline_id),
+            fields["name"],
+            str(fields["entry_node_id"]),
+            node_fields,
+            edge_fields,
+            fields["description"],
+        )
+        validation = _validate_graph(compiler_pipeline)
+        if not validation.is_valid:
+            raise ToolError(
+                "Grafo inválido. Erros de validação: "
+                + "; ".join(
+                    f"regra {e.rule}: {e.message}"
+                    for e in validation.errors
+                )
+            )
+
     async with async_session_factory() as db:
         try:
-            fields, node_fields, edge_fields = _build_pipeline_from_body(
-                body, pipeline_id=pipeline_id
-            )
             pipeline = Pipeline(
                 id=pipeline_id,
                 owner_id=user.owner_id,
@@ -279,6 +458,25 @@ async def update_pipeline(
                 fields, node_fields, edge_fields = _build_pipeline_from_body(
                     full_body, pipeline_id=parsed_id
                 )
+                # Validação de grafo antes de persistir.
+                if node_fields:
+                    compiler_pipeline = _build_compiler_pipeline(
+                        str(parsed_id),
+                        fields["name"],
+                        str(fields["entry_node_id"]),
+                        node_fields,
+                        edge_fields,
+                        fields["description"],
+                    )
+                    validation = _validate_graph(compiler_pipeline)
+                    if not validation.is_valid:
+                        raise ToolError(
+                            "Grafo inválido. Erros de validação: "
+                            + "; ".join(
+                                f"regra {e.rule}: {e.message}"
+                                for e in validation.errors
+                            )
+                        )
                 pipeline.name = fields["name"]
                 pipeline.description = fields["description"]
                 pipeline.entry_node_id = fields["entry_node_id"]
@@ -375,104 +573,13 @@ async def validate_pipeline(
     except AppError as e:
         raise ToolError(f"Erro ao validar pipeline: {e.error}") from e
 
-    # Constrói a Pipeline do compiler a partir dos campos já validados.
-    compiler_nodes: list[CompilerNode] = []
-    for f in node_fields:
-        raw = f["agent_snapshot"]
-        snap = AgentSnapshot(
-            agent_id=str(raw.get("agentId", f["agent_id"])),
-            version=raw.get("version", 1),
-            name=raw.get("name", ""),
-            description=raw.get("description", ""),
-            prompt=raw.get("prompt", ""),
-            strategy=raw.get("strategy", ""),
-            skills=raw.get("skills", []),
-            tools=raw.get("tools", []),
-            mcp_servers=raw.get("mcpServers", raw.get("mcp_servers", [])),
-            knowledge=raw.get("knowledge", []),
-            integrations=raw.get("integrations", []),
-            inputs=[
-                PortDef(
-                    name=pt.get("name", ""),
-                    type=pt.get("type", "string"),
-                    required=pt.get("required", False),
-                    description=pt.get("description", ""),
-                )
-                for pt in raw.get("inputs", [])
-            ],
-            outputs=[
-                PortDef(
-                    name=pt.get("name", ""),
-                    type=pt.get("type", "string"),
-                    required=pt.get("required", False),
-                    description=pt.get("description", ""),
-                )
-                for pt in raw.get("outputs", [])
-            ],
-            actions=raw.get("actions", []),
-            model=raw.get("model", ""),
-            llm=raw.get("llm"),
-            max_iterations=raw.get("maxIterations", raw.get("max_iterations", 10)),
-            timeout=raw.get("timeout", 60),
-            shell_access=raw.get("shellAccess", raw.get("shell_access", False)),
-        )
-        compiler_nodes.append(
-            CompilerNode(
-                id=str(f["id"]),
-                agent_id=str(f["agent_id"]),
-                agent_snapshot=snap,
-                position=f.get("position") or {},
-                label=f.get("label"),
-            )
-        )
-
-    compiler_edges: list[CompilerEdge] = []
-    for f in edge_fields:
-        condition_raw = f.get("condition")
-        mapping_raw = f.get("data_mapping")
-        compiler_edges.append(
-            CompilerEdge(
-                id=str(f["id"]),
-                type=f["type"],
-                source=str(f["source"]),
-                target=str(f["target"]),
-                condition=(
-                    EdgeCondition(
-                        field=condition_raw.get("field", "action"),
-                        operator=condition_raw.get("operator", "eq"),
-                        value=condition_raw.get("value", "follow"),
-                    )
-                    if condition_raw
-                    else None
-                ),
-                label=f.get("label"),
-                requires_approval=f.get("requires_approval", False),
-                approval_channel=f.get("approval_channel"),
-                approval_message=f.get("approval_message"),
-                data_mapping=(
-                    DataMapping(
-                        source_output=mapping_raw.get(
-                            "sourceOutput", mapping_raw.get("source_output", "")
-                        ),
-                        target_input=mapping_raw.get(
-                            "targetInput", mapping_raw.get("target_input", "")
-                        ),
-                    )
-                    if mapping_raw
-                    else None
-                ),
-                reject_target=f.get("reject_target"),
-            )
-        )
-
-    pipeline = CompilerPipeline(
-        id=str(pipeline_id),
-        name=fields["name"],
-        entry_node_id=str(fields["entry_node_id"]),
-        nodes=compiler_nodes,
-        edges=compiler_edges,
-        description=fields["description"],
-        status="draft",
+    pipeline = _build_compiler_pipeline(
+        str(pipeline_id),
+        fields["name"],
+        str(fields["entry_node_id"]),
+        node_fields,
+        edge_fields,
+        fields["description"],
     )
 
     result = _validate_graph(pipeline)

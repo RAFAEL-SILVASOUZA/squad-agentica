@@ -48,8 +48,8 @@ function toFlowNodes(pipeline: Pipeline, statuses: Record<string, NodeStatus>): 
       data: {
         label: pn.label ?? pn.agentSnapshot.name,
         agentSnapshot: pn.agentSnapshot,
-        inputs: pn.agentSnapshot.inputs,
-        outputs: pn.agentSnapshot.outputs,
+        inputs: pn.agentSnapshot.inputs ?? [],
+        outputs: pn.agentSnapshot.outputs ?? [],
         isEntry: pn.id === pipeline.entryNodeId,
       },
     };

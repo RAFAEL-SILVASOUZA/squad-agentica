@@ -274,7 +274,7 @@ export function StepsList({ pipeline, agents, onChange, disabled = false, onSele
                   </div>
                 )}
 
-                {node.agentSnapshot.inputs.length > 0 && (
+                {(node.agentSnapshot.inputs?.length ?? 0) > 0 && (
                   <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                     <strong>Entradas:</strong>{" "}
                     {node.agentSnapshot.inputs.map((i) => i.name).join(", ")}

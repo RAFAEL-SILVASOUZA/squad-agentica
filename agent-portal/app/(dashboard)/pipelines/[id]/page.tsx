@@ -374,7 +374,7 @@ export default function PipelineDetailPage() {
 
   const handleExecuteClick = () => {
     if (hasErrors || executing || !pipeline) return;
-    if (entryNode && entryNode.agentSnapshot.inputs.length > 0) setRunInputsOpen(true);
+    if (entryNode && (entryNode.agentSnapshot.inputs?.length ?? 0) > 0) setRunInputsOpen(true);
     else void handleExecute({});
   };
 

@@ -500,7 +500,7 @@ function PipelineMonitorInner({ pipelineId }: PipelineMonitorProps) {
           size="sm"
           variant="primary"
           onClick={() => {
-            if (entryNode && entryNode.agentSnapshot.inputs.length > 0) setRunInputsOpen(true);
+            if (entryNode && (entryNode.agentSnapshot.inputs?.length ?? 0) > 0) setRunInputsOpen(true);
             else void handleExecute();
           }}
           loading={actionLoading === "execute"}

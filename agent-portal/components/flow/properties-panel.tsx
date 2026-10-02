@@ -193,7 +193,7 @@ export function PropertiesPanel({
     const otherNodes = pipeline.nodes.filter((n) => n.id !== node.id);
 
     // Para cada input do nó, determina a origem atual (data edge ou "run")
-    const inputSources = node.agentSnapshot.inputs.map((input) => {
+    const inputSources = (node.agentSnapshot.inputs ?? []).map((input) => {
       const dataEdge = pipeline.edges.find(
         (e) =>
           e.type === "data" &&
@@ -280,7 +280,7 @@ export function PropertiesPanel({
           </div>
 
           {/* Entradas */}
-          {node.agentSnapshot.inputs.length > 0 && (
+          {(node.agentSnapshot.inputs?.length ?? 0) > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-muted)" }}>
                 Entradas
@@ -310,7 +310,7 @@ export function PropertiesPanel({
                   >
                     <option value="run">entrada do run</option>
                     {otherNodes.flatMap((other) =>
-                      other.agentSnapshot.outputs.map((out) => (
+                      (other.agentSnapshot.outputs ?? []).map((out) => (
                         <option key={`${other.id}:${out.name}`} value={`${other.id}:${out.name}`}>
                           Saída &apos;{out.name}&apos; de {other.agentSnapshot.name}
                         </option>
