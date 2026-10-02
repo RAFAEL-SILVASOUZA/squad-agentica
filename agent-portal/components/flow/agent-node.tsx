@@ -48,6 +48,38 @@ export function AgentNode({ data, selected }: NodeProps<AgentNode>) {
         outlineOffset: 2,
       }}
     >
+      {/* Handles default (sem id): ancoram edges de flow em nós sem ports.
+          Sem eles, o React Flow não encontra um handle default e falha em
+          criar a aresta (erro 008: "Couldn't create edge for handle id null"). */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          border: "2px solid var(--info)",
+          background: "var(--bg-elevated)",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 1,
+        }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          border: "2px solid var(--success)",
+          background: "var(--bg-elevated)",
+          top: "50%",
+          transform: "translate(50%, -50%)",
+          zIndex: 1,
+        }}
+      />
+
       {/* Entry indicator */}
       {isEntry && (
         <div
